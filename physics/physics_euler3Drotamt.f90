@@ -97,6 +97,17 @@ CONTAINS
     this%YMOMENTUM = 3                                 ! y-momentum          !
     this%ZVELOCITY = 4                           ! specific angular momentum !
     this%ZMOMENTUM = 4                           ! angular momentum          !
+    ! set names for primitive and conservative variables
+    this%pvarname(this%DENSITY)   = "density"
+    this%pvarname(this%XVELOCITY) = "x-velocity"
+    this%pvarname(this%YVELOCITY) = "y-velocity"
+    this%pvarname(this%ZVELOCITY) = "specang-momentum"
+    this%pvarname(this%PRESSURE)  = "pressure"
+    this%cvarname(this%DENSITY)   = "density"
+    this%cvarname(this%XMOMENTUM) = "x-momentum"
+    this%cvarname(this%YMOMENTUM) = "y-momentum"
+    this%cvarname(this%ZMOMENTUM) = "ang-momentum"
+    this%cvarname(this%ENERGY)    = "energy"
   END SUBROUTINE InitPhysics_euler3Dra
 
 

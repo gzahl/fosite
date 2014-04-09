@@ -48,7 +48,7 @@ MODULE common_types
   ! of the current process
 #ifdef PARALLEL
   INTEGER, SAVE :: DEFAULT_MPI_REAL = MPI_REAL   ! default real type for MPI !
-  REAL, PARAMETER :: dummy=1.0                ! to check default real type   !
+  REAL, PARAMETER :: dummy=1.0                   ! check default real type   !
 #endif
   INTEGER, SAVE, TARGET :: myrank = 0, ppnum = 1
   LOGICAL, SAVE, TARGET :: parinit = .FALSE. 
@@ -79,6 +79,7 @@ CONTAINS
     TYPE(Common_TYP)  :: this
     INTEGER           :: t
     CHARACTER(LEN=*)  :: n
+    !------------------------------------------------------------------------!
     INTENT(IN)        :: t,n
     INTENT(OUT)       :: this
     !------------------------------------------------------------------------!
@@ -92,14 +93,14 @@ CONTAINS
        CALL MPI_Comm_rank(mpi_comm_world,this%myrank,this%error)
        CALL MPI_Comm_size(mpi_comm_world,this%ppnum,this%error)
        this%parinit = .TRUE.
-       ! determine the correct MPI type for real numbers
+       ! determine the default MPI data type for real numbers
        SELECT CASE (SELECTED_REAL_KIND(PRECISION(dummy)))
        CASE(4)
           DEFAULT_MPI_REAL = MPI_REAL4
        CASE(8)
           DEFAULT_MPI_REAL = MPI_REAL8
        CASE DEFAULT
-          CALL Error(this,"InitCommon","Cannot determine default real type for MPI.")
+          CALL Warning(this,"InitCommon","Cannot determine default MPI real types.")
        END SELECT
     END IF
 #endif

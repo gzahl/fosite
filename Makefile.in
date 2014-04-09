@@ -18,12 +18,16 @@ ALLOBJS=$(ALLSRCS:.f90=.o)
 AR=ar
 AFLAGS=rcv
 
+# command for preprocessing (should be empty);
+# used for parallel profiling with scalasca (see below)
+PREP=
+
 # compiler dependent variables
-FCFLAGS_ALL=@FCFLAGS_ALL@ $(INCDIRS) 
+FCFLAGS_ALL=@FCFLAGS_ALL@ @DEFS_ALL@ $(INCDIRS)
 FCFLAGS_OPT=@FCFLAGS_OPT@
 FCFLAGS_DBG=@FCFLAGS_DBG@
 FCFLAGS_PROF=@FCFLAGS_PROF@
-FCFLAGS_MPI=@FCFLAGS_MPI@ -DPARALLEL
+FCFLAGS_MPI=@FCFLAGS_MPI@ @DEFS_PARALLEL@
 LDFLAGS_ALL=@LDFLAGS_ALL@
 LDFLAGS_OPT=@LDFLAGS_OPT@
 LDFLAGS_DBG=@LDFLAGS_DBG@
@@ -41,23 +45,26 @@ parallel : FCFLAGS=$(FCFLAGS_ALL) $(FCFLAGS_OPT) $(FCFLAGS_MPI)
 parallel : LDFLAGS=$(LDFLAGS_ALL) $(LDFLAGS_OPT) $(LDFLAGS_MPI)
 prof : FCFLAGS=$(FCFLAGS_ALL) $(FCFLAGS_OPT) $(FCFLAGS_PROF)
 prof : LDFLAGS=$(LDFLAGS_ALL) $(LDFLAGS_OPT) $(LDFLAGS_PROF)
+parprof : FCFLAGS=$(FCFLAGS_ALL) $(FCFLAGS_OPT) $(FCFLAGS_MPI)
+parprof : LDFLAGS=$(LDFLAGS_ALL) $(LDFLAGS_OPT) $(LDFLAGS_MPI)
+parprof : PREP=@PREP@
 
-export FC FCFLAGS LDFLAGS AR AFLAGS
+export FC FCFLAGS LDFLAGS AR AFLAGS PREP
 # variable definitions end here
 
 
 # compile rules
 all : $(TARGET)
 
-debug parallel prof : all
+debug parallel prof parprof : all
 
 %.o : %.f90
-	$(FC) $(FCFLAGS) -c $<
+	$(PREP) $(FC) $(FCFLAGS) -c $<
 
 subdirs : $(SUBDIRS)
 
 $(TARGET) : subdirs $(OBJECTS)
-	$(FC) $(ALLOBJS) -o $(TARGET) $(LDFLAGS)
+	$(PREP) $(FC) $(ALLOBJS) -o $(TARGET) $(LDFLAGS)
 
 $(SUBDIRS) :
 	$(MAKE) -C $@
@@ -84,9 +91,10 @@ distclean :
 	for dir in $(SUBDIRS); do \
 	  $(MAKE) distclean -C $$dir; \
 	done
-	rm -f $(OBJECTS) $(TARGET) *.mod *.bak *.dat *.dx *~
+	rm -f $(OBJECTS) $(TARGET) *.mod *.bak *.dat *.bin *.nc *~
+	rm -rf epik*
 
 .SUFFIXES:
 
-.PHONY: all debug parallel subdirs $(SUBDIRS) clean distclean
+.PHONY: all debug parallel prof parprof subdirs $(SUBDIRS) clean distclean
 

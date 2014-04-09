@@ -26,7 +26,7 @@
 ! module for BINARY file I/O
 !----------------------------------------------------------------------------!
 MODULE fileio_binary
-  USE fileio_gnuplot
+  USE fileio_gnuplot, CloseFile_binary => CloseFile_gnuplot
   USE geometry_common, ONLY : Geometry_TYP, GetType
   USE mesh_common, ONLY : Mesh_TYP
   USE physics_common, ONLY : Physics_TYP, GetType
@@ -48,6 +48,7 @@ MODULE fileio_binary
        ! methods
        InitFileIO_binary, &
        OpenFile_binary, &
+       CloseFile_binary, &
        WriteHeader_binary, &
        ReadHeader_binary, &
        WriteTimestamp_binary,&
@@ -294,11 +295,11 @@ CONTAINS
           CALL Warning(this,"ReadHeader_binary","geometry mismatch")
           success = .FALSE.
        END IF
-       IF (ALL(idata.NE.this%header%idata)) THEN
+       IF (ALL(idata(3:4).NE.this%header%idata(3:4))) THEN
           CALL Warning(this,"ReadHeader_binary","resolution mismatch")
           success = .FALSE.
        END IF
-       IF (ALL(rdata.NE.this%header%rdata)) THEN
+       IF (ALL(rdata(1:4).NE.this%header%rdata(1:4))) THEN
           CALL Warning(this,"ReadHeader_binary","computational domain mismatch")
           success = .FALSE.
        END IF
@@ -378,15 +379,13 @@ CONTAINS
   END SUBROUTINE ReadTimestamp_binary
 
 
-  SUBROUTINE WriteDataset_binary(this,Mesh,Physics,Timedisc,coords,ovar)
+  SUBROUTINE WriteDataset_binary(this,Mesh,Physics,Timedisc)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(FileIO_TYP)  :: this
     TYPE(Mesh_TYP)    :: Mesh
     TYPE(Physics_TYP) :: Physics
     TYPE(Timedisc_TYP):: Timedisc
-    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,2) :: coords
-    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum) :: ovar
     !------------------------------------------------------------------------!
     INTEGER          :: i,j,k
 #ifdef PARALLEL
@@ -395,7 +394,7 @@ CONTAINS
     INTEGER          :: request
 #endif
     !------------------------------------------------------------------------!
-    INTENT(IN)       :: Mesh,Physics,Timedisc,coords,ovar
+    INTENT(IN)       :: Mesh,Physics,Timedisc
     INTENT(INOUT)    :: this
     !------------------------------------------------------------------------!
     ! copy coordinates
@@ -403,16 +402,16 @@ CONTAINS
     IF (Mesh%INUM.GT.1) THEN
        k=k+1
        FORALL (i=Mesh%IMIN:Mesh%IMAX,j=Mesh%JMIN:Mesh%JMAX) &
-            this%binout(k,i,j) = coords(i,j,1)
+            this%binout(k,i,j) = Mesh%bcenter(i,j,1)
     END IF
     IF (Mesh%JNUM.GT.1) THEN
        k=k+1
        FORALL (i=Mesh%IMIN:Mesh%IMAX,j=Mesh%JMIN:Mesh%JMAX) &
-            this%binout(k,i,j) = coords(i,j,2)
+            this%binout(k,i,j) = Mesh%bcenter(i,j,2)
     END IF
     ! copy data
     FORALL (i=Mesh%IMIN:Mesh%IMAX,j=Mesh%JMIN:Mesh%JMAX) &
-       this%binout(k+1:k+Physics%vnum,i,j) = ovar(i,j,1:Physics%vnum)
+       this%binout(k+1:k+Physics%vnum,i,j) = Timedisc%pvar(i,j,1:Physics%vnum)
 
     ! write data
 #ifdef PARALLEL
@@ -513,7 +512,6 @@ CONTAINS
     !------------------------------------------------------------------------!
     TYPE(FileIO_TYP) :: this
     !------------------------------------------------------------------------!
-    CALL CloseFile(this)
     DEALLOCATE(this%header%idata,this%header%rdata,&
 #ifdef PARALLEL
          this%disp,&

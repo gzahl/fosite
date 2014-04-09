@@ -26,43 +26,76 @@
 #############################################################################
 
 AC_PREREQ(2.61)
-AC_INIT(fosite, VERSION, tillense@astrophysik.uni-kiel.de)
+AC_INIT(fosite, 0.2.1, tillense@astrophysik.uni-kiel.de)
 
 # set up configure switches.
+linkClibs="no"
 AC_ARG_WITH([mpi],
     AS_HELP_STRING([--with-mpi=[DIR]],[
 	Enable MPI support and check for installation in directory [DIR]; 
         required to compile parallel version of fosite @<:@DEFAULT=no@:>@]),[
-    MPIDIR=$with_mpi
-    test "x$MPIDIR" = "xyes" && MPIDIR=""
-    with_mpi="yes"],[with_mpi="no"])
+    AS_IF([test "x$with_mpi" = "xyes"],[MPIDIR=""],[
+    	test "x$with_mpi" != "xno"],[MPIDIR=$with_mpi])],[
+    with_mpi="no"])
 
 AC_ARG_WITH([pvfs2],
     AS_HELP_STRING([--with-pvfs2=[DIR]],[
 	Check for PVFS2 installation in directory [DIR]; 
         recommended for parallel I/O.]),[
     PVFSDIR=$with_pvfs2
-    test "x$PVFSDIR" = "xyes" && MPIDIR=""
+    test "x$PVFSDIR" = "xyes" && PVFSDIR=""
+    linkClibs="yes"
     with_pvfs2="yes"],[with_pvfs2="no"])
 
-#AC_ARG_WITH([intel],
-#	AC_HELP_STRING([--with-intel=[DIR]],
-#		[Check for Intel Compiler installation in directory [DIR]; 
-#                 required if some libraries are linked against the
-#		 intel support libraries]),
-#		[intel_dir=$withval])
+AC_ARG_WITH([netcdf],
+    AS_HELP_STRING([--with-netcdf=[DIR]],[
+	Check for NetCDF installation in directory [DIR];
+        required for NetCDF output @<:@DEFAULT=yes@:>@]),[
+    AS_IF([test "x$with_netcdf" = "xyes"],[NETCDFDIR=""],
+          [test "x$with_netcdf" = "xno"], [NETCDFDIR=""],[
+          NETCDFDIR=$with_netcdf
+          with_netcdf="yes"])],[with_netcdf="yes"])
+
+AC_ARG_WITH([hdf5],
+    AS_HELP_STRING([--with-hdf5=[DIR]],[
+	Check for HDF5 installation in directory [DIR];
+        required for parallel NetCDF output]),[
+    AS_IF([test "x$with_hdf5" = "xyes"],[HDF5DIR=""],
+          [test "x$with_netcdf" = "xno"], [HDF5DIR=""],[
+          HDF5DIR=$with_hdf5
+          linkClibs="yes"
+          with_hdf5="yes"])],[
+    with_hdf5="no"
+])
 
 AC_ARG_ENABLE([static],
 	AC_HELP_STRING([--enable-static],
 		[Create a statically linked executable file.
                  @<:@DEFAULT=no@:>@ ]),
-		[link_static=$enableval])
+		[arg_static=$enableval])
 
 AC_ARG_ENABLE([double],
 	AC_HELP_STRING([--enable-double],
-		[This option enables the autodouble compiler flag if available. 
+		[turn on autodouble compiler flag if available. 
                  @<:@DEFAULT=no@:>@ ]),
  		[arg_autodouble=$enableval])
+
+AC_ARG_ENABLE([fast],
+	AC_HELP_STRING([--enable-fast=option],
+		[turn on standard compiler optimizations;
+		e.g. --enable-fast=O2 activates optimization level 2
+                 @<:@DEFAULT=O@:>@ ]),[
+        AS_IF([test "x$enableval" = "xyes"],[arg_fast=O],
+	      [test "x$enableval" != "xno"],[arg_fast=$enableval])],[
+	arg_fast=""])
+
+AC_ARG_ENABLE([inlining],
+	AC_HELP_STRING([--enable-inline],
+		[turn on inline expansion of functions;
+                 @<:@DEFAULT=no@:>@ ]),
+ 		[arg_inline=$enableval])
+
+AC_ARG_VAR([PREP],[preprocessor command for parallel profiling])
 
 # --------------------------------------------------------------------------
 #
@@ -91,15 +124,17 @@ AC_DEFUN_ONCE([AC_FC_PRESERVECASE],[
 	do
 		test "x$ac_flag" != xnone && \
 		     FCFLAGS="$ac_fc_preservecase_FCFLAGS_save $ac_flag"
-    		AC_LINK_IFELSE(AC_LANG_CALL([],[maLLoc]),
-			[], [ac_cv_fc_preservecase=$ac_flag; break])
+    		AC_LINK_IFELSE(AC_LANG_PROGRAM,[
+			AC_LINK_IFELSE(AC_LANG_CALL([],[maLLoc]),[],[
+				ac_cv_fc_preservecase=$ac_flag; break])])
 	done
 	rm -f conftest.err conftest.$ac_objext conftest.$ac_ext
 	FCFLAGS=$ac_fc_preservecase_FCFLAGS_save
     ])
     if test "x$ac_cv_fc_preservecase" = xunknown; then
+        ac_cv_fc_preservecase=""
         m4_default([$2],[
-            AC_MSG_ERROR([Cannot link Fortran program against C libraries])
+            AC_MSG_ERROR([Cannot preserve case of external C function names])
         ])
     else
 	test "x$ac_cv_fc_preservecase" != xnone && \
@@ -142,8 +177,9 @@ AC_DEFUN_ONCE([AC_FC_NOUNDERSCORE],[
 	FCFLAGS=$ac_fc_nous_FCFLAGS_save
     ])
     if test "x$ac_cv_fc_nous" = xunknown; then
+        ac_cv_fc_nous=""
         m4_default([$2],[
-            AC_MSG_ERROR([Cannot link Fortran program against C libraries])])
+            AC_MSG_ERROR([Cannot remove trailling underscores from external C function names])])
     else
         test "x$ac_cv_fc_nous" != xnone && \
             FCFLAGS="$FCFLAGS $ac_cv_fc_nous"
@@ -151,6 +187,42 @@ AC_DEFUN_ONCE([AC_FC_NOUNDERSCORE],[
     fi
     AC_LANG_POP(Fortran)dnl
 ])# AC_FC_NOUNDERSCORE
+
+# --------------------------------------------------------------------------
+#
+# SYNOPSIS
+#
+#   AC_FC_ISO_C_BINDING([ACTION-IF-FOUND [, ACTION-IF-NOT-FOUND]])
+#
+# Checks whether the Fortran compiler supports ISO_C_BINDING for
+# linking against C functions and sets the variable ac_cv_fc_bind to
+# either "yes" or "no". 
+#
+# REMARK: This is _not_ Fortran 90/95 but Fortran 2003 standard!
+#
+# --------------------------------------------------------------------------
+AC_DEFUN_ONCE([AC_FC_ISO_C_BINDING],[
+    AC_LANG_PUSH(Fortran)dnl
+    AC_CACHE_CHECK([whether $FC supports ISO C binding],
+    	ac_cv_fc_bind,[
+	ac_cv_fc_bind=no
+	AC_COMPILE_IFELSE([AC_LANG_PROGRAM([],[
+use iso_c_binding
+call foo
+contains
+    subroutine foo() bind(c)
+    implicit none
+    print *,'dummy output'
+    end subroutine foo
+])],[
+           ac_cv_fc_bind=yes
+        ])
+    ])
+    rm -f conftest.err conftest.$ac_objext conftest.$ac_ext
+    AS_IF([test "x$ac_cv_fc_bind" = xno],[m4_default([$2],[AC_MSG_ERROR(
+	[Fortran compiler does not support ISO C bindings])])],[$1])
+    AC_LANG_POP(Fortran)dnl
+])# AC_FC_ISO_C_BINDING
 
 # --------------------------------------------------------------------------
 #
@@ -197,6 +269,7 @@ AC_DEFUN_ONCE([AC_FC_CPPFLAG],[
     else
        test "x$ac_cv_fc_cppflag" != xnone && \
 	   FCFLAGS="$FCFLAGS $ac_cv_fc_cppflag"
+	   $1
        $1
     fi
     AC_LANG_POP(Fortran)dnl
@@ -248,7 +321,7 @@ contains
     ])
     if test "x$ac_cv_fc_autodouble" = xunknown; then
         m4_default([$2],[
-            AC_MSG_FAILURE([Fortran compiler does not support autodouble])])
+            AC_MSG_ERROR([Fortran compiler does not support autodouble])])
     else
         test "x$ac_cv_fc_autodouble" != xnone && \
             FCFLAGS="$FCFLAGS $ac_cv_fc_autodouble"
@@ -282,7 +355,7 @@ AC_DEFUN_ONCE([AC_FC_STATIC],[
         ac_cv_fc_static,[
 	ac_cv_fc_static=unknown
 	ac_fc_static_FCFLAGS_save="$FCFLAGS"
-	for ac_flag in -static "-Wl,-static"
+	for ac_flag in -static "-Wl,-static" "-Xlinker -static"
 	do
 	    test "x$ac_flag" != xnone && FCFLAGS="$ac_fc_static_FCFLAGS_save $ac_flag"
 	    AC_LINK_IFELSE(AC_LANG_PROGRAM,[
@@ -293,7 +366,7 @@ AC_DEFUN_ONCE([AC_FC_STATIC],[
     ])
     if test "x$ac_cv_fc_static" = xunknown; then
         m4_default([$2],[
-            AC_MSG_FAILURE([Fortran compiler does not support static linking])])
+            AC_MSG_ERROR([Fortran compiler does not support static linking])])
     else
         test "x$ac_cv_fc_static" != xnone && \
             FCFLAGS="$FCFLAGS $ac_cv_fc_static"
@@ -301,6 +374,87 @@ AC_DEFUN_ONCE([AC_FC_STATIC],[
     fi
     AC_LANG_POP(Fortran)dnl
 ])# AC_FC_STATIC
+
+# --------------------------------------------------------------------------
+#
+# SYNOPSIS
+#
+#   AC_FC_INLINE([ACTION-IF-FOUND [, ACTION-IF-NOT-FOUND]])
+#
+# Looks for a compiler flag to activate inline expansion of functions.
+# On success the variable ac_cv_fc_inline holds the compiler flag
+# otherwise the string "none". Call ACTION-IF-SUCCESS
+# (defaults to nothing) if successful (i.e. can compile code using
+# the specific compiler flag) and ACTION-IF-FAILURE (defaults to 
+# failing with an error message) if not.
+#
+# The known flags are:
+# -finline-functions: gfortran, g95
+#                -ip: ifort
+#         -pi incdir: sxf90
+# --------------------------------------------------------------------------
+AC_DEFUN_ONCE([AC_FC_INLINE],[
+    AC_LANG_PUSH(Fortran)dnl
+    AC_CACHE_CHECK([for Fortran flag to expand functions inline],
+        ac_cv_fc_inline,[
+	ac_cv_fc_inline=unknown
+	ac_fc_inline_FCFLAGS_save="$FCFLAGS"
+	for ac_flag in -finline-functions -ip "-pi incdir"
+	do
+	    test "x$ac_flag" != xnone && FCFLAGS="$ac_fc_inline_FCFLAGS_save $ac_flag"
+	    AC_LINK_IFELSE(AC_LANG_PROGRAM,[
+	        ac_cv_fc_inline=$ac_flag ; break])
+	done
+        rm -f conftest.err conftest.$ac_objext conftest.$ac_ext
+        FCFLAGS=$ac_fc_inline_FCFLAGS_save
+    ])
+    if test "x$ac_cv_fc_inline" = xunknown; then
+        m4_default([$2],[
+            AC_MSG_ERROR([Fortran compiler does not support function inlining])])
+    else
+        test "x$ac_cv_fc_inline" != xnone && \
+            FCFLAGS="$FCFLAGS $ac_cv_fc_inline"
+        $1
+    fi
+    AC_LANG_POP(Fortran)dnl
+])# AC_FC_INLINE
+
+
+# --------------------------------------------------------------------------
+#
+# SYNOPSIS
+#
+#   AC_FC_ADVANCED_DEBUG([ACTION-IF-FOUND [, ACTION-IF-NOT-FOUND]])
+#
+# Looks for a compiler flag for advanced debugging features, e.g. runtime
+# checks for out-of-bounds array subscripts. On success the variable 
+# ac_cv_fc_advanced_debug holds the compiler flag otherwise the string "none".
+# Call ACTION-IF-SUCCESS (defaults to nothing) if successful (i.e. can 
+# compile code using the specific compiler flag) and ACTION-IF-FAILURE
+# (defaults to failing with an error message) if not.
+#
+# The known flags are:
+#         -check all: ifort
+#       -ftrace=full: g95
+# --------------------------------------------------------------------------
+AC_DEFUN_ONCE([AC_FC_ADVANCED_DEBUG],[
+    AC_LANG_PUSH(Fortran)dnl
+    AC_CACHE_CHECK([whether the Fortran compiler supports advanced debugging],
+        ac_cv_fc_advanced_debug,[
+	ac_cv_fc_advanced_debug=no
+	ac_fc_advanced_debug_FCFLAGS_save="$FCFLAGS"
+	for ac_flag in "-check all" "-ftrace=full" 
+	do
+	    test "x$ac_flag" != xnone && FCFLAGS="$ac_fc_advanced_debug_FCFLAGS_save $ac_flag"
+	    AC_LINK_IFELSE(AC_LANG_PROGRAM,[
+	        ac_cv_fc_advanced_debug=$ac_flag ; break])
+	done
+        rm -f conftest.err conftest.$ac_objext conftest.$ac_ext
+        FCFLAGS="$ac_fc_advanced_debug_FCFLAGS_save"
+    ])
+    AS_IF([test "x$ac_cv_fc_advanced_debug" != xno],[$1],[$2])
+    AC_LANG_POP(Fortran)dnl
+])# AC_FC_ADVANCED_DEBUG
 
 
 # ===========================================================================
@@ -336,20 +490,29 @@ AS_IF([test "x$with_mpi" != "xno"],[
 ])
 # check all other compilers if MPI is disabled or
 # detection of MPI compiler failed
-AC_PROG_FC([$MPIFC sxf90 f90 f95 ifort g95 gfortran])
+AC_PROG_FC([$MPIFC sxf90 f90 f95 gfortran ifort g95])
 
 # default file name extension for Fortran 90
 AC_FC_SRCEXT(f90)
 
 # debug flags and normal compile flags
 AS_IF([test "x$ac_cv_prog_fc_g" = "xyes"],[
-   FCFLAGS_DBG=$FCFLAGS
    FCFLAGS=$ac_prog_fc_FCFLAGS_save
-   LDFLAGS_DBG="-g"
+   FCFLAGS_DBG="$FCFLAGS -g"
+   LDFLAGS_DBG="$LDFLAGS -g"
+   AS_IF([test "x$ac_cv_fc_compiler_gnu" = "xyes"],[
+      FCFLAGS_DBG="$FCFLAGS_DBG -O2"])
 ])
+
+# enable advanced debugging features if available
+AC_FC_ADVANCED_DEBUG([FCFLAGS_DBG="$FCFLAGS_DBG $ac_cv_fc_advanced_debug"
+	LDFLAGS_DBG="$LDFLAGS_DBG $ac_cv_fc_advanced_debug"])
 
 # ensure that the Fortran compiler accepts free-form
 AC_FC_FREEFORM
+
+# check whether the Fortran compiler supports ISO C bindings
+#AC_FC_ISO_C_BINDING
 
 # check preprocessor flag
 AC_FC_CPPFLAG
@@ -360,12 +523,71 @@ AS_IF([test "x$arg_autodouble" = "xyes"],[
 ])
 
 # create a statically linked binary
-AS_IF([test "x$link_static" = "xyes"],[
+AS_IF([test "x$arg_static" = "xyes"],[
    AC_FC_STATIC
+])
+
+# check inline expansion flag
+AS_IF([test "x$arg_inline" = "xyes"],[
+   AC_FC_INLINE
+])
+
+# check optimization flag
+AS_IF([test "x$arg_fast" != "x"],[
+   # FIXME add check command here
+   ac_cv_fc_fast="-$arg_fast"
 ])
 
 # Fortran 90 library flags, i. e.  $FCLIBS
 #AC_FC_LIBRARY_LDFLAGS
+
+# special Fortran compiler flags to prevent name mangling
+AS_IF([test "x$linkClibs" = "xyes"],[
+   ac_cv_fc_FCFLAGS_save=$FCFLAGS
+   AC_FC_NOUNDERSCORE([],[
+      AC_MSG_WARN([Cannot remove trailling underscores from function names])
+      ac_cv_fc_nous=unknown
+   ])
+   AS_IF([test "x$ac_cv_fc_nous" != "xnone" \
+	    -a "x$ac_cv_fc_nous" != "xunknown"],[
+      ac_cv_fc_FCFLAGS_linkClibs="$ac_cv_fc_FCFLAGS_linkClibs $ac_cv_fc_nous"
+   ])
+   AC_FC_PRESERVECASE([],[
+      AC_MSG_WARN([Cannot link C programs with mixed upper/lower case functions])
+      ac_cv_fc_preservecase=unknown
+   ])
+   AS_IF([test "x$ac_cv_fc_preservecase" != "xnone" \
+            -a "x$ac_cv_fc_preservecase" != "xunknown"],[     
+      ac_cv_fc_FCFLAGS_linkClibs="$ac_cv_fc_FCFLAGS_linkClibs $ac_cv_fc_preservecase"
+   ])
+   # search for C compiler
+   AS_IF([test "x$ac_cv_fc_nous" = "xunknown" \
+            -o "x$ac_cv_fc_preservecase" = "xunknown"],[
+      AC_MSG_NOTICE([trying fallback solution for linking against C libraries])
+      # search for MPI compiler if requested
+      MPICC=""
+      AS_IF([test "x$with_mpi" != "xno"],[
+         AS_IF([test "x$MPIDIR" != "x"],[
+            AS_IF([test "x$CC" = "x"],[
+	       # check for MPI compiler command in $MPIDIR/bin
+               ac_mpicc_PATH_save=$PATH
+               PATH=$MPIDIR/bin
+	       AC_PATH_PROGS([MPICC],[mpicc hcc mpxlc_r mpxlc mpcc cmpicc])
+	       AS_IF([test "x$MPICC" = "x"],[
+	          AC_MSG_WARN([no MPI compiler found in $PATH])],[
+		  CC=$MPICC
+               ])
+               PATH=$ac_mpicc_PATH_save
+	    ])
+         ])
+         AS_IF([test "x$MPICC" = "x"],[
+            MPICC="mpicc"
+         ])
+      ])
+      AC_PROG_CC([$MPICC cc xlC xlc pgcc icc pathcc gcc])
+   ])
+   FCFLAGS=$ac_cv_fc_FCFLAGS_save
+])
 
 # MPI library and header checks
 AS_IF([test "x$with_mpi" != "xno"],[
@@ -377,8 +599,8 @@ AS_IF([test "x$with_mpi" != "xno"],[
        	   LDFLAGS_MPI="$LDFLAGS_MPI -L$MPIDIR/lib"
 	   LDFLAGS="$LDFLAGS $LDFLAGS_MPI"       
    ])
-   AC_FC_NOUNDERSCORE
-   AC_FC_PRESERVECASE
+   # set special compiler flags for linking against C libraries
+   FCFLAGS="$FCFLAGS $ac_cv_fc_FCFLAGS_linkClibs"
    # some libraries possibly needed for MPI
    AC_CHECK_LIB(pthread, pthread_key_create,[
            MPILIBS=$MPILIBS" -lpthread"])
@@ -399,6 +621,7 @@ AS_IF([test "x$with_mpi" != "xno"],[
            MPILIBS=$MPILIBS" -lpvfs2"])
        LIBS="$ac_mpi_LIBS_save $MPILIBS"
    ])
+   FCFLAGS=$ac_mpi_FCFLAGS_save
    # test linking against MPI libraries
    AC_SEARCH_LIBS([MPI_Init],[mpi fmpi mpich mpichf90],[MPILIBS=$LIBS],[
        AC_MSG_FAILURE([cannot find library providing MPI_Init])
@@ -410,7 +633,8 @@ AS_IF([test "x$with_mpi" != "xno"],[
        ac_mpi_INCDIR_mpifh=unknown
        for ac_incdir in none "-I$MPIDIR/include"
        do
-           FCFLAGS="$ac_mpi_FCFLAGS_mpifh_save $ac_incdir"
+           test "x$ac_incdir" != xnone && \
+       	       FCFLAGS="$ac_mpi_FCFLAGS_mpifh_save $ac_incdir"
            AC_COMPILE_IFELSE([AC_LANG_PROGRAM([],[      include 'mpif.h'])],[
 	       ac_mpi_INCDIR_mpifh=$ac_incdir
 	       AC_MSG_RESULT([yes]); break
@@ -428,63 +652,177 @@ AS_IF([test "x$with_mpi" != "xno"],[
    LIBS=$ac_mpi_LIBS_save
    FCFLAGS=$ac_mpi_FCFLAGS_save
    LDFLAGS=$ac_mpi_LDFLAGS_save
+   # check for scalasca for parallel profiling
+   AC_CHECK_PROG([PREP],[scalasca],[scalasca -instrument])
 ])
+# NetCDF library and module file checks
+AS_IF([test "x$with_netcdf" != "xno"],[
+   ac_netcdf_FCFLAGS_save=$FCFLAGS
+   ac_netcdf_LDFLAGS_save=$LDFLAGS
+   ac_netcdf_LIBS_save=$LIBS
+   AS_IF([test "x$NETCDFDIR" != "x"],[
+      LDFLAGS="$LDFLAGS -L$NETCDFDIR/lib"
+   ])
+   # HDF5 Fortran library linking   
+   AS_IF([test "x$with_hdf5" != "xno"],[
+      ac_hdf5_FCFLAGS_save=$FCFLAGS
+      ac_hdf5_LDFLAGS_save=$LDFLAGS
+      ac_hdf5_LIBS_save=$LIBS
+      AS_IF([test "x$HDF5DIR" != "x"],[
+      	   LDFLAGS="$LDFLAGS -L$HDF5DIR/lib"
+      ])
+      ac_hdf5_LDFLAGS_nompi=$LDFLAGS
+      AS_IF([test "x$LDFLAGS_MPI" != "x"],[
+           LDFLAGS="$LDFLAGS $LDFLAGS_MPI"
+      ])
+      # set special compiler flags for linking against C libraries
+      AS_IF([test "x$ac_cv_fc_nous" = "xunknown" \
+               -o "x$ac_cv_fc_preservecase" = "xunknown"],[
+         AC_LANG_PUSH(C)
+         AC_CHECK_LIB(z,inflate)
+         AC_CHECK_LIB(hdf5,H5open,[
+	    DEFS_ALL="$DEFS_ALL -DHAVE_HDF5"
+            LIBS="$LIBS -lhdf5"],[],[$MPILIBS -lm])
+         AC_CHECK_LIB(hdf5_hl,H5DSattach_scale,[],[],[$MPILIBS -lm])
+         AC_LANG_POP(C)],[
+         FCFLAGS="$FCFLAGS $ac_cv_fc_FCFLAGS_linkClibs"
+         AC_CHECK_LIB(z,inflate)
+         AC_CHECK_LIB(hdf5,H5open,[
+	    DEFS_ALL="$DEFS_ALL -DHAVE_HDF5"
+            LIBS="$LIBS -lhdf5"],[],[$MPILIBS])
+         AC_CHECK_LIB(hdf5_hl,H5DSattach_scale,[],[],[$MPILIBS])
+      ])
+      FCFLAGS=$ac_hdf5_FCFLAGS_save
+      LDFLAGS=$ac_hdf5_LDFLAGS_nompi
+   ])
+   # NetCDF Fortran bindings
+   # check for netcdf.mod
+   AC_CACHE_CHECK([for NetCDF Fortran module],
+      ac_cv_netcdf_module,[
+      ac_cv_netcdf_module=no
+      for ac_incdir in "$NETCDFDIR/include" none /usr/include /usr/include/netcdf \
+          /usr/local/include /usr/local/include/netcdf
+      do
+          test "x$ac_incdir" != xnone && FCFLAGS="$ac_netcdf_FCFLAGS_save -I$ac_incdir"
+          AC_COMPILE_IFELSE([AC_LANG_PROGRAM([],[use netcdf])],[
+             ac_cv_netcdf_module=yes; break])
+      done
+      rm -f conftest.err conftest.$ac_objext conftest.$ac_ext
+   ])
+   AS_IF([test "x$ac_cv_netcdf_module" = "xno"],[
+      # no netcdf module -> check for netcdf.inc
+      AC_CACHE_CHECK([for netcdf.inc],
+         ac_cv_netcdf_include,[
+         ac_cv_netcdf_include=no
+         for ac_incdir in "$NETCDFDIR/include" none /usr/include /usr/include/netcdf \
+             /usr/local/include /usr/local/include/netcdf
+         do
+             test "x$ac_incdir" != xnone && FCFLAGS="$ac_netcdf_FCFLAGS_save -I$ac_incdir"
+             AC_COMPILE_IFELSE([AC_LANG_PROGRAM([],[include 'netcdf.inc'])],[
+                ac_cv_netcdf_include=yes; break])
+         done
+         rm -f conftest.err conftest.$ac_objext conftest.$ac_ext
+      ])
+   ])
+   # check for netcdf libraries with Fortran 90 bindings
+   AS_IF([test "x$ac_cv_netcdf_module" = "xyes"],[
+      AC_CACHE_CHECK([for nf90_create in -lnetcdf...],
+	 ac_cv_lib_netcdf_nf90_create,[
+	 ac_cv_lib_netcdf_nf90_create=no
+	 LIBS="-lnetcdf $LIBS"
+      	 ac_netcdf_LDFLAGS_nompi=$LDFLAGS
+	 ac_netcdf_LIBS_nompi=$LIBS
+	 AS_IF([test "x$LDFLAGS_MPI" != "x"],[
+            FCFLAGS="$LDFLAGS $LDFLAGS_MPI"
+	    LIBS="$LIBS $MPILIBS"
+         ])
+	 AC_LINK_IFELSE([AC_LANG_PROGRAM([],[
+use netcdf
+integer :: status,ncid
+status = nf90_create("test.nc",nf90_noclobber,ncid)
+])],[
+	       ac_cv_lib_netcdf_nf90_create=yes
+	 ])
+  	 rm -f conftest.err conftest.$ac_objext conftest.$ac_ext
+      ])
+   ])
+   # check for netcdf libraries with Fortran 77 bindings
+#   AS_IF([test "x$ac_cv_netcdf_module" = "xno" -a "x$ac_cv_netcdf_include" = "xyes"],[
+#      AC_CACHE_CHECK([for nf_create in -lnetcdf...],
+#	 ac_cv_lib_netcdf_nf_create,[
+#	 ac_cv_lib_netcdf_nf_create=no
+#	 LIBS="-lnetcdff -lnetcdf $LIBS"
+#      	 ac_netcdf_LDFLAGS_nompi=$LDFLAGS
+#	 ac_netcdf_LIBS_nompi=$LIBS
+#	 AS_IF([test "x$LDFLAGS_MPI" != "x"],[
+#            FCFLAGS="$LDFLAGS $LDFLAGS_MPI"
+#	    LIBS="$LIBS $MPILIBS"
+#         ])
+#	 AC_LINK_IFELSE([AC_LANG_PROGRAM([],[
+#include 'netcdf.inc'
+#integer :: status,ncid
+#status = nf_create("test.nc",nf_noclobber,ncid)
+#])],[
+#	       ac_cv_lib_netcdf_nf_create=yes
+#	 ])
+#  	 rm -f conftest.err conftest.$ac_objext conftest.$ac_ext
+#      ])
+#   ])
+   AS_IF([test "x$ac_cv_lib_netcdf_nf90_create" = "xno" \
+          -a "x$ac_cv_lib_netcdf_nf_create" = "xno"],[
+      FCFLAGS=$ac_netcdf_FCFLAGS_save
+      LDFLAGS=$ac_netcdf_LDFLAGS_save
+      LIBS=$ac_netcdf_LIBS_save
+      AC_MSG_WARN([NetCDF support disabled])],[
+      LDFLAGS=$ac_netcdf_LDFLAGS_nompi
+      LIBS=$ac_netcdf_LIBS_nompi
+      DEFS_ALL="$DEFS_ALL -DHAVE_NETCDF"
+#      AS_IF([test "x$ac_cv_module_netcdf" = "xyes"],[
+#         DEFS_ALL="$DEFS_ALL -DHAVE_NETCDF_MOD"
+#      ])
+   ])
+])
+
 
 # compiler and target specific flags
 case $FC in
 	sxf90)
-		FCFLAGS_OPT="-pi incdir -$host_cpu"
+		FCFLAGS_OPT="-$host_cpu"
 		FCFLAGS_PROF="-ftrace"
 		LDFLAGS_PROF="-ftrace"
 		;;
 	ifort)
-		FCFLAGS_OPT="-O3 -ip"
-		if test "y$host_cpu" = "yx86_64" ; then
-		   FCFLAGS_OPT=$FCFLAGS_OPT" -mcpu=pentium4"
-		fi
-# FIXME: optimization for intel processors
-# doesn't work on AMD x86_64 compatible processors
-#		if test "y$host_cpu" = "yx86_64" ; then
-#		   FCFLAGS_OPT=$FCFLAGS_OPT" -msse3"
-#		fi
-		FCFLAGS_DBG=$FCFLAGS_DBG" -check all"
 		FCFLAGS_PROF="-p"
 		LDFLAGS_PROF="-p"
 		;;
 	g95)
-		FCFLAGS_OPT="-O3"
-		FCFLAGS_DBG=$FCFLAGS_DBG" -ftrace=full"
 		FCFLAGS_PROF="-pg"
 		LDFLAGS_PROF="-pg"
 		;;
 	gfortran)
-		FCFLAGS_OPT="-O3"
 		FCFLAGS_PROF="-pg"
 		LDFLAGS_PROF="-pg"
 		;;
-	*)	FCFLAGS_OPT="-O"
+	*)
 		FCFLAGS_PROF=""
 		LDFLAGS_PROF=""
 esac
 
-AC_SUBST(FCFLAGS_ALL,$FCFLAGS)
-AC_SUBST(FCFLAGS_OPT)
+AC_SUBST(FCFLAGS_ALL,[m4_normalize($FCFLAGS)])
+AC_SUBST(DEFS_ALL,[m4_normalize($DEFS_ALL)])
+AC_SUBST(FCFLAGS_OPT,[m4_normalize("$FCFLAGS_OPT $ac_cv_fc_fast $ac_cv_fc_inline")])
 AC_SUBST(FCFLAGS_DBG)
 AC_SUBST(FCFLAGS_PROF)
-AC_SUBST(LDFLAGS_ALL,$ac_cv_fc_libs_all)
+AC_SUBST(LDFLAGS_ALL,[m4_normalize("$LDFLAGS $LIBS")])
 AC_SUBST(LDFLAGS_OPT)
 AC_SUBST(LDFLAGS_PROF)
 AC_SUBST(LDFLAGS_DBG)
 
-# MPI environment checks
-#AC_MSG_NOTICE([Performing MPI compiler and library checks...])
-#ACX_MPI([],dnl
-#[AC_MSG_WARN([no MPI environment found; parallel version won't compile])
-#])
-
 AC_SUBST(FCFLAGS_MPI)
+AC_SUBST(DEFS_PARALLEL,["-DPARALLEL"])
 AC_SUBST(LDFLAGS_MPI)
 AC_SUBST(MPILIBS)
+AC_SUBST(PREP)
 
 # generate Makefile
 AC_CONFIG_FILES([Makefile])

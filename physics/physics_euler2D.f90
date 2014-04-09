@@ -53,6 +53,11 @@ MODULE physics_euler2D
   INTEGER, PARAMETER :: num_var = 4              ! number of variables       !
   REAL, PARAMETER :: TINY = 1.0E-30              ! to avoid division by 0    !
   CHARACTER(LEN=32), PARAMETER :: problem_name = "Euler 2D"
+  CHARACTER(LEN=16), PARAMETER, DIMENSION(num_var) :: varname &
+       = (/ "density         ", &
+            "x-velocity      ", &
+            "y-velocity      ", &
+            "pressure        "/)
   !--------------------------------------------------------------------------!
   PUBLIC :: &
        ! types
@@ -104,6 +109,15 @@ CONTAINS
     this%XMOMENTUM = 2                                 ! x-momentum          !
     this%YVELOCITY = 3                                 ! y-velocity          !
     this%YMOMENTUM = 3                                 ! y-momentum          !
+    ! set names for primitive and conservative variables
+    this%pvarname(this%DENSITY)   = "density"
+    this%pvarname(this%XVELOCITY) = "x-velocity"
+    this%pvarname(this%YVELOCITY) = "y-velocity"
+    this%pvarname(this%PRESSURE)  = "pressure"
+    this%cvarname(this%DENSITY)   = "density"
+    this%cvarname(this%XMOMENTUM) = "x-momentum"
+    this%cvarname(this%YMOMENTUM) = "y-momentum"
+    this%cvarname(this%ENERGY)    = "energy"
   END SUBROUTINE InitPhysics_euler2D
 
 
@@ -653,6 +667,7 @@ CONTAINS
     INTENT(INOUT)     :: this
     !------------------------------------------------------------------------!
     DEALLOCATE(this%csound)
+    CALL ClosePhysics(this)
   END SUBROUTINE ClosePhysics_euler2D
 
 

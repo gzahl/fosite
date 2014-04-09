@@ -30,6 +30,7 @@ MODULE sources_generic
   USE sources_pointmass, InitSources_all => InitSources
   USE sources_diskthomson
   USE sources_viscosity
+  USE sources_c_accel
   USE physics_generic, GeometricalSources_Physics => GeometricalSources, &
        ExternalSources_Physics => ExternalSources
   USE fluxes_generic
@@ -43,12 +44,13 @@ MODULE sources_generic
   INTEGER, PARAMETER :: POINTMASS    = 1
   INTEGER, PARAMETER :: DISK_THOMSON = 2
   INTEGER, PARAMETER :: VISCOSITY    = 3
+  INTEGER, PARAMETER :: C_ACCEL      = 4
   !--------------------------------------------------------------------------!
   PUBLIC :: &
        ! types
        Sources_TYP, &
        ! constants
-       POINTMASS, DISK_THOMSON, VISCOSITY, &
+       POINTMASS, DISK_THOMSON, VISCOSITY, C_ACCEL, &
        NEWTON, WIITA, &
        MOLECULAR, ALPHA, BETA, &
        ! methods
@@ -71,7 +73,7 @@ MODULE sources_generic
 CONTAINS
 
   SUBROUTINE InitSources(list,Mesh,Fluxes,Physics,stype,potential,vismodel, &
-       mass,mdot,rin,rout,dynconst,bulkconst,cvis)
+       mass,mdot,rin,rout,dynconst,bulkconst,cvis,xaccel,yaccel)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Sources_TYP), POINTER :: list
@@ -80,15 +82,15 @@ CONTAINS
     TYPE(Physics_TYP) :: Physics
     INTEGER           :: stype
     INTEGER, OPTIONAL :: potential,vismodel
-    REAL, OPTIONAL    :: mass,mdot,rin,rout,dynconst,bulkconst,cvis
+    REAL, OPTIONAL    :: mass,mdot,rin,rout,dynconst,bulkconst,cvis,xaccel,yaccel
     !------------------------------------------------------------------------!
     TYPE(Sources_TYP), POINTER :: srcptr
     INTEGER           :: potential_def,vismodel_def
     REAL              :: mass_def,mdot_def,rin_def,rout_def,dynconst_def, &
-                         bulkconst_def,cvis_def
+                         bulkconst_def,cvis_def,xaccel_def,yaccel_def
     !------------------------------------------------------------------------!
     INTENT(IN)        :: Mesh,Fluxes,Physics,stype,potential,vismodel,mass, &
-                         mdot,rin,rout,dynconst,bulkconst,cvis
+                         mdot,rin,rout,dynconst,bulkconst,cvis,xaccel,yaccel
     !------------------------------------------------------------------------!
     ! allocate common memory for all sources
     IF (.NOT.ALLOCATED(temp_sterm)) THEN
@@ -159,6 +161,18 @@ CONTAINS
        srcptr => GetSourcesPointer(list,POINTMASS)
        CALL InitSources_viscosity(list,Mesh,Physics,Fluxes,stype,vismodel_def, &
             dynconst_def,bulkconst_def,cvis_def,srcptr)
+    CASE(C_ACCEL)
+       IF (PRESENT(xaccel)) THEN
+          xaccel_def = xaccel
+       ELSE
+          xaccel_def = 0.
+       END IF
+       IF (PRESENT(yaccel)) THEN
+          yaccel_def = yaccel
+       ELSE
+          yaccel_def = 0.
+       END IF
+       CALL InitSources_c_accel(list,Mesh,Physics,stype,xaccel_def,yaccel_def)
     CASE DEFAULT
        CALL Error(list,"InitSources", "unknown source term")
     END SELECT
@@ -242,6 +256,8 @@ CONTAINS
           CALL ExternalSources_diskthomson(srcptr,Mesh,Physics,pvar,cvar,temp_sterm)
        CASE(VISCOSITY)
           CALL ExternalSources_viscosity(srcptr,Mesh,Physics,pvar,cvar,temp_sterm)
+       CASE(C_ACCEL)
+          CALL ExternalSources_c_accel(srcptr,Mesh,Physics,pvar,cvar,temp_sterm)
        CASE DEFAULT
           CALL Error(srcptr,"ExternalSources", "unknown source term")
        END SELECT
@@ -274,7 +290,7 @@ CONTAINS
        IF (.NOT.ASSOCIATED(srcptr)) EXIT
        ! call specific subroutine
        SELECT CASE(GetType(srcptr))
-       CASE(POINTMASS,DISK_THOMSON)
+       CASE(POINTMASS,DISK_THOMSON,C_ACCEL)
           ! do nothing
        CASE(VISCOSITY)
           CALL CalcTimestep_viscosity(srcptr,Mesh,Physics,pvar,dt)
@@ -308,6 +324,8 @@ CONTAINS
           CALL CloseSources_pointmass(srcptr,Fluxes)
        CASE(VISCOSITY)
           CALL CloseSources_viscosity(srcptr)
+       CASE(C_ACCEL)
+          CALL CloseSources_c_accel(srcptr,Fluxes)
        END SELECT
        ! deallocate source term structure
        DEALLOCATE(srcptr)

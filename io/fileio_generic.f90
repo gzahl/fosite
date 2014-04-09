@@ -28,6 +28,7 @@
 MODULE fileio_generic
   USE fileio_gnuplot, InitFileIO_common => InitFileIO, OpenFile_basic => OpenFile
   USE fileio_binary
+  USE fileio_netcdf
   USE mesh_common, ONLY : Mesh_TYP
   USE physics_generic, ONLY : Physics_TYP, Convert2Conservative
   USE timedisc_common, ONLY : Timedisc_TYP
@@ -37,13 +38,13 @@ MODULE fileio_generic
   ! file formats
   INTEGER, PARAMETER :: BINARY  = 1
   INTEGER, PARAMETER :: GNUPLOT = 2
-  INTEGER, PARAMETER :: HDF5    = 3
+  INTEGER, PARAMETER :: NETCDF  = 3
   !--------------------------------------------------------------------------!
   PUBLIC :: &
        ! types
        FileIO_TYP, &
        ! constants
-       BINARY, GNUPLOT, HDF5, &
+       BINARY, GNUPLOT, NETCDF, &
        ! methods
        InitFileIO, &
        WriteHeader, &
@@ -67,7 +68,7 @@ MODULE fileio_generic
 CONTAINS
 
   SUBROUTINE InitFileIO(this,Mesh,Physics,Timedisc,fileformat,filename,&
-       stoptime,dtwall,count,filecycles)
+       stoptime,dtwall,count,filecycles,ncfmt)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(FileIO_TYP)  :: this
@@ -80,16 +81,17 @@ CONTAINS
     INTEGER, OPTIONAL :: dtwall
     INTEGER, OPTIONAL :: count
     INTEGER, OPTIONAL :: filecycles
+    INTEGER, OPTIONAL :: ncfmt
     !------------------------------------------------------------------------!
     LOGICAL           :: success
     CHARACTER(LEN=32) :: timestamp
     INTEGER           :: i,fstatus
-    INTEGER           :: count_def, fcycles_def, dtwall_def
+    INTEGER           :: count_def, fcycles_def, dtwall_def, ncfmt_def
     REAL              :: stoptime_def
     REAL              :: time,new_time
     !------------------------------------------------------------------------!
     INTENT(IN)        :: Mesh,Physics,fileformat,filename,stoptime,dtwall,&
-                         count,filecycles
+                         count,filecycles,ncfmt
     INTENT(INOUT)     :: this,Timedisc
     !------------------------------------------------------------------------!
     ! wall clock time between successive outputs
@@ -129,6 +131,26 @@ CONTAINS
     CASE(GNUPLOT)
        CALL InitFileIO_gnuplot(this,Mesh,Physics,fileformat,filename,stoptime_def,&
             dtwall_def,count_def,fcycles_def)
+    CASE(NETCDF)
+#ifdef HAVE_NETCDF
+#ifdef PARALLEL
+#ifdef HAVE_HDF5
+       ncfmt_def = NF90_NETCDF4
+#else
+       CALL Error(this,"InitFileIO","HDF5 required for parallel NetCDF i/o")
+#endif
+#else
+       IF (PRESENT(ncfmt)) THEN
+          ncfmt_def = ncfmt
+       ELSE
+          ncfmt_def = NF90_FORMAT_CLASSIC
+       END IF
+#endif
+       CALL InitFileIO_netcdf(this,Mesh,Physics,fileformat,filename,stoptime_def,&
+            dtwall_def,count_def,fcycles_def,ncfmt_def)
+#else
+       CALL Error(this,"InitFileIO","NetCDF support disabled")
+#endif
     CASE DEFAULT
        CALL Error(this,"InitFileIO","Unknown file format.")
     END SELECT
@@ -151,7 +173,7 @@ CONTAINS
     ! read and check file header
     success = .FALSE.
     fstatus = GetFilestatus(this)
-    IF (IAND(fstatus,FILE_EXISTS).GT.0) CALL ReadHeader(this,success)
+    IF (IAND(fstatus,FILE_EXISTS).GT.0) CALL ReadHeader(this,Mesh,Physics,success)
  
     ! read the data if the file is ok and the data is newer
     IF (success.AND.(this%time.GT.Timedisc%time)) THEN
@@ -192,16 +214,43 @@ CONTAINS
        CALL OpenFile_binary(this,action)
     CASE(GNUPLOT)
        CALL OpenFile_gnuplot(this,action)
+#ifdef HAVE_NETCDF
+    CASE(NETCDF)
+       CALL OpenFile_netcdf(this,action)
+#endif
     END SELECT
   END SUBROUTINE OpenFile
 
 
-  SUBROUTINE WriteHeader(this)
+  SUBROUTINE CloseFile(this)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(FileIO_TYP) :: this
     !------------------------------------------------------------------------!
     INTENT(INOUT)    :: this
+    !------------------------------------------------------------------------!
+    SELECT CASE(GetType(this))
+    CASE(BINARY)
+       CALL CloseFile_binary(this)
+    CASE(GNUPLOT)
+       CALL CloseFile_gnuplot(this)
+#ifdef HAVE_NETCDF
+    CASE(NETCDF)
+       CALL CloseFile_netcdf(this)
+#endif
+    END SELECT
+  END SUBROUTINE CloseFile
+
+
+  SUBROUTINE WriteHeader(this,Mesh,Physics)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(FileIO_TYP)  :: this
+    TYPE(Mesh_TYP)    :: Mesh
+    TYPE(Physics_TYP) :: Physics
+    !------------------------------------------------------------------------!
+    INTENT(IN)        :: Mesh,Physics
+    INTENT(INOUT)     :: this
     !------------------------------------------------------------------------!
     ! create new empty data file
     CALL OpenFile(this,REPLACE)
@@ -210,19 +259,26 @@ CONTAINS
        CALL WriteHeader_binary(this)
     CASE(GNUPLOT)
        CALL WriteHeader_gnuplot(this)
+#ifdef HAVE_NETCDF
+    CASE(NETCDF)
+       CALL WriteHeader_netcdf(this,Mesh,Physics)
+#endif
     END SELECT
     CALL CloseFile(this)
   END SUBROUTINE WriteHeader
 
   
-  SUBROUTINE ReadHeader(this,success)
+  SUBROUTINE ReadHeader(this,Mesh,Physics,success)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    TYPE(FileIO_TYP) :: this
-    LOGICAL          :: success
+    TYPE(FileIO_TYP)  :: this
+    TYPE(Mesh_TYP)    :: Mesh
+    TYPE(Physics_TYP) :: Physics
+    LOGICAL           :: success
     !------------------------------------------------------------------------!
-    INTENT(OUT)      :: success
-    INTENT(INOUT)    :: this
+    INTENT(IN)        :: Mesh,Physics
+    INTENT(OUT)       :: success
+    INTENT(INOUT)     :: this
     !------------------------------------------------------------------------!
     CALL OpenFile(this,READONLY)
     CALL RewindFile(this)
@@ -231,6 +287,10 @@ CONTAINS
        CALL ReadHeader_binary(this,success)
     CASE(GNUPLOT)
        CALL ReadHeader_gnuplot(this,success)
+#ifdef HAVE_NETCDF
+    CASE(NETCDF)
+       CALL ReadHeader_netcdf(this,Mesh,Physics,success)
+#endif
     END SELECT
     CALL CloseFile(this)
   END SUBROUTINE ReadHeader
@@ -251,6 +311,10 @@ CONTAINS
        CALL WriteTimestamp_binary(this,time)
     CASE(GNUPLOT)
        CALL WriteTimestamp_gnuplot(this,time)
+#ifdef HAVE_NETCDF
+    CASE(NETCDF)
+       CALL WriteTimestamp_netcdf(this,time)
+#endif
     END SELECT
     CALL CloseFile(this)
   END SUBROUTINE WriteTimestamp
@@ -272,35 +336,41 @@ CONTAINS
        CALL ReadTimestamp_binary(this,time)
     CASE(GNUPLOT)
        CALL ReadTimestamp_gnuplot(this,time)
+#ifdef HAVE_NETCDF
+    CASE(NETCDF)
+       CALL ReadTimestamp_netcdf(this,time)
+#endif
     END SELECT
     CALL CloseFile(this)
   END SUBROUTINE ReadTimestamp
 
   
-  SUBROUTINE WriteDataset(this,Mesh,Physics,Timedisc,coords,ovar)
+  SUBROUTINE WriteDataset(this,Mesh,Physics,Timedisc)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(FileIO_TYP)  :: this
     TYPE(Mesh_TYP)    :: Mesh
     TYPE(Physics_TYP) :: Physics
     TYPE(Timedisc_TYP):: Timedisc
-    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,2) :: coords
-    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum) :: ovar
     !------------------------------------------------------------------------!
-    INTENT(IN)        :: Mesh,Physics,Timedisc,coords,ovar
+    INTENT(IN)        :: Mesh,Physics,Timedisc
     INTENT(INOUT)     :: this
     !------------------------------------------------------------------------!
     ! write the header if either this is the first data set we write or
     ! each data set is written into a new file
     IF ((this%step.EQ.0).OR.(this%cycles.GT.0)) THEN
-       CALL WriteHeader(this)
+       CALL WriteHeader(this,Mesh,Physics)
     END IF
     CALL OpenFile(this,APPEND)
     SELECT CASE(GetType(this))
     CASE(BINARY)
-       CALL WriteDataset_binary(this,Mesh,Physics,Timedisc,coords,ovar)
+       CALL WriteDataset_binary(this,Mesh,Physics,Timedisc)
     CASE(GNUPLOT)
-       CALL WriteDataset_gnuplot(this,Mesh,Physics,Timedisc,coords,ovar)
+       CALL WriteDataset_gnuplot(this,Mesh,Physics,Timedisc)
+#ifdef HAVE_NETCDF
+    CASE(NETCDF)
+       CALL WriteDataset_netcdf(this,Mesh,Physics,Timedisc)
+#endif
     END SELECT
     CALL CloseFile(this)
     ! append the time stamp
@@ -326,6 +396,10 @@ CONTAINS
        CALL ReadDataset_binary(this,Mesh,Physics,Timedisc)
     CASE(GNUPLOT)
        CALL ReadDataset_gnuplot(this,Mesh,Physics,Timedisc)
+#ifdef HAVE_NETCDF
+    CASE(NETCDF)
+       CALL ReadDataset_netcdf(this,Mesh,Physics,Timedisc)
+#endif
     END SELECT
     CALL CloseFile(this)
     ! calculate conservative variables
@@ -345,6 +419,10 @@ CONTAINS
        CALL CloseFileIO_binary(this)
     CASE(GNUPLOT)
        CALL CloseFileIO_gnuplot(this)
+#ifdef HAVE_NETCDF
+    CASE(NETCDF)
+       CALL CloseFileIO_netcdf(this)
+#endif
     END SELECT
   END SUBROUTINE CloseFileIO
     

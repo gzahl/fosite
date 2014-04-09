@@ -71,6 +71,8 @@ MODULE physics_common
      INTEGER                :: XVELOCITY, XMOMENTUM  !    conservative       !
      INTEGER                :: YVELOCITY, YMOMENTUM  !    variables          !
      INTEGER                :: ZVELOCITY, ZMOMENTUM  !                       !
+     CHARACTER(LEN=16), DIMENSION(:), POINTER &
+                            :: pvarname,cvarname     ! names of variables    !
      REAL, DIMENSION(:,:,:), POINTER &
                             :: csound                ! sound speed           !
      REAL, DIMENSION(:,:), POINTER &
@@ -86,6 +88,7 @@ MODULE physics_common
        Physics_TYP, &
        ! methods
        InitPhysics, &
+       ClosePhysics, &
        GetType, &
        GetName, &
        GetRank, &
@@ -104,11 +107,16 @@ CONTAINS
     CHARACTER(LEN=32) :: aname
     INTEGER           :: vnum
     !------------------------------------------------------------------------!
+    INTEGER           :: err
+    !------------------------------------------------------------------------!
     INTENT(IN)        :: atype,aname,vnum
     INTENT(INOUT)     :: this
     !------------------------------------------------------------------------!
     CALL InitCommon(this%advproblem,atype,aname)
     this%vnum=vnum
+    ALLOCATE(this%pvarname(this%vnum),this%cvarname(this%vnum),STAT=err)
+    IF (err.NE.0) CALL Error(this,"InitPhysics", &
+         "unable to allocate memory")
   END SUBROUTINE InitPhysics
 
 
@@ -175,6 +183,17 @@ CONTAINS
        CALL Error_common(this%advproblem,modproc,msg)
     END IF
   END SUBROUTINE PhysicsError
+
+
+  SUBROUTINE ClosePhysics(this)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Physics_TYP) :: this
+    !------------------------------------------------------------------------!
+    INTENT(IN)        :: this
+    !------------------------------------------------------------------------!
+    DEALLOCATE(this%pvarname,this%cvarname)
+  END SUBROUTINE ClosePhysics
 
 
 END MODULE physics_common

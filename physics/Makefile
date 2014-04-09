@@ -19,6 +19,7 @@ clean :
 distclean :
 	rm -f $(OBJECTS) $(TARGET) *.mod *.bak *~
 
+physics_euler2D.o : ../common/physics_common.o
 physics_euler3Drotsym.o : physics_euler2D.o
 physics_euler3Drotamt.o : physics_euler2D.o physics_euler3Drotsym.o
 physics_generic.o : physics_euler2D.o physics_euler3Drotsym.o \

@@ -77,7 +77,7 @@ PROGRAM fosite
      PRINT "(A)", "+---------------------------------------------------------+"
      PRINT "(A)", "|          Solution of 2D advection problems              |"
      PRINT "(A)", "+---------------------------------------------------------+"
-     PRINT *, "Initializing program setup:"
+     PRINT *, "Initializing simulation:"
   END IF
   
   ! setup simulation
@@ -109,7 +109,7 @@ PROGRAM fosite
 
   ! store initial data
   IF (Timedisc%time.EQ.0.0) THEN
-     CALL WriteDataset(Datafile,Mesh,Physics,Timedisc,Mesh%bcenter,Timedisc%pvar)
+     CALL WriteDataset(Datafile,Mesh,Physics,Timedisc)
      IF (myrank.EQ.0) CALL PrintInfo(0,0.0,0.0,Timedisc%n_adj)
   END IF
 
@@ -140,7 +140,7 @@ PROGRAM fosite
 
      ! write output to data file
      IF (ABS(Datafile%time-Timedisc%time).LE.1.0E-5*Datafile%time) THEN
-        CALL WriteDataset(Datafile,Mesh,Physics,Timedisc,Mesh%bcenter,Timedisc%pvar)
+        CALL WriteDataset(Datafile,Mesh,Physics,Timedisc)
         IF (myrank.EQ.0) THEN
            CALL PrintInfo(n,Timedisc%time,Timedisc%dtmin,Timedisc%n_adj)
         END IF
@@ -151,7 +151,7 @@ PROGRAM fosite
 
      ! write output to log file
      IF (wall_time.GE.log_time) THEN
-        CALL WriteDataset(Logfile,Mesh,Physics,Timedisc,Mesh%bcenter,Timedisc%pvar)
+        CALL WriteDataset(Logfile,Mesh,Physics,Timedisc)
         log_time = wall_time + Logfile%dtwall
      END IF
 

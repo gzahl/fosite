@@ -66,18 +66,18 @@ MODULE fileio_gnuplot
        ! methods
        InitFileIO, &
        InitFileIO_gnuplot, &
+       CloseFileIO_gnuplot, &
        WriteHeader_gnuplot, &
        ReadHeader_gnuplot, &
        WriteTimestamp_gnuplot,&
        ReadTimestamp_gnuplot,&
        WriteDataset_gnuplot, &
        ReadDataset_gnuplot, &
-       OpenFile_gnuplot, &
-       CloseFileIO_gnuplot, &
-       AdjustTimestep, &
        OpenFile, &
-       CloseFile, &
+       OpenFile_gnuplot, &
+       CloseFile_gnuplot, &
        RewindFile, &
+       AdjustTimestep, &
        IncTime, &
        GetFilename, &
        GetFilestatus, &
@@ -317,21 +317,6 @@ CONTAINS
   END SUBROUTINE RewindFile
 
 
-  SUBROUTINE CloseFile(this)
-    IMPLICIT NONE
-    !------------------------------------------------------------------------!
-    TYPE(FileIO_TYP) :: this
-    !------------------------------------------------------------------------!
-    INTENT(INOUT)    :: this
-    !------------------------------------------------------------------------!
-#ifdef PARALLEL
-    CALL MPI_File_close(this%handle,this%error)
-#else
-    CLOSE(this%unit,IOSTAT=this%error)
-#endif
-  END SUBROUTINE CloseFile
-
-
   SUBROUTINE OpenFile_gnuplot(this,action)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
@@ -343,6 +328,21 @@ CONTAINS
     !------------------------------------------------------------------------!
     CALL OpenFile(this,action,ASCII)
   END SUBROUTINE OpenFile_gnuplot
+
+
+  SUBROUTINE CloseFile_gnuplot(this)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(FileIO_TYP) :: this
+    !------------------------------------------------------------------------!
+    INTENT(INOUT)    :: this
+    !------------------------------------------------------------------------!
+#ifdef PARALLEL
+    CALL MPI_File_close(this%handle,this%error)
+#else
+    CLOSE(this%unit,IOSTAT=this%error)
+#endif
+  END SUBROUTINE CloseFile_gnuplot
 
 
   SUBROUTINE WriteHeader_gnuplot(this)
@@ -420,15 +420,13 @@ CONTAINS
   END SUBROUTINE ReadTimestamp_gnuplot
 
 
-  SUBROUTINE WriteDataset_gnuplot(this,Mesh,Physics,Timedisc,coords,ovar)
+  SUBROUTINE WriteDataset_gnuplot(this,Mesh,Physics,Timedisc)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(FileIO_TYP)  :: this
     TYPE(Mesh_TYP)    :: Mesh
     TYPE(Physics_TYP) :: Physics
     TYPE(Timedisc_TYP):: Timedisc
-    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,2) :: coords
-    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum) :: ovar
     !------------------------------------------------------------------------!
     INTEGER          :: i,j,k,l
 #ifdef PARALLEL
@@ -436,7 +434,7 @@ CONTAINS
     INTEGER          :: request
 #endif
     !------------------------------------------------------------------------!
-    INTENT(IN)       :: Mesh,Physics,Timedisc,coords,ovar
+    INTENT(IN)       :: Mesh,Physics,Timedisc
     INTENT(INOUT)    :: this
     !------------------------------------------------------------------------!
 #ifdef PARALLEL
@@ -464,26 +462,29 @@ CONTAINS
           l = 0
           IF (Mesh%INUM.GT.1) THEN
              l = l + 1
-             WRITE (this%linebuf((l-1)*FLEN+1:l*FLEN),TRIM(this%fmtstr)) coords(i,j,1), RECSEP
+             WRITE (this%linebuf((l-1)*FLEN+1:l*FLEN),TRIM(this%fmtstr)) &
+                  Mesh%bcenter(i,j,1), RECSEP
           END IF
           IF (Mesh%JNUM.GT.1) THEN
              l = l + 1
-             WRITE (this%linebuf((l-1)*FLEN+1:l*FLEN),TRIM(this%fmtstr)) coords(i,j,2), RECSEP
+             WRITE (this%linebuf((l-1)*FLEN+1:l*FLEN),TRIM(this%fmtstr)) &
+                  Mesh%bcenter(i,j,2), RECSEP
           END IF
 
           ! write variables to line buffer
           DO k=l+1,l+Physics%vnum-1
-             WRITE (this%linebuf((k-1)*FLEN+1:k*FLEN),TRIM(this%fmtstr)) ovar(i,j,k-l), RECSEP
+             WRITE (this%linebuf((k-1)*FLEN+1:k*FLEN),TRIM(this%fmtstr)) &
+                  Timedisc%pvar(i,j,k-l), RECSEP
           END DO
 
           IF ((j.EQ.Mesh%JNUM).AND.((Mesh%JNUM.GT.1).OR.(Mesh%INUM.EQ.i))) THEN
              ! finish the block
              WRITE (this%linebuf((this%cols-1)*FLEN+1:this%cols*FLEN),TRIM(this%fmtstr)) &
-                  ovar(i,j,Physics%vnum), BLKSEP
+                  Timedisc%pvar(i,j,Physics%vnum), BLKSEP
           ELSE
              ! finish the line
              WRITE (this%linebuf((this%cols-1)*FLEN+1:this%cols*FLEN),TRIM(this%fmtstr)) &
-                  ovar(i,j,Physics%vnum), LINSEP
+                  Timedisc%pvar(i,j,Physics%vnum), LINSEP
           END IF
 
 #ifdef PARALLEL
@@ -531,7 +532,7 @@ CONTAINS
     TYPE(FileIO_TYP), INTENT(INOUT) :: this
     CHARACTER(LEN=*),  INTENT(IN) :: modproc,msg
     !------------------------------------------------------------------------!
-    CALL CloseFile(this)
+    CALL CloseFile_gnuplot(this)
     CALL Error_fileio(this,modproc,msg)
   END SUBROUTINE Error_gnuplot
 
@@ -541,7 +542,6 @@ CONTAINS
     !------------------------------------------------------------------------!
     TYPE(FileIO_TYP) :: this
     !------------------------------------------------------------------------!
-    CALL CloseFile(this)
 #ifdef PARALLEL
     DEALLOCATE(this%outbuf)
 #endif

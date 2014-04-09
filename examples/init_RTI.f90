@@ -1,9 +1,10 @@
 !#############################################################################
 !#                                                                           #
 !# fosite - 2D hydrodynamical simulation program                             #
-!# module: init_gauss2d.f90                                                  #
+!# module: init_RTI.f90                                                  #
 !#                                                                           #
-!# Copyright (C) 2006-2008                                                   #
+!# Copyright (C) 2006-2008                                                   # 
+!# Björn Sperling   <sperling@astrophysik.uni-kiel.de>                       #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -22,9 +23,8 @@
 !# Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.                 #
 !#                                                                           #
 !#############################################################################
-
 !----------------------------------------------------------------------------!
-! Program and data initialization for 2D Gaussian pressure pulse
+! Program and data initialization for Rayleight-Taylor instability
 !----------------------------------------------------------------------------!
 MODULE Init
   USE physics_generic
@@ -36,11 +36,10 @@ MODULE Init
   USE sources_generic
   USE timedisc_generic
   IMPLICIT NONE
-#ifdef PARALLEL
-  include 'mpif.h'
-#endif
   !--------------------------------------------------------------------------!
   PRIVATE
+  INTEGER :: testnum
+  REAL    :: g
   !--------------------------------------------------------------------------!
   PUBLIC :: &
        ! methods
@@ -57,25 +56,30 @@ CONTAINS
     TYPE(Physics_TYP) :: Physics
     TYPE(Fluxes_TYP)  :: Fluxes
     TYPE(Timedisc_TYP):: Timedisc
-    TYPE(FileIO_TYP)  :: Datafile
-    TYPE(FileIO_TYP)  :: Logfile
+    TYPE(FILEIO_TYP)  :: Datafile
+    TYPE(FILEIO_TYP)  :: Logfile
     !------------------------------------------------------------------------!
     ! Local variable declaration
-    INTEGER           :: geometry
     !------------------------------------------------------------------------!
     INTENT(OUT)       :: Mesh,Physics,Fluxes,Timedisc,Datafile,Logfile
     !------------------------------------------------------------------------!
 
-    ! set the geometry
-    geometry = CARTESIAN
-!    geometry = POLAR
-!    geometry = LOGPOLAR
+    ! 1. no viscosity old version
+    ! 2. viscosity
+     !air               18.27E-6
+     !nitrogen          17.81E-6
+     !oxygen            20.18E-6
+     !carbon dioxide    14.8E-6
+     !water by 10°C     1.308E−3
+
+    g = 0.2
+    testnum=2
 
     ! physics settings
     CALL InitPhysics(Physics, &
-         problem   = EULER2D, &
-         gamma     = 1.4, &         ! ratio of specific heats        !
-         dpmax     = 1.0)           ! for advanced time step control !
+         problem = EULER2D, &
+         gamma   = 1.4, &           ! ratio of specific heats        !
+         dpmax   = 1.0)             ! for advanced time step control !
 
     ! numerical scheme for flux calculation
     CALL InitFluxes(Fluxes, &
@@ -88,85 +92,56 @@ CONTAINS
          limiter   = MONOCENT, &    ! one of: minmod, monocent,...   !
          theta     = 1.3)           ! optional parameter for limiter !
 
-    SELECT CASE(geometry)
-    CASE(CARTESIAN)
-       ! mesh settings
-       CALL InitMesh(Mesh,Fluxes, &
-            geometry = CARTESIAN, &
-                inum = 100, &       ! resolution in x and            !
-                jnum = 100, &       !   y direction                  !             
-                xmin = -0.5, &
-                xmax = 0.5, &
-                ymin = -0.5, &
-                ymax = 0.5)
-       ! boundary conditions
-    CALL InitBoundary(Timedisc%boundary,Mesh,Physics, &
-         western  = NO_GRADIENTS, &
-         eastern  = NO_GRADIENTS, &
-         southern = NO_GRADIENTS, &
-         northern = NO_GRADIENTS)
-    CASE(POLAR)
-       ! mesh settings
-       CALL InitMesh(Mesh,Fluxes, &
-            geometry = POLAR, &
-                inum = 50, &        ! resolution in x and            !
-                jnum = 30, &        !   y direction                  !             
-                xmin = 0.001, &
-                xmax = 0.5, &
-                ymin = 0.0, &
-                ymax = 2*PI)
-       ! boundary conditions
-       CALL InitBoundary(Timedisc%boundary,Mesh,Physics, &
-         western  = AXIS, &
-         eastern  = NO_GRADIENTS, &
-         southern = PERIODIC, &
-         northern = PERIODIC)
-    CASE(LOGPOLAR)
-       ! mesh settings
-       CALL InitMesh(Mesh,Fluxes, &
-            geometry = LOGPOLAR, &
-                inum = 50, &        ! resolution in x and            !
-                jnum = 120, &       !   y direction                  !             
-                xmin = LOG(0.1), &
-                xmax = LOG(5.0), &
-                ymin = 0.0, &
-                ymax = 2*PI, &
-              gparam = 0.1)
-       ! boundary conditions
-       CALL InitBoundary(Timedisc%boundary,Mesh,Physics, &
-         western  = AXIS, &
-         eastern  = NO_GRADIENTS, &
-         southern = PERIODIC, &
-         northern = PERIODIC)
-    CASE DEFAULT
-       CALL Error(Mesh,"InitProgram","geometry should be either cartesian or (log)polar")
-    END SELECT
+    ! mesh settings
+    CALL InitMesh(Mesh,Fluxes, &
+         geometry = CARTESIAN, &
+             inum = 50, &          ! resolution in x and            !
+             jnum = 200, &          !   y direction                  !             
+             xmin = 0., &
+             xmax = 1.0/6.0, &
+             ymin = 0., &
+             ymax = 1.0)
 
+    ! boundary conditions
+    CALL InitBoundary(Timedisc%boundary,Mesh,Physics, &
+         western  = REFLECTING, &
+         eastern  = REFLECTING, &
+         southern = REFLECTING, &
+         northern = REFLECTING)
+
+    CALL InitSources(Physics%sources,Mesh,Fluxes,Physics, &
+         stype  = C_ACCEL, & 
+         yaccel = -g )      ! yaccel 
+
+    IF (testnum .eq. 2) then
     ! viscosity source term
-!!$    CALL InitSources(Physics%sources,Mesh,Fluxes,Physics, &
-!!$         stype    = VISCOSITY, &
-!!$         vismodel = MOLECULAR, &
-!!$         dynconst = 1.0E-1)
+    CALL InitSources(Physics%sources,Mesh,Fluxes,Physics, &
+         stype    = VISCOSITY, &
+         vismodel = MOLECULAR, &
+         dynconst = 1E-3, &
+         bulkconst = -6.67E-4)
+    ENDIF
 
     ! time discretization settings
     CALL InitTimedisc(Timedisc,Mesh,Physics,&
          method   = MODIFIED_EULER, &
          order    = 3, &
          cfl      = 0.4, &
-         stoptime = 0.3, &
+         stoptime = 10.0, &
          dtlimit  = 1.0E-4, &
-         maxiter  = 1000000)
+         maxiter  = 100000)
 
     ! set initial condition
     CALL InitData(Mesh,Physics,Timedisc%pvar,Timedisc%cvar)
 
-    ! initialize log input/output
+
+  ! initialize log input/output
     CALL InitFileIO(Logfile,Mesh,Physics,Timedisc,&
          fileformat = BINARY, &
 #ifdef PARALLEL
-         filename   = "/tmp/gauss2dlog", &
+         filename   = "/tmp/RTIlog", &
 #else
-         filename   = "gauss2dlog", &
+         filename   = "RTIlog", &
 #endif
          stoptime   = Timedisc%stoptime, &
          dtwall     = 1800,&
@@ -176,12 +151,12 @@ CONTAINS
     CALL InitFileIO(Datafile,Mesh,Physics,Timedisc, &
          fileformat = GNUPLOT, &
 #ifdef PARALLEL
-         filename   = "/tmp/gauss2d", &
+         filename   = "/tmp/RTI", &
 #else
-         filename   = "gauss2d", &
+         filename   = "RTI", &
 #endif
          stoptime   = Timedisc%stoptime, &
-         count      = 10, &
+         count      = 25, &
          filecycles = 0)
   END SUBROUTINE InitProgram
 
@@ -191,49 +166,56 @@ CONTAINS
     !------------------------------------------------------------------------!
     TYPE(Physics_TYP) :: Physics
     TYPE(Mesh_TYP)    :: Mesh
-    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%VNUM)&
+    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum)&
                       :: pvar,cvar
     !------------------------------------------------------------------------!
     ! Local variable declaration
     INTEGER           :: i,j
-    REAL              :: amplitude, hwidth, rho0, P0
-#ifdef PARALLEL
-    REAL              :: hwidth_all
-    INTEGER           :: ierror
-#endif
-    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,2) :: cart
+    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX):: d
+    REAL              :: rho0, rho1, p0, A
+    REAL, DIMENSION(2) :: accel
     !------------------------------------------------------------------------!
-    INTENT(IN)        :: Mesh,Physics
-    INTENT(OUT)       :: pvar,cvar
+    INTENT(IN)        :: Mesh, Physics
+    INTENT(OUT)       :: pvar, cvar
     !------------------------------------------------------------------------!
 
-    CALL Convert2Cartesian(Mesh%geometry,Mesh%bcenter,cart)
-    
-    ! 2D gaussian pressure pulse
-    rho0      = 1.0
-    P0        = 1.0
-    amplitude = 1.0
-    hwidth    = 0.06*MAXVAL(cart(:,:,:))
+    p0 = 1.2
 
-#ifdef PARALLEL
-    CALL MPI_Allreduce(hwidth,hwidth_all,1,DEFAULT_MPI_REAL,MPI_MAX, &
-         Mesh%comm_cart,ierror)
-    hwidth = hwidth_all
-#endif
+    ! upper regions
+    rho0 = 2.0 
 
-    pvar(:,:,Physics%DENSITY)   = rho0
-    pvar(:,:,Physics%XVELOCITY) = 0.
-    pvar(:,:,Physics%YVELOCITY) = 0.
+    ! lower region
+    rho1 = 1.0
 
-    FORALL (i=Mesh%IGMIN:Mesh%IGMAX,j=Mesh%JGMIN:Mesh%JGMAX)
-       pvar(i,j,Physics%PRESSURE) = P0 + amplitude*EXP(-LOG(2.0) * &
-            (cart(i,j,1)**2+cart(i,j,2)**2)/hwidth**2)
-    END FORALL
+    A=0.01
+
+    do j = Mesh%JGMIN, Mesh%JGMAX, 1
+       do i = Mesh%IGMIN, Mesh%IGMAX, 1
+          if (Mesh%bcenter(i,j,2) .LT. Mesh%ymax/2.0) then
+            pvar(i,j,4) = rho1 * g * (Mesh%ymax/2.0 - Mesh%bcenter(i,j,2))&
+                          + rho0 * g * Mesh%ymax/2.0 +p0
+          else
+            pvar(i,j,4) = rho0 * g * (Mesh%ymax - Mesh%bcenter(i,j,2)) + p0
+          end if
+       end do
+    end do
+
+    do  j = Mesh%JGMIN, Mesh%JGMAX, 1
+       do i = Mesh%IGMIN, Mesh%IGMAX, 1
+          if (Mesh%bcenter(i,j,2) .LT. A*cos(2*3.1415*Mesh%bcenter(i,j,1)/Mesh%xmax)+Mesh%ymax/2.0) then
+            pvar(i,j,Physics%DENSITY) = rho1 
+          else
+            pvar(i,j,Physics%DENSITY) = rho0 
+          end if
+       end do
+    end do
+
+    ! velocity vanishes everywhere
+    pvar(:,:,Physics%XVELOCITY:Physics%YVELOCITY) = 0.
 
     CALL Convert2Conservative(Physics,Mesh,pvar,cvar)
     CALL Info(Mesh, " DATA-----> initial condition: " // &
-         "2D gaussian pressure pulse")
+         "Rayleigh–Taylor instability")
 
   END SUBROUTINE InitData
-
 END MODULE Init

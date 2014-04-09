@@ -92,6 +92,11 @@ MODULE fileio_common
      REAL                   :: stoptime            ! end of data output      !
      REAL                   :: time                ! output time             !
      REAL, DIMENSION(:,:,:), POINTER :: binout     ! binary data output buf. !
+#ifdef HAVE_NETCDF
+     INTEGER                :: ncid                ! file id                 !
+     INTEGER                :: ncfmt               ! file format             !
+     INTEGER                :: rank                ! 1D or 2D data           !
+#endif
 #ifdef PARALLEL
      CHARACTER, DIMENSION(:,:), POINTER :: outbuf  ! output buffer           !
      INTEGER                :: bufsize             ! size of output buffer   !

@@ -1,5 +1,5 @@
 # fortran 90/95 compiler
-FC=ifort
+FC=mpif90
 
 # some files
 TARGET=fosite
@@ -18,17 +18,21 @@ ALLOBJS=$(ALLSRCS:.f90=.o)
 AR=ar
 AFLAGS=rcv
 
+# command for preprocessing (should be empty);
+# used for parallel profiling with scalasca (see below)
+PREP=
+
 # compiler dependent variables
-FCFLAGS_ALL= -cpp -r8 $(INCDIRS) 
-FCFLAGS_OPT=-O3 -ip -mcpu=pentium4
-FCFLAGS_DBG=-g -check all
-FCFLAGS_PROF=-p
-FCFLAGS_MPI= -I/astro/home/tillense/lib/mpich2/include -DPARALLEL
-LDFLAGS_ALL=
+FCFLAGS_ALL= -x f95-cpp-input -I/astro/home/tillense/lib/netcdf/include  -DHAVE_HDF5 -DHAVE_NETCDF $(INCDIRS)
+FCFLAGS_OPT= -O3 
+FCFLAGS_DBG= -g -O2
+FCFLAGS_PROF=
+FCFLAGS_MPI= -DPARALLEL
+LDFLAGS_ALL= -L/astro/home/tillense/lib/netcdf/lib -L/astro/home/tillense/lib/hdf//lib -lnetcdf -lhdf5_hl -lz  -lhdf5
 LDFLAGS_OPT=
-LDFLAGS_DBG=-g
-LDFLAGS_PROF=-p
-LDFLAGS_MPI= -L/astro/home/tillense/lib/mpich2/lib -L/astro/home/tillense/lib/pvfs2/lib -lmpich   -lpthread -lrt -lcrypto -lpvfs2
+LDFLAGS_DBG= -g
+LDFLAGS_PROF=
+LDFLAGS_MPI=   -lpthread -lrt
 
 # default compiler flags for target "all"
 FCFLAGS=$(FCFLAGS_ALL) $(FCFLAGS_OPT)
@@ -41,23 +45,26 @@ parallel : FCFLAGS=$(FCFLAGS_ALL) $(FCFLAGS_OPT) $(FCFLAGS_MPI)
 parallel : LDFLAGS=$(LDFLAGS_ALL) $(LDFLAGS_OPT) $(LDFLAGS_MPI)
 prof : FCFLAGS=$(FCFLAGS_ALL) $(FCFLAGS_OPT) $(FCFLAGS_PROF)
 prof : LDFLAGS=$(LDFLAGS_ALL) $(LDFLAGS_OPT) $(LDFLAGS_PROF)
+parprof : FCFLAGS=$(FCFLAGS_ALL) $(FCFLAGS_OPT) $(FCFLAGS_MPI)
+parprof : LDFLAGS=$(LDFLAGS_ALL) $(LDFLAGS_OPT) $(LDFLAGS_MPI)
+parprof : PREP=scalasca -instrument
 
-export FC FCFLAGS LDFLAGS AR AFLAGS
+export FC FCFLAGS LDFLAGS AR AFLAGS PREP
 # variable definitions end here
 
 
 # compile rules
 all : $(TARGET)
 
-debug parallel prof : all
+debug parallel prof parprof : all
 
 %.o : %.f90
-	$(FC) $(FCFLAGS) -c $<
+	$(PREP) $(FC) $(FCFLAGS) -c $<
 
 subdirs : $(SUBDIRS)
 
 $(TARGET) : subdirs $(OBJECTS)
-	$(FC) $(ALLOBJS) -o $(TARGET) $(LDFLAGS)
+	$(PREP) $(FC) $(ALLOBJS) -o $(TARGET) $(LDFLAGS)
 
 $(SUBDIRS) :
 	$(MAKE) -C $@
@@ -84,9 +91,10 @@ distclean :
 	for dir in $(SUBDIRS); do \
 	  $(MAKE) distclean -C $$dir; \
 	done
-	rm -f $(OBJECTS) $(TARGET) *.mod *.bak *.dat *.dx *~
+	rm -f $(OBJECTS) $(TARGET) *.mod *.bak *.dat *.bin *.nc *~
+	rm -rf epik*
 
 .SUFFIXES:
 
-.PHONY: all debug parallel subdirs $(SUBDIRS) clean distclean
+.PHONY: all debug parallel prof parprof subdirs $(SUBDIRS) clean distclean
 
