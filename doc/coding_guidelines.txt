@@ -28,19 +28,19 @@ fail compiling Fosite.
 
 2. Directory structure, module and program files
 
-There are two Fortran source code files (f90-files) in the root directory
-of the code: 'main.f90' and 'init.f90'. The further holds the main program
-of the Fosite code whereas the latter contains all initialization calls
-necessary to set up a simulation. Since each simulation comes with a
-different 'init.f90' file it is recommended to store a copy of this file in
-the 'examples' subdirectory for later use. All examples follow the naming
-scheme 'init_XXXX.f90' where 'XXXX' should be a short unambiguous name.
-Apart from these two files there shouldn't be any other f90-files in the
-root directory.
+There is one Fortran source code file (f90-file) in the root directory
+of the code called 'fosite.f90' which contains the API and provides the
+user with the binary library 'fosite.a' (or the dynamic library 'fosite.so')
+and the module file 'fosite.mod'. It depends on Fortran modules in the
+subdirectories. Since each simulation is an executable program by its own
+the user has to write a Fortran program similar to those given in the
+'examples' subdirectory and link it against the fosite library. So far all
+examples follow the naming scheme 'init_XXXX.f90' where 'XXXX' should be
+a short unambiguous name.
 
 In addition to the 'examples' directory there are several other subdirectories 
-containing a bunch of modules addressed to a MAJOR task of the numerical
-simulation. There are currently 9 subdirectories:
+containing a bunch of modules each of them addressed to a MAJOR task of the
+numerical simulation. There are currently 9 source code subdirectories:
 
 common:   basic data types and initialization methods (see Section 3.)
 numtools: some small numerical tools like root finding, numerical integration

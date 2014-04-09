@@ -40,6 +40,9 @@ MODULE poisson_multigrid
   INTEGER, PARAMETER :: RED_BLACK_GAUSS_SEIDEL = 1
   INTEGER, PARAMETER :: BLOCK_GAUSS_SEIDEL     = 2
   INTEGER, PARAMETER :: GAUSS_SEIDEL           = 3
+!red/black order
+  INTEGER, PARAMETER, DIMENSION(4)  :: rb_i = (/ 1,2,1,2 /)
+  INTEGER, PARAMETER, DIMENSION(4)  :: rb_j = (/ 1,2,2,1 /)  
   !--------------------------------------------------------------------------!
   PUBLIC :: &
        ! types
@@ -80,7 +83,7 @@ MODULE poisson_multigrid
     !------------------------------------------------------------------------!
     TYPE(Selection_TYP) :: iregion
     TYPE(Selection_TYP), ALLOCATABLE :: bnd_region(:)
-    INTEGER           :: err,i,j,k,ni,nj,ni0,nj0,jgrid
+    INTEGER           :: err,i,j,k,ni,nj,jgrid
     CHARACTER(LEN=48)   :: xres_str,yres_str,grid_str,relaxtype_str
     !------------------------------------------------------------------------!
     INTENT(IN)        :: Mesh,Physics,Boundary,solver,maxmult,maxresidnorm,bndrytype,&
@@ -105,11 +108,10 @@ MODULE poisson_multigrid
     !estimate multigrid steps
     this%NGRID=0
     DO 
-       this%NGRID=this%NGRID+1
-       ni0=ni
-       nj0=nj
-       CALL coarsergrid(this%MINRES,ni,nj)
-       IF (ni0 .EQ. ni .AND. nj0 .EQ. nj) EXIT
+      this%NGRID=this%NGRID+1
+      IF (coarsergrid(this%MINRES,ni) .EQ. ni .AND. coarsergrid(this%MINRES,nj) .EQ. nj) EXIT
+      ni = coarsergrid(this%MINRES,ni)
+      nj = coarsergrid(this%MINRES,nj)
     END DO
     ALLOCATE(this%grid(this%NGRID))
 
@@ -122,21 +124,21 @@ MODULE poisson_multigrid
     CASE(GAUSS_SEIDEL)
        WRITE (relaxtype_str, '(A)') "with Gauss-Seidel iteration (slowest)"
     END SELECT
-    WRITE (xres_str, '(I0)') ni0
-    WRITE (yres_str, '(I0)') nj0
+    WRITE (xres_str, '(I0)') ni
+    WRITE (yres_str, '(I0)') nj
     WRITE (grid_str, '(I0)') this%NGRID
     CALL Info(this, " POISSON--> multigrid method   " // TRIM(relaxtype_str))
     CALL Info(this, "            grid levels:       " // TRIM(grid_str) )
     CALL Info(this, "            coarsest grid res. " // TRIM(xres_str) // " x " // TRIM(yres_str))
         
-IF (ni0 .GT. 19 .OR. nj0 .GT. 19) CALL Warning(this, "InitPoisson_multigrid",&
+    IF (ni .GT. 10 .OR. nj .GT. 10) CALL Warning(this, "InitPoisson_multigrid",&
                 "bad multigrid convergence: choose a better resolution e.g. m*2^n+1 with small natural number m")
 
-!  !FIXME convergence test
+!  !FIXME convergence test***************************
 !  ALLOCATE(this%relaxcount(this%ngrid),STAT = err)
 !  IF (err.NE.0) CALL Error(this, "InitPoisson_multigrid", "Unable to allocate memory.")
 !  this%relaxcount(:) = 0
-!  this%safedmultigrid = 0
+!  !*************************************************
 
     ni = Mesh%INUM
     nj = Mesh%JNUM
@@ -158,125 +160,10 @@ IF (ni0 .GT. 19 .OR. nj0 .GT. 19) CALL Warning(this, "InitPoisson_multigrid",&
                 STAT = err)
        IF (err.NE.0) CALL Error(this, "InitPoisson_multigrid", "Unable to allocate memory.")
 
-       this%grid(jgrid)%u(:,:) = 0.0
+       CALL INITGRID(this,Mesh,jgrid,ni,nj)
 
-       this%grid(jgrid)%hi=(Mesh%xmax-Mesh%xmin)/ni
-       this%grid(jgrid)%hj=(Mesh%ymax-Mesh%ymin)/nj
-       this%grid(jgrid)%ni=ni
-       this%grid(jgrid)%nj=nj
-       this%grid(jgrid)%invhi2 = 1.0 / this%grid(jgrid)%hi**2
-       this%grid(jgrid)%invhj2 = 1.0 / this%grid(jgrid)%hj**2
-       IF (jgrid == 1) THEN
-          !only at first grid
-          this%grid(jgrid)%bccart(0:ni+1,0:nj+1,:)=&
-                Mesh%bccart(Mesh%IMIN-1:Mesh%IMAX+1,Mesh%JMIN-1:Mesh%JMAX+1,:)
-          this%grid(jgrid)%bhx(0:ni+1,0:nj+1)=&
-                     Mesh%bhx(Mesh%IMIN-1:Mesh%IMAX+1,Mesh%JMIN-1:Mesh%JMAX+1)
-          this%grid(jgrid)%bhy(0:ni+1,0:nj+1)=&
-                     Mesh%bhy(Mesh%IMIN-1:Mesh%IMAX+1,Mesh%JMIN-1:Mesh%JMAX+1)
-!FIXME: reasonable? or bhz and than direct calculation of a,b,c
-          this%grid(jgrid)%a(0:ni+1,0:nj+1)=&
-                     Mesh%bhy(Mesh%IMIN-1:Mesh%IMAX+1,Mesh%JMIN-1:Mesh%JMAX+1)&
-                    *Mesh%bhz(Mesh%IMIN-1:Mesh%IMAX+1,Mesh%JMIN-1:Mesh%JMAX+1)&
-                    /Mesh%bhx(Mesh%IMIN-1:Mesh%IMAX+1,Mesh%JMIN-1:Mesh%JMAX+1)
-          this%grid(jgrid)%b(0:ni+1,0:nj+1)=&
-                     Mesh%bhx(Mesh%IMIN-1:Mesh%IMAX+1,Mesh%JMIN-1:Mesh%JMAX+1)&
-                    *Mesh%bhz(Mesh%IMIN-1:Mesh%IMAX+1,Mesh%JMIN-1:Mesh%JMAX+1)&
-                    /Mesh%bhy(Mesh%IMIN-1:Mesh%IMAX+1,Mesh%JMIN-1:Mesh%JMAX+1)
-          this%grid(jgrid)%c(0:ni+1,0:nj+1)=&
-                     Mesh%bhx(Mesh%IMIN-1:Mesh%IMAX+1,Mesh%JMIN-1:Mesh%JMAX+1)&
-                    *Mesh%bhy(Mesh%IMIN-1:Mesh%IMAX+1,Mesh%JMIN-1:Mesh%JMAX+1)&
-                    *Mesh%bhz(Mesh%IMIN-1:Mesh%IMAX+1,Mesh%JMIN-1:Mesh%JMAX+1)
-          !important: first restrict step needs vol
-          this%grid(jgrid)%vol(0:ni+1,0:nj+1)= &
-                     Mesh%volume(Mesh%IMIN-1:Mesh%IMAX+1,Mesh%JMIN-1:Mesh%JMAX+1)
-       ELSE
-!********************************************************************************
-!FIXME: What is better? Restriction or copy?
-          !Restriction
-          CALL restrict(this%grid(jgrid-1)%bhx,&
-                        this%grid(jgrid-1)%ni,this%grid(jgrid-1)%nj,ni,nj,&
-                        this%grid(jgrid)%bhx)
-          CALL restrict(this%grid(jgrid-1)%bhy,&
-                        this%grid(jgrid-1)%ni,this%grid(jgrid-1)%nj,ni,nj,&
-                        this%grid(jgrid)%bhy)
-          CALL restrict(this%grid(jgrid-1)%a,&
-                        this%grid(jgrid-1)%ni,this%grid(jgrid-1)%nj,ni,nj,&
-                        this%grid(jgrid)%a)
-          CALL restrict(this%grid(jgrid-1)%b,&
-                        this%grid(jgrid-1)%ni,this%grid(jgrid-1)%nj,ni,nj,&
-                        this%grid(jgrid)%b)
-          CALL restrict(this%grid(jgrid-1)%c,&
-                        this%grid(jgrid-1)%ni,this%grid(jgrid-1)%nj,ni,nj,&
-                        this%grid(jgrid)%c)
-           this%grid(jgrid)%vol(:,:) = this%grid(jgrid)%c(:,:)&
-                           * this%grid(jgrid)%hi *this%grid(jgrid)%hj
-
-
-!          ni0 = this%grid(jgrid-1)%ni
-!          nj0 = this%grid(jgrid-1)%nj
-!          !COPY
-!          this%grid(jgrid)%bhx(0:ni+1,0:nj+1)= this%grid(jgrid-1)%bhx(0:ni0+1:2,0:nj0+1:2)
-!          this%grid(jgrid)%bhy(0:ni+1,0:nj+1)= this%grid(jgrid-1)%bhy(0:ni0+1:2,0:nj0+1:2)
-!          this%grid(jgrid)%a(0:ni+1,0:nj+1)  = this%grid(jgrid-1)%a(0:ni0+1:2,0:nj0+1:2)
-!          this%grid(jgrid)%b(0:ni+1,0:nj+1)  = this%grid(jgrid-1)%b(0:ni0+1:2,0:nj0+1:2)
-!          this%grid(jgrid)%c(0:ni+1,0:nj+1)  = this%grid(jgrid-1)%c(0:ni0+1:2,0:nj0+1:2)
-!          this%grid(jgrid)%vol(:,:)          = this%grid(jgrid-1)%vol(0:ni0+1:2,0:nj0+1:2)
-!********************************************************************************
-
-
-          !boundary volumes of boundary cells
-          this%grid(jgrid)%vol(0,:) = this%grid(jgrid)%c(0,:)&
-                            * this%grid(1)%hi *this%grid(jgrid)%hj
-          this%grid(jgrid)%vol(ni+1,:) = this%grid(jgrid)%c(ni+1,:)&
-                            * this%grid(1)%hi *this%grid(jgrid)%hj
-          this%grid(jgrid)%vol(:,0) = this%grid(jgrid)%c(:,0)&
-                            * this%grid(jgrid)%hi *this%grid(1)%hj
-          this%grid(jgrid)%vol(:,nj+1) = this%grid(jgrid)%c(:,nj+1)&
-                            * this%grid(jgrid)%hi *this%grid(1)%hj
-          !boundary volumes of corner cells
-          this%grid(jgrid)%vol(0,0) = this%grid(jgrid)%c(0,0)&
-                            * this%grid(1)%hi *this%grid(1)%hj
-          this%grid(jgrid)%vol(ni+1,0) = this%grid(jgrid)%c(ni+1,0)&
-                            * this%grid(1)%hi *this%grid(1)%hj
-          this%grid(jgrid)%vol(ni+1,nj+1) = this%grid(jgrid)%c(ni+1,nj+1)&
-                            * this%grid(1)%hi *this%grid(1)%hj
-          this%grid(jgrid)%vol(0,nj+1) = this%grid(jgrid)%c(0,nj+1)&
-                            * this%grid(1)%hi *this%grid(1)%hj
-
-       END IF
-
-       !FIXME*** 
-       this%grid(jgrid)%vol(:,:) = abs(this%grid(jgrid)%vol(:,:))
-       !***
-       this%grid(jgrid)%tmp(:,:) = 0.0
-       this%grid(jgrid)%invc(:,:) = 1.0/this%grid(jgrid)%c(:,:)
-       this%grid(jgrid)%d(:,:) = &
-                     1.0/( this%grid(jgrid)%a(:,:)*this%grid(jgrid)%invhi2 &
-                          +this%grid(jgrid)%b(:,:)*this%grid(jgrid)%invhj2 )
-       this%grid(jgrid)%da(1:ni,1:nj) = &
-                     this%grid(jgrid)%a(2:ni+1,1:nj)-this%grid(jgrid)%a(0:ni-1,1:nj)
-       this%grid(jgrid)%db(1:ni,1:nj) = &
-                     this%grid(jgrid)%b(1:ni,2:nj+1)-this%grid(jgrid)%b(1:ni,0:nj-1)
-
-       IF (this%relaxtype .EQ. BLOCK_GAUSS_SEIDEL) THEN
-         ALLOCATE(this%grid(jgrid)%tri(0:ni+1,0:nj+1,9),&
-                  STAT = err)
-         IF (err.NE.0) CALL Error(this, "InitPoisson_multigrid", "Unable to allocate memory.")
-         !1. - 5. matrix elements (diag,tri diag, elements); 6. rhs; 7.-9. temp variables (hb,hv,m) 
-
-         this%grid(jgrid)%tri(1:ni,1:nj,1) = -2.0*(this%grid(jgrid)%invhi2*this%grid(jgrid)%a(1:ni,1:nj)&
-                                             +this%grid(jgrid)%invhj2*this%grid(jgrid)%b(1:ni,1:nj))
-         this%grid(jgrid)%tri(1:ni,1:nj,2) = this%grid(jgrid)%invhj2*(this%grid(jgrid)%b(1:ni,1:nj)&
-                                             -this%grid(jgrid)%db(1:ni,1:nj)*0.25)
-         this%grid(jgrid)%tri(1:ni,1:nj,3) = this%grid(jgrid)%invhj2*(this%grid(jgrid)%b(1:ni,1:nj)&
-                                             +this%grid(jgrid)%db(1:ni,1:nj)*0.25)     
-         this%grid(jgrid)%tri(1:ni,1:nj,4) = this%grid(jgrid)%invhi2*(this%grid(jgrid)%a(1:ni,1:nj)&
-                                             -this%grid(jgrid)%da(1:ni,1:nj)*0.25)
-         this%grid(jgrid)%tri(1:ni,1:nj,5) = this%grid(jgrid)%invhi2*(this%grid(jgrid)%a(1:ni,1:nj)&
-                                             +this%grid(jgrid)%da(1:ni,1:nj)*0.25)
-       END IF
-       CALL coarsergrid(this%MINRES,ni,nj)
+       ni = coarsergrid(this%MINRES,ni)
+       nj = coarsergrid(this%MINRES,nj)
     END DO
 
     ! boundary conditions for poisson solver
@@ -337,24 +224,126 @@ IF (ni0 .GT. 19 .OR. nj0 .GT. 19) CALL Warning(this, "InitPoisson_multigrid",&
           bnd_region(j)%JMAX = this%grid(1)%nj+1
        END IF
 
-       ! initialize the multipole expansion module
+       !initialize the multipole expansion module
        CALL InitMultipole(this%multipole,bndrytype,this%grid(1)%bccart, &
             2*PI*this%grid(1)%vol,0,this%grid(1)%ni+1, &
             0,this%grid(1)%nj+1,iregion,bnd_region,maxmult)
+
     END IF
   END SUBROUTINE InitPoisson_multigrid
 
-  PURE SUBROUTINE coarsergrid(MINRES,ni,nj)
-    IMPLICIT NONE
+
+  SUBROUTINE InitGrid(this,Mesh,jgrid,ni,nj)
+  IMPLICIT NONE
     !------------------------------------------------------------------------!
-    INTEGER, INTENT(IN)     :: MINRES
-    INTEGER, INTENT(INOUT)  :: ni,nj
+    TYPE(Poisson_TYP)      :: this
+    TYPE(Mesh_TYP)         :: Mesh
+    INTEGER                :: jgrid,ni,nj
     !------------------------------------------------------------------------!
-    !coarsing in every step if ni is odd
-    IF (mod(ni,2) .EQ. 1 .AND. (ni-1)/2 .GE. MINRES) ni=(ni-1)/2
-    !coarsing in every step if nj is odd
-    IF (mod(nj,2) .EQ. 1 .AND. (nj-1)/2 .GE. MINRES) nj=(nj-1)/2
-  END SUBROUTINE coarsergrid
+    TYPE(Grid_TYP),POINTER :: grid,pregrid
+    INTEGER                :: i,j,err,sp_i, sp_j
+    !------------------------------------------------------------------------!
+    INTENT(IN)             :: Mesh,jgrid,ni,nj
+    INTENT(INOUT)          :: this
+    !------------------------------------------------------------------------!
+    grid=>this%grid(jgrid)
+    
+    grid%u(:,:) = 0.0
+    !Length incl. 1st ghost cells
+    grid%hi=(Mesh%xmax-Mesh%xmin+1.0*Mesh%dx)/(ni+1)
+    grid%hj=(Mesh%ymax-Mesh%ymin+1.0*Mesh%dy)/(nj+1)
+
+    grid%ni=ni
+    grid%nj=nj
+    grid%invhi2 = 1.0 / grid%hi**2
+    grid%invhj2 = 1.0 / grid%hj**2
+    IF (jgrid == 1) THEN
+!CDIR NODEP
+          DO i=0,ni+1
+!CDIR NODEP
+            DO j=0,nj+1
+              !only at first grid
+              grid%bccart(i,j,:) = Mesh%bccart(i,j,:)
+              grid%bhx(i,j)      = Mesh%bhx(i,j)
+              grid%bhy(i,j)      = Mesh%bhy(i,j)
+              grid%a(i,j)        = Mesh%bhy(i,j)*Mesh%bhz(i,j)/Mesh%bhx(i,j)
+              grid%b(i,j)        = Mesh%bhx(i,j)*Mesh%bhz(i,j)/Mesh%bhy(i,j)
+              grid%c(i,j)        = Mesh%bhx(i,j)*Mesh%bhy(i,j)*Mesh%bhz(i,j)
+              grid%vol(i,j)      = Mesh%volume(i,j)
+            END DO
+          END DO
+       ELSE
+          pregrid=>this%grid(jgrid-1)
+!           CALL restrict(pregrid%bhx,pregrid%ni,pregrid%nj,ni,nj,grid%bhx)
+!           CALL restrict(pregrid%bhy,pregrid%ni,pregrid%nj,ni,nj,grid%bhy)
+!           CALL restrict(pregrid%a,pregrid%ni,pregrid%nj,ni,nj,grid%a)
+!           CALL restrict(pregrid%b,pregrid%ni,pregrid%nj,ni,nj,grid%b)
+!           CALL restrict(pregrid%c,pregrid%ni,pregrid%nj,ni,nj,grid%c)
+
+          sp_i = (pregrid%ni+1)/(ni+1)
+          sp_j = (pregrid%nj+1)/(nj+1)
+!CDIR NODEP
+          DO i=0,ni+1
+!CDIR NODEP
+            DO j=0,nj+1
+              grid%bccart(i,j,:) = pregrid%bccart(sp_i*i,sp_j*j,:) 
+              grid%bhx(i,j) = pregrid%bhx(sp_i*i,sp_j*j)
+              grid%bhy(i,j) = pregrid%bhy(sp_i*i,sp_j*j)
+              grid%a(i,j) = pregrid%a(sp_i*i,sp_j*j)
+              grid%b(i,j) = pregrid%b(sp_i*i,sp_j*j)
+              grid%c(i,j) = pregrid%c(sp_i*i,sp_j*j)
+            END DO
+          END DO
+
+          grid%vol(:,:) = grid%c(:,:)*grid%hi*grid%hj
+
+          pregrid=>this%grid(1)
+          !boundary volumes of boundary cells
+          grid%vol(0,:)       = grid%c(0,:)    * pregrid%hi * grid%hj
+          grid%vol(ni+1,:)    = grid%c(ni+1,:) * pregrid%hi * grid%hj
+          grid%vol(:,0)       = grid%c(:,0)    * grid%hi * pregrid%hj
+          grid%vol(:,nj+1)    = grid%c(:,nj+1) * grid%hi * pregrid%hj
+          !boundary volumes of corner cells
+          grid%vol(0,0)       = grid%c(0,0)       * pregrid%hi * pregrid%hj
+          grid%vol(ni+1,0)    = grid%c(ni+1,0)    * pregrid%hi * pregrid%hj
+          grid%vol(ni+1,nj+1) = grid%c(ni+1,nj+1) * pregrid%hi * pregrid%hj
+          grid%vol(0,nj+1)    = grid%c(0,nj+1)    * pregrid%hi * pregrid%hj
+
+       END IF
+
+       !FIXME*** 
+       grid%vol(:,:) = abs(grid%vol(:,:))
+       !***
+       grid%tmp(:,:)  = 0.0
+       grid%invc(:,:) = 1.0/  grid%c(:,:)
+       grid%d(:,:)    = 1.0/( grid%a(:,:)*grid%invhi2 +grid%b(:,:)*grid%invhj2 )
+
+       DO i=1,ni
+         DO j=1,nj
+           grid%da(i,j) = grid%a(i+1,j)-grid%a(i-1,j)
+           grid%db(i,j) = grid%b(i,j+1)-grid%b(i,j-1)
+         END DO
+       END DO
+
+       
+       IF (this%RELAXTYPE .EQ. BLOCK_GAUSS_SEIDEL) THEN
+         ALLOCATE(grid%tri(0:ni+1,0:nj+1,9),&
+                  STAT = err)
+         IF (err.NE.0) CALL Error(this, "InitPoisson_multigrid", "Unable to allocate memory.")
+
+         DO i=1,ni
+           DO j=1,nj
+             !1. - 5. matrix elements (diag,tri diag, elements); 6. rhs; 7.-9. temp variables (hb,hv,m) 
+             grid%tri(i,j,1) = -2.0*(grid%invhi2*grid%a(i,j) + grid%invhj2*grid%b(i,j))
+             grid%tri(i,j,2) = grid%invhj2*(grid%b(i,j)-grid%db(i,j)*0.25)
+             grid%tri(i,j,3) = grid%invhj2*(grid%b(i,j)+grid%db(i,j)*0.25)     
+             grid%tri(i,j,4) = grid%invhi2*(grid%a(i,j)-grid%da(i,j)*0.25)
+             grid%tri(i,j,5) = grid%invhi2*(grid%a(i,j)+grid%da(i,j)*0.25)
+           END DO
+         END DO
+       END IF
+
+  END SUBROUTINE InitGrid
 
   SUBROUTINE CalcPotential_multigrid(this,Mesh,Physics,pvar)
     IMPLICIT NONE
@@ -366,6 +355,7 @@ IF (ni0 .GT. 19 .OR. nj0 .GT. 19) CALL Warning(this, "InitPoisson_multigrid",&
                       :: pvar
     !------------------------------------------------------------------------!
     INTEGER           :: i,j,jcycle
+    REAL              :: mass,sumres
     !------------------------------------------------------------------------!
     INTENT(IN)        :: Mesh,Physics,pvar
     INTENT(INOUT)     :: this
@@ -374,39 +364,43 @@ IF (ni0 .GT. 19 .OR. nj0 .GT. 19) CALL Warning(this, "InitPoisson_multigrid",&
     this%grid(1)%rho(0:this%grid(1)%ni+1,0:this%grid(1)%nj+1) =&
          pvar(Mesh%IMIN-1:Mesh%IMAX+1,Mesh%JMIN-1:Mesh%JMAX+1,Physics%DENSITY)
 
-!only Test: ***********
-!multigrid step only if error...
-! IF (MAXVAL(ABS(resid(this,this%grid(1)%u,this%grid(1)%rho,1)) .LE. this%MAXRESIDNORM) THEN
-!    this%safedmultigrid = this%safedmultigrid + 1
-! ELSE
-    IF (Initialized(this%multipole)) &
-         CALL CalculatePotential(this%multipole,Physics, &
+    mass = SUM(this%grid(1)%rho*this%grid(1)%vol)
+
+    IF (Initialized(this%multipole)) THEN
+      CALL CalculatePotential(this%multipole,Physics, &
          this%grid(1)%rho,this%grid(1)%u)
+    ELSE
+       !TODO: only dirichlet boundary => special cond is required 
+       CALL  Error(this,"CalcPotential_multigrid","no multipole")
+    END IF
 
     DO j=1,this%NGRID-1
-       CALL restrict(this%grid(j)%rho,&
-                     this%grid(j)%ni,this%grid(j)%nj,this%grid(j+1)%ni,this%grid(j+1)%nj,&
-                     this%grid(j+1)%rho)
+! *** see below (no need of FMG)
+!        CALL restrict(this%grid(j)%rho,&
+!                      this%grid(j)%ni,this%grid(j)%nj,this%grid(j+1)%ni,this%grid(j+1)%nj,&
+!                      this%grid(j+1)%rho)
+
        !only boundary values are relevant
        CALL restrict(this%grid(j)%u,&
                      this%grid(j)%ni,this%grid(j)%nj,this%grid(j+1)%ni,this%grid(j+1)%nj,&
                      this%grid(j+1)%u)
     END DO
 
-     DO j=this%NGRID,1,-1
-       DO jcycle=1,this%NMAXCYCLE
-          CALL multigridREC(this,j,this%grid(j)%u,this%grid(j)%rho)
-          IF (MAXVAL(ABS(resid(this,this%grid(j)%u,this%grid(j)%rho,j))&
-                         -this%MAXRESIDNORM*ABS(this%grid(j)%u(:,:))) .LE. 0.0  ) EXIT
-          IF (jcycle .EQ. this%NMAXCYCLE) &
-             CALL Error(this,"CalcPotential_multigrid", "no convergence! (max(resid) > MAXRESIDNORM)")
-       END DO
-       IF (j .GT. 1)&
-             CALL prolong(this%grid(j)%u, this%grid(j)%ni,this%grid(j)%nj,&
-                          this%grid(j-1)%ni,this%grid(j-1)%nj,this%grid(j-1)%u)
-      END DO
-! END IF
-!***********************
+    !***
+    ! no FMG implemented reason: old u as start solution is the best approx (better then nested iteration)
+    ! => do not use FMG!
+    j = 1
+    DO jcycle=1,this%NMAXCYCLE
+      CALL multigridREC(this,j,this%grid(j)%u,this%grid(j)%rho)
+      sumres = ABS(SUM(resid(this,this%grid(j)%u,this%grid(j)%rho,j)*this%grid(j)%vol))
+      IF (sumres/mass .LE. this%MAXRESIDNORM) EXIT
+!           IF (MAXVAL(ABS(resid(this,this%grid(j)%u,this%grid(j)%rho,j))) .lt. this%MAXRESIDNORM) EXIT
+    END DO
+!  print *,jcycle, sumres, MAXVAL(ABS(resid(this,this%grid(j)%u,this%grid(j)%rho,j)/this%grid(j)%rho)), &
+!           sumres/mass
+    IF (jcycle .GE. this%NMAXCYCLE) &
+      CALL Error(this,"CalcPotential_multigrid", "no convergence! a greater NMAXCYCLE or MAXRESIDNORM could perhaps help")
+
     !copy u to phi
     this%phi(:,:) = 4.0*PI*Physics%constants%GN*this%grid(1)%u(:,:)
      
@@ -445,8 +439,8 @@ IF (ni0 .GT. 19 .OR. nj0 .GT. 19) CALL Warning(this, "InitPoisson_multigrid",&
                              this%grid(j+1)%ni,this%grid(j+1)%nj,res(:,:))
          v(:,:)=0.0
          CALL multigridREC(this,j+1,v,res)
- this%grid(j)%tmp(:,:)=0.0
-         CALL prolong(v(:,:),this%grid(j+1)%ni,this%grid(j+1)%nj,&
+         this%grid(j)%tmp(:,:)=0.0
+          CALL prolong(v(:,:),this%grid(j+1)%ni,this%grid(j+1)%nj,&
                          this%grid(j)%ni,this%grid(j)%nj,this%grid(j)%tmp(:,:))
          u(:,:) = u(:,:) + this%grid(j)%tmp(:,:)
       END IF
@@ -471,11 +465,11 @@ IF (ni0 .GT. 19 .OR. nj0 .GT. 19) CALL Warning(this, "InitPoisson_multigrid",&
 PURE SUBROUTINE prolong(uc,nic,njc,nif,njf,uf)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    INTEGER,INTENT(IN)                 :: nic,njc,nif,njf
+    INTEGER                            :: nic,njc,nif,njf
     REAL, DIMENSION(0:nic+1,0:njc+1)   :: uc
     REAL, DIMENSION(0:nif+1,0:njf+1)   :: uf
     !------------------------------------------------------------------------!
-    INTENT(IN)                         :: uc
+    INTENT(IN)                         :: uc,nic,njc,nif,njf
     INTENT(INOUT)                      :: uf
     !------------------------------------------------------------------------!
 
@@ -513,8 +507,8 @@ PURE SUBROUTINE restrict(uf,nif,njf,nic,njc,uc)
     REAL, DIMENSION(0:nif+1,0:njf+1)   :: uf
     REAL, DIMENSION(0:nic+1,0:njc+1)   :: uc
     !------------------------------------------------------------------------!
-    INTENT(IN)             :: uf
-    INTENT(INOUT)          :: uc
+    INTENT(IN)                         :: uf
+    INTENT(INOUT)                      :: uc
     !------------------------------------------------------------------------!
     IF (nif .GT. nic .AND. njf .GT. njc) THEN
       !restrict in both directions
@@ -528,23 +522,19 @@ PURE SUBROUTINE restrict(uf,nif,njf,nic,njc,uc)
                                    uf(3:nif:2,1:njf-2:2),&
                                    uf(3:nif:2,3:njf:2),&
                                    uf(1:nif-2:2,3:njf:2))
-
       !ghost cells
 !CDIR NODEP
       uc(0,1:njc)     = restrict1D(uf(0,2:njf-1:2),&
                                    uf(0,1:njf-2:2),&
                                    uf(0,3:njf:2))
-
 !CDIR NODEP
       uc(nic+1,1:njc) =  restrict1D(uf(nif+1,2:njf-1:2),&
                                     uf(nif+1,1:njf-2:2),&
                                     uf(nif+1,3:njf:2))
-
 !CDIR NODEP
       uc(1:nic,0)     =  restrict1D(uf(2:nif-1:2,0),&
                                     uf(1:nif-2:2,0),&
                                     uf(3:nif:2,0))
-
 !CDIR NODEP
       uc(1:nic,njc+1) =  restrict1D(uf(2:nif-1:2,njf+1),&
                                     uf(1:nif-2:2,njf+1),&
@@ -562,7 +552,6 @@ PURE SUBROUTINE restrict(uf,nif,njf,nic,njc,uc)
       uc(1:nic,0:njf+1) = restrict1D(uf(2:nif-1:2,0:njc+1),&
                                      uf(1:nif-2:2,0:njc+1),&
                                      uf(3:nif  :2,0:njc+1))
-
       !copy boundary
       uc(0    ,0:njc+1)     = uf(0,0:njf+1)
       uc(nic+1,0:njc+1)     = uf(nif+1,0:njf+1)
@@ -574,8 +563,6 @@ PURE SUBROUTINE restrict(uf,nif,njf,nic,njc,uc)
       uc(0:nic+1,1:njc) = restrict1D(uf(0:nif+1,2:njf-1:2),&
                                      uf(0:nif+1,1:njf-2:2),&
                                      uf(0:nif+1,3:njf:2))
-
-     
       !copy boundary
       uc(0:nic+1,0)     = uf(0:nif+1,0)
       uc(0:nic+1,njc+1) = uf(0:nif+1,njf+1)
@@ -605,84 +592,42 @@ ELEMENTAL FUNCTION restrict2D(u,uE,uW,uS,uN,uSE,uSW,uNE,uNW) RESULT(restrict)
 PURE SUBROUTINE solverbgs(this,u,rhs,jgrid)
    IMPLICIT NONE
    !------------------------------------------------------------------------!
-   TYPE(Poisson_TYP), INTENT(INOUT) :: this
-   INTEGER, INTENT(IN)              :: jgrid
+   TYPE(Poisson_TYP)                :: this
+   INTEGER                          :: jgrid
    REAL, DIMENSION(0:this%grid(jgrid)%ni+1,0:this%grid(jgrid)%nj+1)&
                                     :: u,rhs
    !------------------------------------------------------------------------!
-   INTEGER                          :: ni,nj,                      i
+   INTEGER                          :: i,j,k
    !------------------------------------------------------------------------!
-   INTENT(INOUT)                    :: u
-   INTENT(IN)                       :: rhs
+   INTENT(INOUT)                    :: this,u
+   INTENT(IN)                       :: rhs,jgrid
    !------------------------------------------------------------------------!
-!test!
+!******TEST*****!
 !  this%relaxcount(jgrid) = this%relaxcount(jgrid)+1
 
    CALL bndryrelax(this,u,jgrid)
 
-   ni = this%grid(jgrid)%ni
-   nj = this%grid(jgrid)%nj
- 
- !red/black relaxation
-    !"black" fields: part 1
+   DO k=1,4
 !CDIR NODEP
-    u(1:ni:2,1:nj:2) = relaxe(u(2:ni+1:2,1:nj  :2),&
-                              u(0:ni-1:2,1:nj  :2),&
-                              u(1:ni  :2,2:nj+1:2),&
-                              u(1:ni  :2,0:nj-1:2),&
-                            rhs(1:ni  :2,1:nj  :2),&
-             this%grid(jgrid)%a(1:ni  :2,1:nj  :2),&
-            this%grid(jgrid)%da(1:ni  :2,1:nj  :2),&
-             this%grid(jgrid)%b(1:ni  :2,1:nj  :2),&
-            this%grid(jgrid)%db(1:ni  :2,1:nj  :2),&
-             this%grid(jgrid)%c(1:ni  :2,1:nj  :2),&
-             this%grid(jgrid)%d(1:ni  :2,1:nj  :2),&
-             this%grid(jgrid)%invhi2,this%grid(jgrid)%invhj2)  
-
-    !"black" fields: part 2
+     DO i=rb_i(k),this%grid(jgrid)%ni,2
 !CDIR NODEP
-    u(2:ni:2,2:nj:2) =     relaxe(u(3:ni+1:2,2:nj:2),&
-                                  u(1:ni-1:2,2:nj:2),&
-                                  u(2:ni  :2,3:nj+1  :2),&
-                                  u(2:ni  :2,1:nj-1:2),&
-                                rhs(2:ni  :2,2:nj  :2),&
-                 this%grid(jgrid)%a(2:ni  :2,2:nj  :2),&
-                this%grid(jgrid)%da(2:ni  :2,2:nj  :2),&
-                 this%grid(jgrid)%b(2:ni  :2,2:nj  :2),&
-                this%grid(jgrid)%db(2:ni  :2,2:nj  :2),&
-                 this%grid(jgrid)%c(2:ni  :2,2:nj  :2),&
-                 this%grid(jgrid)%d(2:ni  :2,2:nj  :2),&
-                 this%grid(jgrid)%invhi2,this%grid(jgrid)%invhj2)  
-
-    !"red" fields: part 1
-!CDIR NODEP
-    u(2:ni:2,1:nj:2) =   relaxe(u(3:ni+1:2,1:nj  :2),&
-                                u(1:ni-1:2,1:nj  :2),&
-                                u(2:ni  :2,2:nj+1:2),&
-                                u(2:ni  :2,0:nj-1:2),&
-                              rhs(2:ni  :2,1:nj  :2),&
-               this%grid(jgrid)%a(2:ni  :2,1:nj  :2),&
-              this%grid(jgrid)%da(2:ni  :2,1:nj  :2),&
-               this%grid(jgrid)%b(2:ni  :2,1:nj  :2),&
-              this%grid(jgrid)%db(2:ni  :2,1:nj  :2),&
-               this%grid(jgrid)%c(2:ni  :2,1:nj  :2),&
-               this%grid(jgrid)%d(2:ni  :2,1:nj  :2),&
-               this%grid(jgrid)%invhi2,this%grid(jgrid)%invhj2)
-
-    !"red" fields: part 2
-!CDIR NODEP
-    u(1:ni:2,2:nj:2) =   relaxe(u(2:ni+1:2,2:nj  :2),&
-                                u(0:ni-1:2,2:nj  :2),&
-                                u(1:ni  :2,3:nj+1:2),&
-                                u(1:ni  :2,1:nj-1:2),&
-                              rhs(1:ni  :2,2:nj  :2),&
-               this%grid(jgrid)%a(1:ni  :2,2:nj  :2),&
-              this%grid(jgrid)%da(1:ni  :2,2:nj  :2),&
-               this%grid(jgrid)%b(1:ni  :2,2:nj  :2),&
-              this%grid(jgrid)%db(1:ni  :2,2:nj  :2),&
-               this%grid(jgrid)%c(1:ni  :2,2:nj  :2),&
-               this%grid(jgrid)%d(1:ni  :2,2:nj  :2),&
-               this%grid(jgrid)%invhi2,this%grid(jgrid)%invhj2) 
+       DO j=rb_j(k),this%grid(jgrid)%nj,2
+         u(i,j) = relaxe(u(i+1,j),&
+                         u(i-1,j),&
+                         u(i,j+1),&
+                         u(i,j-1),&
+                         rhs(i,j),&
+                         this%grid(jgrid)%a(i,j),&
+                         this%grid(jgrid)%da(i,j),&
+                         this%grid(jgrid)%b(i,j),&
+                         this%grid(jgrid)%db(i,j),&
+                         this%grid(jgrid)%c(i,j),&
+                         this%grid(jgrid)%d(i,j),&
+                         this%grid(jgrid)%invhi2,&
+                         this%grid(jgrid)%invhj2)  
+       END DO
+     END DO
+   END DO
    
   END SUBROUTINE solverbgs
 
@@ -690,29 +635,30 @@ PURE SUBROUTINE solverbgs(this,u,rhs,jgrid)
   PURE SUBROUTINE solveazgs(this,u,rhs,jgrid)
    IMPLICIT NONE
    !------------------------------------------------------------------------!
-   TYPE(Poisson_TYP), INTENT(INOUT) :: this
-   INTEGER, INTENT(IN)              :: jgrid
+   TYPE(Poisson_TYP)                :: this
+   INTEGER                          :: jgrid
    REAL, DIMENSION(0:this%grid(jgrid)%ni+1,0:this%grid(jgrid)%nj+1)&
                                     :: u,rhs
    REAL                             :: m
    !------------------------------------------------------------------------!
-   INTEGER                          :: ni,nj,i,j,k
+   INTEGER                          :: ni,nj,i,j,k,q
    !------------------------------------------------------------------------!
-   INTENT(INOUT)                    :: u
-   INTENT(IN)                       :: rhs
+   INTENT(INOUT)                    :: this,u
+   INTENT(IN)                       :: rhs,jgrid
    !------------------------------------------------------------------------!
- !FIXME***
+   !******TEST*****!
 !  this%relaxcount(jgrid) = this%relaxcount(jgrid)+2
- !****
+
 
     CALL bndryrelax(this,u,jgrid)
 
     ni = this%grid(jgrid)%ni
     nj = this%grid(jgrid)%nj
 
-    !odd x-lines 
+    !odd/even x-lines 
+  DO q=1,2
 !CDIR NODEP
-    DO i=1,ni,2
+    DO i=q,ni,2
       this%grid(jgrid)%tri(i,1:nj,6) = this%grid(jgrid)%c(i,1:nj)*rhs(i,1:nj)&
                              -this%grid(jgrid)%tri(i,1:nj,4)*u(i-1,1:nj)&
                              -this%grid(jgrid)%tri(i,1:nj,5)*u(i+1,1:nj)
@@ -723,7 +669,7 @@ PURE SUBROUTINE solverbgs(this,u,rhs,jgrid)
     !The first pass (setting coefficients):
     DO k = 1,nj+1
 !CDIR NODEP
-      DO i=1,ni,2
+      DO i=q,ni,2
         this%grid(jgrid)%tri(i,k,9) = this%grid(jgrid)%tri(i,k,2)/this%grid(jgrid)%tri(i,k-1,7)
         this%grid(jgrid)%tri(i,k,7) = this%grid(jgrid)%tri(i,k,1) - this%grid(jgrid)%tri(i,k,9)*this%grid(jgrid)%tri(i,k-1,3)
         this%grid(jgrid)%tri(i,k,8) = this%grid(jgrid)%tri(i,k,6) - this%grid(jgrid)%tri(i,k,9)*this%grid(jgrid)%tri(i,k-1,8)
@@ -733,42 +679,16 @@ PURE SUBROUTINE solverbgs(this,u,rhs,jgrid)
       !The second pass (back-substition)
     DO k = nj, 1, -1
 !CDIR NODEP
-      DO i=1,ni,2
+      DO i=q,ni,2
         u(i,k) = (this%grid(jgrid)%tri(i,k,8) - this%grid(jgrid)%tri(i,k,3)*u(i,k+1))/this%grid(jgrid)%tri(i,k,7)
       END DO
     END DO
-
-    !even x-lines 
-!CDIR NODEP
-    DO i=2,ni,2
-      this%grid(jgrid)%tri(i,1:nj,6) = this%grid(jgrid)%c(i,1:nj)*rhs(i,1:nj)&
-                             -this%grid(jgrid)%tri(i,1:nj,4)*u(i-1,1:nj)&
-                             -this%grid(jgrid)%tri(i,1:nj,5)*u(i+1,1:nj)
-      this%grid(jgrid)%tri(i,0,7) = 1.0
-      this%grid(jgrid)%tri(i,0,8) = u(i,0)
-    END DO
- 
-      !The first pass (setting coefficients):
-    DO k = 1,nj+1
-!CDIR NODEP
-      DO i=2,ni,2
-        this%grid(jgrid)%tri(i,k,9) = this%grid(jgrid)%tri(i,k,2)/this%grid(jgrid)%tri(i,k-1,7)
-        this%grid(jgrid)%tri(i,k,7) = this%grid(jgrid)%tri(i,k,1) - this%grid(jgrid)%tri(i,k,9)*this%grid(jgrid)%tri(i,k-1,3)
-        this%grid(jgrid)%tri(i,k,8) = this%grid(jgrid)%tri(i,k,6) - this%grid(jgrid)%tri(i,k,9)*this%grid(jgrid)%tri(i,k-1,8)
-      END DO
-    END DO
- 
-      !The second pass (back-substition)
-    DO k = nj, 1, -1
-!CDIR NODEP
-      DO i=2,ni,2
-        u(i,k) = (this%grid(jgrid)%tri(i,k,8) - this%grid(jgrid)%tri(i,k,3)*u(i,k+1))/this%grid(jgrid)%tri(i,k,7)
-      END DO
-    END DO
+  END DO
   
-    !even y-lines 
+    !even/odd y-lines 
+  DO q=2,1,-1
 !CDIR NODEP
-    DO j=2,nj,2
+    DO j=q,nj,2
       this%grid(jgrid)%tri(1:ni,j,6) = this%grid(jgrid)%c(1:ni,j)*rhs(1:ni,j)&
                                    -this%grid(jgrid)%tri(1:ni,j,2)*u(1:ni,j-1)&
                                    -this%grid(jgrid)%tri(1:ni,j,3)*u(1:ni,j+1)
@@ -779,7 +699,7 @@ PURE SUBROUTINE solverbgs(this,u,rhs,jgrid)
       !The first pass (setting coefficients):
     DO k = 1,ni+1
 !CDIR NODEP
-      DO j=2,nj,2
+      DO j=q,nj,2
         this%grid(jgrid)%tri(k,j,9) = this%grid(jgrid)%tri(k,j,4)/this%grid(jgrid)%tri(k-1,j,7)
         this%grid(jgrid)%tri(k,j,7) = this%grid(jgrid)%tri(k,j,1) - this%grid(jgrid)%tri(k,j,9)*this%grid(jgrid)%tri(k-1,j,5)
         this%grid(jgrid)%tri(k,j,8) = this%grid(jgrid)%tri(k,j,6) - this%grid(jgrid)%tri(k,j,9)*this%grid(jgrid)%tri(k-1,j,8)
@@ -789,87 +709,66 @@ PURE SUBROUTINE solverbgs(this,u,rhs,jgrid)
       !The second pass (back-substition)
     DO k = ni, 1, -1
 !CDIR NODEP
-      DO j=2,nj,2
+      DO j=q,nj,2
         u(k,j) = (this%grid(jgrid)%tri(k,j,8) - this%grid(jgrid)%tri(k,j,5)*u(k+1,j))/this%grid(jgrid)%tri(k,j,7)
       END DO
     END DO
+  END DO
 
-    !odd y-lines 
-!CDIR NODEP
-    DO j=1,nj,2
-      this%grid(jgrid)%tri(1:ni,j,6) = this%grid(jgrid)%c(1:ni,j)*rhs(1:ni,j)&
-                                   -this%grid(jgrid)%tri(1:ni,j,2)*u(1:ni,j-1)&
-                                   -this%grid(jgrid)%tri(1:ni,j,3)*u(1:ni,j+1)
-      this%grid(jgrid)%tri(0,j,7) = 1.0
-      this%grid(jgrid)%tri(0,j,8) = u(0,j)
-    END DO
- 
-      !The first pass (setting coefficients):
-    DO k = 1,ni+1
-!CDIR NODEP
-      DO j=1,nj,2
-        this%grid(jgrid)%tri(k,j,9) = this%grid(jgrid)%tri(k,j,4)/this%grid(jgrid)%tri(k-1,j,7)
-        this%grid(jgrid)%tri(k,j,7) = this%grid(jgrid)%tri(k,j,1) - this%grid(jgrid)%tri(k,j,9)*this%grid(jgrid)%tri(k-1,j,5)
-        this%grid(jgrid)%tri(k,j,8) = this%grid(jgrid)%tri(k,j,6) - this%grid(jgrid)%tri(k,j,9)*this%grid(jgrid)%tri(k-1,j,8)
-      END DO
-    END DO
- 
-      !The second pass (back-substition)
-    DO k = ni, 1, -1
-!CDIR NODEP
-      DO j=1,nj,2
-        u(k,j) = (this%grid(jgrid)%tri(k,j,8) - this%grid(jgrid)%tri(k,j,5)*u(k+1,j))/this%grid(jgrid)%tri(k,j,7)
-      END DO
-    END DO
   END SUBROUTINE solveazgs
 
   ! Gauss-Seidel relaxation
   PURE SUBROUTINE solvegs(this,u,rhs,jgrid)
    IMPLICIT NONE
    !------------------------------------------------------------------------!
-   TYPE(Poisson_TYP), INTENT(INOUT) :: this
-   INTEGER, INTENT(IN)              :: jgrid
+   TYPE(Poisson_TYP)                :: this
+   INTEGER                          :: jgrid
    REAL, DIMENSION(0:this%grid(jgrid)%ni+1,0:this%grid(jgrid)%nj+1)&
                                     :: u,rhs
    !------------------------------------------------------------------------!
-   INTEGER                          :: ni,nj,                      i
+   INTEGER                          :: i,j
    !------------------------------------------------------------------------!
-   INTENT(INOUT)                    :: u
-   INTENT(IN)                       :: rhs
+   INTENT(INOUT)                    :: this,u
+   INTENT(IN)                       :: rhs,jgrid
    !------------------------------------------------------------------------!
-!test!
+!******TEST*****!
 !  this%relaxcount(jgrid) = this%relaxcount(jgrid)+1
 
+
    CALL bndryrelax(this,u,jgrid)
-
-   ni = this%grid(jgrid)%ni
-   nj = this%grid(jgrid)%nj
-
-     u(1:ni,1:nj) =    relaxe(u(2:ni+1,1:nj),&
-                              u(0:ni-1,1:nj),&
-                              u(1:ni,2:nj+1),&
-                              u(1:ni,0:nj-1),&
-                            rhs(1:ni,1:nj),&
-             this%grid(jgrid)%a(1:ni,1:nj),&
-            this%grid(jgrid)%da(1:ni,1:nj),&
-             this%grid(jgrid)%b(1:ni,1:nj),&
-            this%grid(jgrid)%db(1:ni,1:nj),&
-             this%grid(jgrid)%c(1:ni,1:nj),&
-             this%grid(jgrid)%d(1:ni,1:nj),&
-             this%grid(jgrid)%invhi2,this%grid(jgrid)%invhj2)  
+!CDIR NODEP
+   DO i=1,this%grid(jgrid)%ni
+!CDIR NODEP
+     DO j=1,this%grid(jgrid)%nj
+        u(i,j) =  relaxe(u(i+1,j),&
+                        u(i-1,j),&
+                        u(i,j+1),&
+                        u(i,j-1),&
+                        rhs(i,j),&
+                        this%grid(jgrid)%a(i,j),&
+                        this%grid(jgrid)%da(i,j),&
+                        this%grid(jgrid)%b(i,j),&
+                        this%grid(jgrid)%db(i,j),&
+                        this%grid(jgrid)%c(i,j),&
+                        this%grid(jgrid)%d(i,j),&
+                        this%grid(jgrid)%invhi2,&
+                        this%grid(jgrid)%invhj2)  
+     END DO
+   END DO
   END SUBROUTINE solvegs
 
   PURE SUBROUTINE bndryrelax(this,u,jgrid)
    IMPLICIT NONE
    !------------------------------------------------------------------------!
-   TYPE(Poisson_TYP), INTENT(INOUT) :: this
-   INTEGER, INTENT(IN)              :: jgrid
+   TYPE(Poisson_TYP)                :: this
+   INTEGER                          :: jgrid
    REAL, DIMENSION(0:this%grid(jgrid)%ni+1,0:this%grid(jgrid)%nj+1)&
                                     :: u
    !------------------------------------------------------------------------!
    INTEGER                          :: ni,nj
    !------------------------------------------------------------------------!
-   INTENT(INOUT)                    :: u
+   INTENT(IN)                       :: jgrid
+   INTENT(INOUT)                    :: this,u
    !------------------------------------------------------------------------!
    ni = this%grid(jgrid)%ni
    nj = this%grid(jgrid)%nj
@@ -931,38 +830,80 @@ PURE SUBROUTINE solverbgs(this,u,rhs,jgrid)
   PURE FUNCTION resid(this,u,rhs,jgrid)
    IMPLICIT NONE
    !------------------------------------------------------------------------!
-   TYPE(Poisson_TYP), INTENT(IN)    :: this
-   INTEGER, INTENT(IN)              :: jgrid
-   REAL, DIMENSION(0:this%grid(jgrid)%ni+1,0:this%grid(jgrid)%nj+1), INTENT(IN) &
-                                    :: u,rhs
+   TYPE(Poisson_TYP)             :: this
+   INTEGER                       :: jgrid
+   REAL, DIMENSION(0:this%grid(jgrid)%ni+1,0:this%grid(jgrid)%nj+1) &
+                                 :: u,rhs
    !------------------------------------------------------------------------!
-   INTEGER                         :: ni,nj
+   INTEGER                       :: i,j,ni,nj
+   REAL                          :: du_i,ddu_i,du_j,ddu_j
    REAL, DIMENSION(0:this%grid(jgrid)%ni+1,0:this%grid(jgrid)%nj+1) :: resid
+   !------------------------------------------------------------------------!
+   INTENT(IN)                    :: this,jgrid,u,rhs
    !------------------------------------------------------------------------!
    ni = this%grid(jgrid)%ni
    nj = this%grid(jgrid)%nj
    !rhs - Delta u
-   resid(1:ni,1:nj) = rhs(1:ni,1:nj)-&
-                     this%grid(jgrid)%invc(1:ni,1:nj)*&
-                      (    this%grid(jgrid)%invhi2*( &
-                         + 0.25*this%grid(jgrid)%da(1:ni,1:nj) *&
-                          (u(2:ni+1,1:nj)-u(0:ni-1,1:nj))&
-                         + this%grid(jgrid)%a(1:ni,1:nj)*&
-                           (u(2:ni+1,1:nj)+u(0:ni-1,1:nj)-2.0*u(1:ni,1:nj)))&
-                         + this%grid(jgrid)%invhj2*( &
-                         + 0.25*this%grid(jgrid)%db(1:ni,1:nj) *&
-                           (u(1:ni,2:nj+1)-u(1:ni,0:nj-1))&
-                         + this%grid(jgrid)%b(1:ni,1:nj)*&
-                           (u(1:ni,2:nj+1)+u(1:ni,0:nj-1)-2.0*u(1:ni,1:nj))))
-                         
+!CDIR NODEP
+   DO j=1,nj
+!CDIR NODEP
+     DO i=1,ni
+        du_i  = delta(u(i+1,j),u(i-1,j))
+        ddu_i = ddelta(u(i+1,j),u(i,j),u(i-1,j))
+        du_j  = delta(u(i,j+1),u(i,j-1))
+        ddu_j = ddelta(u(i,j+1),u(i,j),u(i,j-1))
 
+        resid(i,j) = rhs(i,j)-&
+                     this%grid(jgrid)%invc(i,j)*&
+                      (    this%grid(jgrid)%invhi2*( &
+                         + 0.25*this%grid(jgrid)%da(i,j) * du_i &
+                         + this%grid(jgrid)%a(i,j) * ddu_i)&
+                         + this%grid(jgrid)%invhj2*( &
+                         + 0.25*this%grid(jgrid)%db(i,j) * du_j &
+                         + this%grid(jgrid)%b(i,j) * ddu_j) )
+     END DO
+   END DO
+ 
    resid(0     ,0:nj+1)=0.0
    resid(  ni+1,0:nj+1)=0.0
    resid(0:ni+1,0     )=0.0
    resid(0:ni+1,  nj+1)=0.0
 END FUNCTION resid
 
+  ELEMENTAL FUNCTION delta(u1,u2) RESULT(du)
+  IMPLICIT NONE
+  !------------------------------------------------------------------------!
+   REAL, INTENT(IN)           :: u1,u2
+  !------------------------------------------------------------------------!
+   REAL                       :: du
+  !------------------------------------------------------------------------!
+    du = u1-u2
+  END FUNCTION delta
 
+  ELEMENTAL FUNCTION ddelta(u1,u2,u3) RESULT(du)
+  IMPLICIT NONE
+  !------------------------------------------------------------------------!
+   REAL, INTENT(IN)           :: u1,u2,u3
+  !------------------------------------------------------------------------!
+   REAL                       :: du
+  !------------------------------------------------------------------------!
+    du = u1+u3-2.0*u2
+  END FUNCTION ddelta
+
+  PURE FUNCTION coarsergrid(nmin,nold) RESULT(nnew)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    INTEGER, INTENT(IN)     :: nmin
+    INTEGER, INTENT(IN)     :: nold
+    INTEGER                 :: nnew
+    !------------------------------------------------------------------------!
+    !coarsing in every step if nold is odd
+    IF (mod(nold,2) .EQ. 1 .AND. (nold-1)/2 .GE. nmin) THEN
+       nnew=(nold-1)/2
+    ELSE 
+       nnew = nold
+    END IF
+  END FUNCTION coarsergrid
 
 SUBROUTINE ClosePoisson_multigrid(this)
    IMPLICIT NONE
@@ -973,7 +914,7 @@ SUBROUTINE ClosePoisson_multigrid(this)
    !------------------------------------------------------------------------!
    INTENT(INOUT)     :: this
    !------------------------------------------------------------------------!
-!********TEST***************
+!   !********TEST***************
 !   DO j=this%ngrid,1,-1
 !     print *, j, "Relax steps", this%relaxcount(j), "numerical effort", &
 !              this%relaxcount(j)*(this%grid(j)%ni+2)*(this%grid(j)%nj+2)
@@ -981,9 +922,8 @@ SUBROUTINE ClosePoisson_multigrid(this)
 !   print *, "entire numerical effort    ", SUM(this%relaxcount(:)*(this%grid(:)%ni+2)*(this%grid(:)%nj+2))
 !   print *, "effort per cell",  SUM(this%relaxcount(:)*this%grid(:)%ni*this%grid(:)%nj)&
 !                                /(this%grid(1)%ni*this%grid(1)%nj)
-!   print *, "safed multigrid steps " , this%safedmultigrid
-               
-!******END TEST**************
+!                 
+!   !******END TEST**************
 
    IF (Initialized(this%multipole)) CALL CloseMultipole(this%multipole)
 !CDIR NODEP

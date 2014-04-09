@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: init_vortex2d.f90                                                 #
 !#                                                                           #
-!# Copyright (C) 2006-2010                                                   #
+!# Copyright (C) 2006-2012                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -30,7 +30,8 @@
 !     using characteristic-based filters, J. Comput. Phys. 150 (1999), 199-238
 !     DOI: 10.1006/jcph.1998.6177
 !----------------------------------------------------------------------------!
-MODULE Init
+PROGRAM Init
+  USE fosite
   USE physics_generic
   USE fluxes_generic
   USE mesh_generic
@@ -41,7 +42,6 @@ MODULE Init
   USE sources_generic
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
-  PRIVATE
   ! simulation parameters
   REAL, PARAMETER    :: TSIM    = 100.0    ! simulation stop time
   REAL, PARAMETER    :: GAMMA   = 1.4      ! ratio of specific heats
@@ -71,11 +71,20 @@ MODULE Init
   CHARACTER(LEN=256), PARAMETER &          ! output data file name
                      :: OFNAME = 'vortex2d' 
   !--------------------------------------------------------------------------!
-  PUBLIC :: &
-       ! methods
-       InitProgram
+  TYPE(fosite_TYP)   :: Sim
   !--------------------------------------------------------------------------!
 
+CALL InitFosite(Sim)
+
+CALL InitProgram(Sim%Mesh, Sim%Physics, Sim%Fluxes, Sim%Timedisc, &
+                 Sim%Datafile, Sim%Logfile)
+
+! set initial condition
+CALL InitData(Sim%Mesh, Sim%Physics, Sim%Timedisc)
+
+CALL RunFosite(Sim)
+
+CALL CloseFosite(Sim)
 
 CONTAINS
 
@@ -95,23 +104,6 @@ CONTAINS
     !------------------------------------------------------------------------!
     INTENT(OUT)       :: Mesh,Physics,Fluxes,Timedisc,Datafile,Logfile
     !------------------------------------------------------------------------!
-    ! physics settings
-    CALL InitPhysics(Physics, &
-         problem = EULER2D, &
-         gamma   = GAMMA, &                 ! ratio of specific heats        !
-         dpmax   = 1.0)                     ! for advanced time step control !
-
-    ! numerical scheme for flux calculation
-    CALL InitFluxes(Fluxes, &
-         scheme = MIDPOINT)                 ! quadrature rule                !
-
-    ! reconstruction method
-    CALL InitReconstruction(Fluxes%reconstruction, &
-         order     = LINEAR, &
-         variables = CONSERVATIVE, &        ! vars. to use for reconstruction!
-         limiter   = MONOCENT, &            ! one of: minmod, monocent,...   !
-         theta     = 1.2)                   ! optional parameter for limiter !
-
     ! mesh settings and boundary conditions
     SELECT CASE(MGEO)
     CASE(CARTESIAN)
@@ -165,7 +157,8 @@ CONTAINS
        CALL Error(Physics,"InitProgram","mesh geometry not supported for 2D isentropic vortex")
     END SELECT
 
-    CALL InitMesh(Mesh,Fluxes, &
+    CALL InitMesh(Mesh,&
+         meshtype = MIDPOINT, &
          geometry = MGEO, &
              inum = XRES, &
              jnum = YRES, &
@@ -174,6 +167,20 @@ CONTAINS
              ymin = y1, &
              ymax = y2, &
            gparam = GPAR)
+
+    ! physics settings
+    CALL InitPhysics(Physics,Mesh, &
+         problem = EULER2D, &
+         gamma   = GAMMA, &                 ! ratio of specific heats        !
+         dpmax   = 1.0)                     ! for advanced time step control !
+
+    ! flux calculation and reconstruction method
+    CALL InitFluxes(Fluxes,Mesh,Physics, &
+         order     = LINEAR, &
+!!$         variables = CONSERVATIVE, &        ! vars. to use for reconstruction!
+         variables = PRIMITIVE, &   ! vars. to use for reconstruction!
+         limiter   = MONOCENT, &    ! one of: minmod, monocent,...   !
+         theta     = 1.2)           ! optional parameter for limiter !
 
     CALL InitBoundary(Timedisc%boundary,Mesh,Physics, &
          western  = bc(WEST), &
@@ -189,9 +196,6 @@ CONTAINS
          stoptime = TSIM, &
          dtlimit  = 1.0E-4, &
          maxiter  = 1000000)
-
-    ! set initial condition
-    CALL InitData(Mesh,Physics,Timedisc)
 
     ! initialize log input/output
 !!$    CALL InitFileIO(Logfile,Mesh,Physics,Timedisc,&
@@ -239,8 +243,8 @@ CONTAINS
           ! density
           ! ATTENTION: there's a factor of 1/PI missing in the density
           ! formula  eq. (3.3) in [1]
-          Timedisc%pvar(i,j,Physics%DENSITY) = RHOINF * (1.0 - (GAMMA-1.0)*VSTR**2 / &
-               (8*PI**2*GAMMA) * EXP(1.-r2) )**(1./(GAMMA-1.))
+          Timedisc%pvar(i,j,Physics%DENSITY) = RHOINF * (1.0 - &
+               (GAMMA-1.0)*VSTR**2/(8*PI**2*GAMMA) * EXP(1.-r2) )**(1./(GAMMA-1.))
           ! pressure
           Timedisc%pvar(i,j,Physics%PRESSURE) = PINF &
                * (Timedisc%pvar(i,j,Physics%DENSITY)/RHOINF)**GAMMA
@@ -256,4 +260,4 @@ CONTAINS
 
   END SUBROUTINE InitData
 
-END MODULE Init
+END PROGRAM Init

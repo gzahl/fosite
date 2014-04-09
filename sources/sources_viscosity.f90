@@ -126,12 +126,6 @@ CONTAINS
          this%btxy(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX), &
          this%btxz(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX), &
          this%btyz(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX), &
-         this%ftxx(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,4), &
-         this%ftyy(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,4), &
-         this%ftzz(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,4), &
-         this%ftxy(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,4), &
-         this%ftxz(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,4), &
-         this%ftyz(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,4), &
          STAT=err)
     IF (err.NE.0) &
          CALL Error(this,"InitSources_viscosity","Memory allocation failed.")
@@ -192,12 +186,6 @@ CONTAINS
     this%btxy(:,:) = 0.0
     this%btxz(:,:) = 0.0
     this%btyz(:,:) = 0.0
-    this%ftxx(:,:,:) = 0.0
-    this%ftyy(:,:,:) = 0.0
-    this%ftzz(:,:,:) = 0.0
-    this%ftxy(:,:,:) = 0.0
-    this%ftxz(:,:,:) = 0.0
-    this%ftyz(:,:,:) = 0.0
   END SUBROUTINE InitSources_viscosity
 
 
@@ -236,7 +224,7 @@ CONTAINS
                       :: pvar,cvar
     !------------------------------------------------------------------------!
     INTEGER           :: i,j,kp,kv
-    REAL              :: P,Omega,cs2,sqrtgamma,cs,height,csmin
+    REAL              :: P,Omega,cs2
     !------------------------------------------------------------------------!
     INTENT(IN)        :: Mesh,Physics,time,pvar,cvar
     INTENT(INOUT)     :: this
@@ -308,6 +296,17 @@ CONTAINS
              END DO
           END DO
        END SELECT
+       ! set viscosity in ghost cells to the viscosity
+       ! in adjacent cells inside the computational domain
+       IF (GetType(this%viscosity).NE.MOLECULAR) THEN
+          DO i=1,Mesh%GNUM
+             this%dynvis(Mesh%IMIN-i,:) = this%dynvis(Mesh%IMIN,:)
+             this%dynvis(Mesh%IMAX+i,:) = this%dynvis(Mesh%IMAX,:)
+             this%dynvis(:,Mesh%JMIN-i) = this%dynvis(:,Mesh%JMIN)
+             this%dynvis(:,Mesh%JMAX+i) = this%dynvis(:,Mesh%JMAX)
+          END DO
+       END IF
+       ! update time
        this%time = time
     END IF
 
@@ -351,23 +350,22 @@ CONTAINS
   PURE SUBROUTINE ExternalSources_viscosity(this,Mesh,Physics,time,pvar,cvar,sterm)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    TYPE(Sources_TYP) :: this
+    TYPE(Sources_TYP),POINTER :: this
     TYPE(Mesh_TYP)    :: Mesh
     TYPE(Physics_TYP) :: Physics
     REAL              :: time
     REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum) &
                       :: cvar,pvar,sterm
     !------------------------------------------------------------------------!
-    INTENT(IN)        :: Mesh,Physics,time,cvar,pvar
-    INTENT(INOUT)     :: this
+    INTENT(IN)        :: Mesh,time,cvar,pvar
+    INTENT(INOUT)     :: Physics
     INTENT(OUT)       :: sterm
     !------------------------------------------------------------------------!
     CALL UpdateViscosity(this,Mesh,Physics,time,pvar,cvar)
     CALL CalculateStresses(Physics,Mesh,pvar,this%dynvis,this%bulkvis, &
-            this%btxx,this%btxy,this%btxz,this%btyy,this%btyz,this%btzz)
+             this%btxx,this%btxy,this%btxz,this%btyy,this%btyz,this%btzz)
     CALL ViscositySources(Physics,Mesh,pvar,this%btxx,this%btxy,this%btxz, &
-         this%btyy,this%btyz,this%btzz,this%ftxx,this%ftxy,this%ftxz,this%ftyy, &
-         this%ftyz,this%ftzz,sterm)
+             this%btyy,this%btyz,this%btzz,sterm)
   END SUBROUTINE ExternalSources_viscosity
 
   
@@ -427,9 +425,8 @@ CONTAINS
     !------------------------------------------------------------------------!
     INTENT(INOUT)     :: this
     !------------------------------------------------------------------------!
-    DEALLOCATE(this%dynvis,this%kinvis,this%bulkvis, &
-               this%btxx,this%btyy,this%btzz,this%btxy,this%btxz,this%btyz,&
-               this%ftxx,this%ftyy,this%ftzz,this%ftxy,this%ftxz,this%ftyz)
+    DEALLOCATE(this%dynvis,this%kinvis,this%bulkvis &
+               ,this%btxx,this%btyy,this%btzz,this%btxy,this%btxz,this%btyz)
     CALL CloseSources(this)
   END SUBROUTINE CloseSources_viscosity
  

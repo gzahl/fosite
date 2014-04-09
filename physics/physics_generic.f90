@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: physics_generic.f90                                               #
 !#                                                                           #
-!# Copyright (C) 2007 - 2010                                                 #
+!# Copyright (C) 2007 - 2012                                                 #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !# Björn Sperling   <sperling@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
@@ -72,7 +72,6 @@ MODULE physics_generic
        SI, CGS, GEOMETRICAL, &
        ! methods
        InitPhysics, &
-       MallocPhysics, &
        CheckData, &
        CalculateWaveSpeeds, &
        MaxWaveSpeeds, &
@@ -100,17 +99,24 @@ MODULE physics_generic
 
 CONTAINS
 
-  SUBROUTINE InitPhysics(this,problem,units,gamma,mu,cs,rhomin,pmin,dpmax)
+  SUBROUTINE InitPhysics(this,Mesh,problem,units,gamma,mu,cs,rhomin,pmin,dpmax)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Physics_TYP) :: this
+    TYPE(Mesh_TYP)    :: Mesh
     INTEGER           :: problem
     INTEGER, OPTIONAL :: units
     REAL, OPTIONAL    :: gamma,mu,cs,rhomin,pmin,dpmax
     !------------------------------------------------------------------------!
-    INTENT(IN)        :: problem,units,gamma,mu,rhomin,pmin,dpmax
+    INTEGER           :: err
+    !------------------------------------------------------------------------!
+    INTENT(IN)        :: Mesh,problem,units,gamma,mu,rhomin,pmin,dpmax
     INTENT(INOUT)     :: this
     !------------------------------------------------------------------------!
+    ! check initialization of Mesh
+    IF (.NOT.Initialized(Mesh)) &
+         CALL Error(this,"InitPhysics","mesh module uninitialized")
+
     ! units
     IF (.NOT.Initialized(this%constants)) THEN
        IF (PRESENT(units)) THEN
@@ -162,41 +168,7 @@ CONTAINS
        this%dpmax = 1.0
     END IF
 
-    SELECT CASE(problem)
-    CASE(EULER2D)
-       CALL InitPhysics_euler2D(this,problem)
-    CASE(EULER2D_ISOTHERM)
-       CALL InitPhysics_euler2Dit(this,problem)
-    CASE(EULER3D_ROTSYM)
-       CALL InitPhysics_euler3Drs(this,problem)
-    CASE(EULER3D_ROTAMT)
-       CALL InitPhysics_euler3Dra(this,problem)
-    CASE DEFAULT
-       CALL Error(this, "InitPhysics", "Unknown advection problem.")
-    END SELECT
-
-    NULLIFY(this%sources)
-
-    ! print some information
-    CALL Info(this, " PHYSICS--> advection problem: " // TRIM(GetName(this)))
-  END SUBROUTINE InitPhysics
-
-
-  SUBROUTINE MallocPhysics(this,Mesh)
-    IMPLICIT NONE
-    !------------------------------------------------------------------------!
-    TYPE(Physics_TYP) :: this
-    TYPE(Mesh_TYP)    :: Mesh
-    !------------------------------------------------------------------------!
-    INTEGER           :: err
-    !------------------------------------------------------------------------!
-    INTENT(IN)        :: Mesh
-    INTENT(INOUT)     :: this
-    !------------------------------------------------------------------------!
-    IF (.NOT.Initialized(this).OR..NOT.Initialized(Mesh)) &
-         CALL Error(this,"MallocPhysics","physics and/or mesh module uninitialized")
-
-    ! allocate memory for arrays common to all physics
+     ! allocate memory for arrays common to all physics modules
     ALLOCATE(this%amin(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX), &
          this%amax(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX), &
          this%bmin(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX), &
@@ -205,20 +177,27 @@ CONTAINS
          this%tmax(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,4), &
          STAT = err)
     IF (err.NE.0) &
-         CALL Error(this, "MallocPhysics", "Unable to allocate memory.")
+         CALL Error(this, "InitPhysics", "Unable to allocate memory.")
 
-    ! call specific allocation procedures
-    SELECT CASE(GetType(this))
+   SELECT CASE(problem)
     CASE(EULER2D)
-       CALL MallocPhysics_euler2D(this,Mesh)
+       CALL InitPhysics_euler2D(this,Mesh,problem)
     CASE(EULER2D_ISOTHERM)
-       ! do nothing
+       CALL InitPhysics_euler2Dit(this,Mesh,problem)
     CASE(EULER3D_ROTSYM)
-       CALL MallocPhysics_euler3Drs(this,Mesh)
+       CALL InitPhysics_euler3Drs(this,Mesh,problem)
     CASE(EULER3D_ROTAMT)
-       CALL MallocPhysics_euler3Dra(this,Mesh)
+       CALL InitPhysics_euler3Dra(this,Mesh,problem)
+    CASE DEFAULT
+       CALL Error(this, "InitPhysics", "Unknown advection problem.")
     END SELECT
-  END SUBROUTINE MallocPhysics
+
+    NULLIFY(this%sources)
+
+    ! print some information
+    CALL Info(this, " PHYSICS--> advection problem: " // TRIM(GetName(this)))
+
+  END SUBROUTINE InitPhysics
 
 
   PURE SUBROUTINE AxisMasks(this,reflX,reflY)
@@ -230,6 +209,7 @@ CONTAINS
     INTENT(IN)        :: this
     INTENT(OUT)       :: reflX,reflY
     !------------------------------------------------------------------------!
+!CDIR IEXPAND
     SELECT CASE(GetType(this))
     CASE(EULER2D)
        CALL AxisMasks_euler2D(this,reflX,reflY)
@@ -263,6 +243,7 @@ CONTAINS
        meshrange_def = (/Mesh%IGMIN, Mesh%IGMAX, Mesh%JGMIN, Mesh%JGMAX/)
     END IF
 
+!CDIR IEXPAND
     SELECT CASE(GetType(this))
     CASE(EULER2D)
        bad_data = CheckData_euler2D(this,Mesh,pvar,pold,meshrange_def)
@@ -287,6 +268,7 @@ CONTAINS
     INTENT(IN)        :: Mesh,prim
     INTENT(INOUT)     :: this
     !------------------------------------------------------------------------!
+!CDIR IEXPAND
     SELECT CASE(GetType(this))
     CASE(EULER2D)
        CALL CalculateWaveSpeeds_euler2D(this,Mesh,prim)
@@ -314,6 +296,7 @@ CONTAINS
     INTENT(INOUT)     :: this
     INTENT(OUT)       :: amax
     !------------------------------------------------------------------------!
+!CDIR IEXPAND
     SELECT CASE(GetType(this))
     CASE(EULER2D)
        CALL CalculateWaveSpeeds_euler2D(this,Mesh,pvar)
@@ -342,6 +325,7 @@ CONTAINS
     INTENT(IN)       :: this,Mesh,nmin,nmax,prim,cons
     INTENT(OUT)      :: xfluxes
     !------------------------------------------------------------------------!
+!CDIR IEXPAND
     SELECT CASE(GetType(this))
     CASE(EULER2D)
        CALL CalculateFluxesX_euler2D(this,Mesh,nmin,nmax,prim,cons,xfluxes)
@@ -367,6 +351,7 @@ CONTAINS
     INTENT(IN)       :: this,Mesh,nmin,nmax,prim,cons
     INTENT(OUT)      :: yfluxes
     !------------------------------------------------------------------------!
+!CDIR IEXPAND
     SELECT CASE(GetType(this))
     CASE(EULER2D)
        CALL CalculateFluxesY_euler2D(this,Mesh,nmin,nmax,prim,cons,yfluxes)
@@ -390,9 +375,11 @@ CONTAINS
     REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX) :: &
          dynvis,bulkvis,btxx,btxy,btxz,btyy,btyz,btzz
     !------------------------------------------------------------------------!
-    INTENT(IN)        :: this,Mesh,pvar,dynvis,bulkvis
-    INTENT(INOUT)     :: btxx,btxy,btxz,btyy,btyz,btzz
+    INTENT(IN)        :: Mesh,pvar,dynvis,bulkvis
+    INTENT(INOUT)     :: this
+    INTENT(OUT)       :: btxx,btxy,btxz,btyy,btyz,btzz
     !------------------------------------------------------------------------!
+!CDIR IEXPAND
     SELECT CASE(GetType(this))
     CASE(EULER2D)
        CALL CalculateStresses_euler2D(this,Mesh,pvar,dynvis,bulkvis, &
@@ -425,14 +412,24 @@ CONTAINS
     INTENT(OUT)       :: sterm
     !------------------------------------------------------------------------!
     ! calculate geometrical sources depending on the advection problem
+!CDIR IEXPAND
     SELECT CASE(GetType(this))
     CASE(EULER2D)
+! ATTENTION: Don't use inline expansion here. It will yield false results,
+!            because GeometricalSources_XXX is a generic interface for
+!            GeometricalSources_faces and GeometricalSources_center in each
+!            submodule. However, if one uses inline expansion it allways
+!            points on the specific routines in the euler2D module.
+!CDIR NOIEXPAND
        CALL GeometricalSources_euler2D(this,Mesh,pvar,cvar,sterm)
     CASE(EULER2D_ISOTHERM)
+!CDIR NOIEXPAND
        CALL GeometricalSources_euler2Dit(this,Mesh,pvar,cvar,sterm)
     CASE(EULER3D_ROTSYM)
+!CDIR NOIEXPAND
        CALL GeometricalSources_euler3Drs(this,Mesh,pvar,cvar,sterm)
     CASE(EULER3D_ROTAMT)
+!CDIR NOIEXPAND
        CALL GeometricalSources_euler3Dra(this,Mesh,pvar,cvar,sterm)
     END SELECT
   END SUBROUTINE GeometricalSources_center
@@ -453,14 +450,24 @@ CONTAINS
     INTENT(OUT)       :: sterm
     !------------------------------------------------------------------------!
     ! calculate geometrical sources depending on the advection problem
+!CDIR IEXPAND
     SELECT CASE(GetType(this))
     CASE(EULER2D)
+! ATTENTION: Don't use inline expansion here. It will yield false results,
+!            because GeometricalSources_XXX is a generic interface for
+!            GeometricalSources_faces and GeometricalSources_center in each
+!            submodule. However, if one uses inline expansion it allways
+!            points on the specific routines in the euler2D module.
+!CDIR NOIEXPAND
        CALL GeometricalSources_euler2D(this,Mesh,prim,cons,sterm)
     CASE(EULER2D_ISOTHERM)
+!CDIR NOIEXPAND
        CALL GeometricalSources_euler2Dit(this,Mesh,prim,cons,sterm)
     CASE(EULER3D_ROTSYM)
+!CDIR NOIEXPAND
        CALL GeometricalSources_euler3Drs(this,Mesh,prim,cons,sterm)
     CASE(EULER3D_ROTAMT)
+!CDIR NOIEXPAND
        CALL GeometricalSources_euler3Dra(this,Mesh,prim,cons,sterm)
     END SELECT
   END SUBROUTINE GeometricalSources_faces
@@ -479,21 +486,25 @@ CONTAINS
     INTENT(IN)        :: this,Mesh,accel,pvar,cvar
     INTENT(OUT)       :: sterm
     !------------------------------------------------------------------------!
+!CDIR IEXPAND
     SELECT CASE(GetType(this))
     CASE(EULER2D)
+!CDIR IEXPAND
        CALL ExternalSources_euler2D(this,Mesh,accel,pvar,cvar,sterm)
     CASE(EULER2D_ISOTHERM)
+!CDIR IEXPAND
        CALL ExternalSources_euler2Dit(this,Mesh,accel,pvar,cvar,sterm)
     CASE(EULER3D_ROTSYM)
+!CDIR IEXPAND
        CALL ExternalSources_euler3Drs(this,Mesh,accel,pvar,cvar,sterm)
     CASE(EULER3D_ROTAMT)
+!CDIR IEXPAND
        CALL ExternalSources_euler3Dra(this,Mesh,accel,pvar,cvar,sterm)
     END SELECT
   END SUBROUTINE ExternalSources
 
 
-  PURE SUBROUTINE ViscositySources(this,Mesh,pvar,btxx,btxy,btxz, &
-       btyy,btyz,btzz,ftxx,ftxy,ftxz,ftyy,ftyz,ftzz,sterm)
+  PURE SUBROUTINE ViscositySources(this,Mesh,pvar,btxx,btxy,btxz,btyy,btyz,btzz,sterm)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Physics_TYP) :: this
@@ -502,23 +513,23 @@ CONTAINS
          pvar,sterm
     REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX) :: &
          btxx,btxy,btxz,btyy,btyz,btzz
-    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,4) :: &
-         ftxx,ftxy,ftxz,ftyy,ftyz,ftzz
     !------------------------------------------------------------------------!
-    INTENT(IN)        :: this,Mesh,pvar, btxx,btxy,btxz,btyy,btyz,btzz
-    INTENT(INOUT)     :: ftxx,ftxy,ftxz,ftyy,ftyz,ftzz
+    INTENT(IN)        :: Mesh,pvar,btxx,btxy,btxz,btyy,btyz,btzz
+    INTENT(INOUT)     :: this
     INTENT(OUT)       :: sterm
     !------------------------------------------------------------------------!
+!CDIR IEXPAND
     SELECT CASE(GetType(this))
     CASE(EULER2D)
-       CALL ViscositySources_euler2D(this,Mesh,pvar,btxx,btxy,btyy, &
-            ftxx,ftxy,ftyy,sterm)
+!CDIR IEXPAND
+       CALL ViscositySources_euler2D(this,Mesh,pvar,btxx,btxy,btyy,sterm)
     CASE(EULER2D_ISOTHERM)
-       CALL ViscositySources_euler2Dit(this,Mesh,pvar,btxx,btxy,btyy, &
-            ftxx,ftxy,ftyy,sterm)
+!CDIR IEXPAND
+       CALL ViscositySources_euler2Dit(this,Mesh,pvar,btxx,btxy,btyy,sterm)
     CASE(EULER3D_ROTSYM)
-       CALL ViscositySources_euler3Drs(this,Mesh,pvar,btxx,btxy,btxz, &
-       btyy,btyz,btzz,ftxx,ftxy,ftxz,ftyy,ftyz,ftzz,sterm)
+!CDIR IEXPAND
+       CALL ViscositySources_euler3Drs(this,Mesh,pvar,btxx,btxy,btxz,btyy, &
+            btyz,btzz,sterm)
     CASE(EULER3D_ROTAMT)
 ! ***************************************************************************!
 ! FIXME: not implemented yet
@@ -539,6 +550,7 @@ CONTAINS
     INTENT(IN)  :: this,Mesh,cvar
     INTENT(OUT) :: pvar
     !------------------------------------------------------------------------!
+!CDIR IEXPAND
     SELECT CASE(GetType(this))
     CASE(EULER2D)
        CALL Convert2Primitive_euler2D(this,Mesh,Mesh%IGMIN,Mesh%IGMAX,&
@@ -568,6 +580,7 @@ CONTAINS
     INTENT(IN)  :: this,Mesh,i1,i2,j1,j2,cvar
     INTENT(OUT) :: pvar
     !------------------------------------------------------------------------!
+!CDIR IEXPAND
     SELECT CASE(GetType(this))
     CASE(EULER2D)
        CALL Convert2Primitive_euler2D(this,Mesh,i1,i2,j1,j2,cvar,pvar)
@@ -592,6 +605,7 @@ CONTAINS
     INTENT(IN)  :: this,Mesh,cons
     INTENT(OUT) :: prim
     !------------------------------------------------------------------------!
+!CDIR IEXPAND
     SELECT CASE(GetType(this))
     CASE(EULER2D)
        CALL Convert2Primitive_euler2D(this,Mesh,Mesh%IGMIN,Mesh%IGMAX,&
@@ -621,6 +635,7 @@ CONTAINS
     INTENT(IN)  :: this,Mesh,i1,i2,j1,j2,cons
     INTENT(OUT) :: prim
     !------------------------------------------------------------------------!
+!CDIR IEXPAND
     SELECT CASE(GetType(this))
     CASE(EULER2D)
        CALL Convert2Primitive_euler2D(this,Mesh,i1,i2,j1,j2,cons,prim)
@@ -645,6 +660,7 @@ CONTAINS
     INTENT(IN)  :: this,Mesh,pvar
     INTENT(OUT) :: cvar
     !------------------------------------------------------------------------!
+!CDIR IEXPAND
     SELECT CASE(GetType(this))
     CASE(EULER2D)
        CALL Convert2Conservative_euler2D(this,Mesh,Mesh%IGMIN,Mesh%IGMAX,&
@@ -674,6 +690,7 @@ CONTAINS
     INTENT(IN)  :: this,Mesh,i1,i2,j1,j2,pvar
     INTENT(OUT) :: cvar
     !------------------------------------------------------------------------!
+!CDIR IEXPAND
     SELECT CASE(GetType(this))
     CASE(EULER2D)
        CALL Convert2Conservative_euler2D(this,Mesh,i1,i2,j1,j2,pvar,cvar)
@@ -698,6 +715,7 @@ CONTAINS
     INTENT(IN)  :: this,Mesh,prim
     INTENT(OUT) :: cons
     !------------------------------------------------------------------------!
+!CDIR IEXPAND
     SELECT CASE(GetType(this))
     CASE(EULER2D)
        CALL Convert2Conservative_euler2D(this,Mesh,Mesh%IGMIN,Mesh%IGMAX,&
@@ -727,6 +745,7 @@ CONTAINS
     INTENT(IN)  :: this,Mesh,i1,i2,j1,j2,prim
     INTENT(OUT) :: cons
     !------------------------------------------------------------------------!
+!CDIR IEXPAND
     SELECT CASE(GetType(this))
     CASE(EULER2D)
        CALL Convert2Conservative_euler2D(this,Mesh,i1,i2,j1,j2,prim,cons)
@@ -749,6 +768,7 @@ CONTAINS
     INTENT(IN)        :: this
     INTENT(OUT)       :: reflX,reflY
     !------------------------------------------------------------------------!
+!CDIR IEXPAND
     SELECT CASE(GetType(this))
     CASE(EULER2D)
        CALL ReflectionMasks_euler2D(this,reflX,reflY)
@@ -775,6 +795,7 @@ CONTAINS
     DEALLOCATE(this%amin,this%amax,this%bmin,this%bmax, &
          this%tmin,this%tmax)
     ! call specific dallocation procedures
+!CDIR IEXPAND
     SELECT CASE(GetType(this))
     CASE(EULER2D)
        CALL ClosePhysics_euler2D(this)

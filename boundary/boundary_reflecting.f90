@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: boundary_reflecting.f90                                           #
 !#                                                                           #
-!# Copyright (C) 2006-2008                                                   #
+!# Copyright (C) 2006-2012                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -28,10 +28,8 @@
 !----------------------------------------------------------------------------!
 MODULE boundary_reflecting
   USE mesh_common, ONLY : Mesh_TYP
-  USE fluxes_common, ONLY : Fluxes_TYP
-  USE reconstruction_common, ONLY : Reconstruction_TYP, PrimRecon
   USE boundary_nogradients
-  USE physics_generic
+  USE physics_generic, ONLY : Physics_TYP, ReflectionMasks
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   PRIVATE
@@ -87,20 +85,20 @@ CONTAINS
   END SUBROUTINE InitBoundary_reflecting
 
 
-  PURE SUBROUTINE CenterBoundary_reflecting(this,Mesh,Physics,Fluxes,pvar)
+  PURE SUBROUTINE CenterBoundary_reflecting(this,Mesh,Physics,pvar)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Boundary_TYP) :: this
     TYPE(Mesh_TYP)     :: Mesh
     TYPE(Physics_TYP)  :: Physics
-    TYPE(Fluxes_TYP)   :: Fluxes
     REAL :: pvar(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum)
     !------------------------------------------------------------------------!
     INTEGER       :: i,j
     !------------------------------------------------------------------------!
-    INTENT(IN)    :: this,Mesh,Physics,Fluxes
+    INTENT(IN)    :: this,Mesh,Physics
     INTENT(INOUT) :: pvar 
     !------------------------------------------------------------------------!
+!CDIR IEXPAND
     SELECT CASE(GetDirection(this))
     CASE(WEST)
 !CDIR UNROLL=8
@@ -132,9 +130,9 @@ CONTAINS
 !CDIR NODEP
           DO i=Mesh%IMIN,Mesh%IMAX
              WHERE (this%reflY)
-                pvar(i,Mesh%JMIN-j,:) = -pvar(i,Mesh%JMIN-j+1,:)
+                pvar(i,Mesh%JMIN-j,:) = -pvar(i,Mesh%JMIN+j-1,:)
              ELSEWHERE
-                pvar(i,Mesh%JMIN-j,:) = pvar(i,Mesh%JMIN-j+1,:)
+                pvar(i,Mesh%JMIN-j,:) = pvar(i,Mesh%JMIN+j-1,:)
              END WHERE
           END DO
        END DO
@@ -144,9 +142,9 @@ CONTAINS
 !CDIR NODEP
           DO i=Mesh%IMIN,Mesh%IMAX
              WHERE (this%reflY)
-                pvar(i,Mesh%JMAX+j,:) = -pvar(i,Mesh%JMAX+j-1,:)
+                pvar(i,Mesh%JMAX+j,:) = -pvar(i,Mesh%JMAX-j+1,:)
              ELSEWHERE
-                pvar(i,Mesh%JMAX+j,:) = pvar(i,Mesh%JMAX+j-1,:)
+                pvar(i,Mesh%JMAX+j,:) = pvar(i,Mesh%JMAX-j+1,:)
              END WHERE
           END DO
        END DO

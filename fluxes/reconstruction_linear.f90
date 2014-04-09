@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: reconstruction_linear.f90                                         #
 !#                                                                           #
-!# Copyright (C) 2007-2010                                                   #
+!# Copyright (C) 2007-2012                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !# Björn Sperling   <sperling@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
@@ -50,7 +50,6 @@ MODULE reconstruction_linear
        MINMOD, MONOCENT, SWEBY, SUPERBEE, OSPRE, PP, &
        ! methods
        InitReconstruction_linear, &
-       MallocReconstruction_linear, &
        GetLimiterName, &
        PrimRecon, &
        CalculateSlopes_linear, &
@@ -60,47 +59,42 @@ MODULE reconstruction_linear
 
 CONTAINS
 
-  SUBROUTINE InitReconstruction_linear(this,rtype,pc,ltype,lparam)
-    IMPLICIT NONE
-    !------------------------------------------------------------------------!
-    TYPE(Reconstruction_TYP) :: this
-    INTEGER                  :: rtype,ltype
-    REAL                     :: lparam
-    LOGICAL                  :: pc
-    !------------------------------------------------------------------------!
-    INTENT(IN)               :: rtype,ltype,pc,lparam
-    INTENT(INOUT)            :: this
-    !------------------------------------------------------------------------!
-    CALL InitReconstruction(this,rtype,recontype_name,pc)
-    ! limiter settings
-    CALL InitCommon(this%limiter,ltype,limitertype_name(ltype))
-    this%limiter_param= lparam
-  END SUBROUTINE InitReconstruction_linear
-
-
-  SUBROUTINE MallocReconstruction_linear(this,Mesh,Physics)
+  SUBROUTINE InitReconstruction_linear(this,Mesh,Physics,rtype,pc,ltype,lparam)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Reconstruction_TYP) :: this
     TYPE(Mesh_TYP)           :: Mesh
     TYPE(Physics_TYP)        :: Physics
+    INTEGER                  :: rtype,ltype
+    REAL                     :: lparam
+    LOGICAL                  :: pc
     !------------------------------------------------------------------------!
-    INTEGER       :: err
+    INTEGER                  :: err
     !------------------------------------------------------------------------!
-    INTENT(IN)    :: Mesh,Physics
-    INTENT(INOUT) :: this
+    INTENT(IN)               :: Mesh,Physics,rtype,ltype,pc,lparam
+    INTENT(INOUT)            :: this
     !------------------------------------------------------------------------!
+    CALL InitReconstruction(this,rtype,recontype_name,pc)
+    ! limiter settings
+    SELECT CASE(ltype)
+    CASE(MINMOD,MONOCENT,SWEBY,SUPERBEE,OSPRE,PP)
+       CALL InitCommon(this%limiter,ltype,limitertype_name(ltype))
+       this%limiter_param= lparam
+    CASE DEFAULT
+       CALL Error(this, "InitReconstruction_linear", "Unknown limiter")
+    END SELECT
+
     ! allocate memory for all arrays used in reconstruction_linear
     ALLOCATE(this%xslopes(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%VNUM), &
          this%yslopes(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%VNUM), &
          STAT = err)
     IF (err.NE.0) THEN
-       CALL Error(this, "MallocReconstruction_linear",  "Unable to allocate memory.")
+       CALL Error(this, "InitReconstruction_linear",  "Unable to allocate memory.")
     END IF
     ! zero the slopes
     this%xslopes(:,:,:) = 0.0
     this%yslopes(:,:,:) = 0.0
-  END SUBROUTINE MallocReconstruction_linear
+  END SUBROUTINE InitReconstruction_linear
 
 
   PURE FUNCTION GetLimiter(this) RESULT(lt)
@@ -109,6 +103,7 @@ CONTAINS
     TYPE(Reconstruction_TYP), INTENT(IN) :: this
     INTEGER :: lt
     !------------------------------------------------------------------------!
+!CDIR IEXPAND
     lt = GetType(this%limiter)
   END FUNCTION GetLimiter
 
@@ -119,6 +114,7 @@ CONTAINS
     TYPE(Reconstruction_TYP), INTENT(IN) :: this
     CHARACTER(LEN=32) :: ln
     !------------------------------------------------------------------------!
+!CDIR IEXPAND
     ln = GetName(this%limiter)
   END FUNCTION GetLimiterName
 
@@ -138,6 +134,7 @@ CONTAINS
     !------------------------------------------------------------------------!
 
     ! choose limiter & check for 1D case
+!CDIR IEXPAND
     SELECT CASE(GetLimiter(this))
     CASE(MINMOD)
        ! calculate slopes in x-direction
@@ -371,21 +368,23 @@ CONTAINS
   END SUBROUTINE CalculateSlopes_linear
   
 
-  PURE SUBROUTINE CalculateStates_linear(this,Mesh,Physics,npos,pos0,pos,rvar,rstates)
+  PURE SUBROUTINE CalculateStates_linear(this,Mesh,Physics,npos,dx,dy,rvar,rstates)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Reconstruction_TYP) :: this
     TYPE(Mesh_TYP)           :: Mesh
     TYPE(Physics_TYP)        :: Physics
     INTEGER                  :: npos
-    REAL :: pos0(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,2)
-    REAL :: pos(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,npos,2)
-    REAL :: rvar(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum)
-    REAL :: rstates(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,npos,Physics%vnum)
+    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,npos) &
+                             :: dx,dy
+    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%VNUM) &
+                             :: rvar
+    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,npos,Physics%VNUM) &
+                             :: rstates
     !------------------------------------------------------------------------!
     INTEGER :: i,j,k,n
     !------------------------------------------------------------------------!
-    INTENT(IN)  :: this,Mesh,Physics,npos,pos0,pos,rvar
+    INTENT(IN)  :: this,Mesh,Physics,npos,dx,dy,rvar
     INTENT(OUT) :: rstates
     !------------------------------------------------------------------------!
     ! reconstruct states at positions pos 
@@ -394,8 +393,9 @@ CONTAINS
 !CDIR COLLAPSE
           DO j=Mesh%JGMIN,Mesh%JGMAX
              DO i=Mesh%IGMIN,Mesh%IGMAX
+!CDIR IEXPAND
                 rstates(i,j,n,k) = reconstruct(rvar(i,j,k),this%xslopes(i,j,k), &
-                     this%yslopes(i,j,k),pos0(i,j,1),pos0(i,j,2),pos(i,j,n,1),pos(i,j,n,2))
+                     this%yslopes(i,j,k),dx(i,j,n),dy(i,j,n))
              END DO
           END DO
        END DO
@@ -403,13 +403,13 @@ CONTAINS
  
     CONTAINS
 
-      ELEMENTAL FUNCTION reconstruct(cvar0,xslope0,yslope0,x0,y0,x,y) RESULT(rstate)
+      ELEMENTAL FUNCTION reconstruct(cvar0,xslope0,yslope0,dx,dy) RESULT(rstate)
         IMPLICIT NONE
         !--------------------------------------------------------------------!
         REAL :: rstate
-        REAL, INTENT(IN) :: cvar0,xslope0,yslope0,x0,y0,x,y 
+        REAL, INTENT(IN) :: cvar0,xslope0,yslope0,dx,dy 
         !--------------------------------------------------------------------!
-        rstate = cvar0 + xslope0*(x-x0) + yslope0*(y-y0)
+        rstate = cvar0 + xslope0*dx + yslope0*dy
       END FUNCTION reconstruct
       
   END SUBROUTINE CalculateStates_linear

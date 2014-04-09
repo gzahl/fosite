@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: init_RMI.f90                                                      #
 !#                                                                           #
-!# Copyright (C) 2006-2010                                                   #
+!# Copyright (C) 2006-2012                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -32,7 +32,8 @@
 !      "Instability of the Interface of Two Gases Accelerated by a Shock Wave"
 !      Soviet Fluid Dynamics 4 ,101-104 (1969)
 !----------------------------------------------------------------------------!
-MODULE Init
+PROGRAM Init
+  USE fosite
   USE physics_generic
   USE fluxes_generic
   USE mesh_generic
@@ -42,7 +43,6 @@ MODULE Init
   USE timedisc_generic
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
-  PRIVATE
   ! simulation parameters
   REAL, PARAMETER    :: TSIM  = 200.0      ! simulation time
   REAL, PARAMETER    :: GAMMA = 1.4        ! ratio of specific heats
@@ -57,11 +57,20 @@ MODULE Init
   CHARACTER(LEN=256), PARAMETER &          ! output data file name
                      :: OFNAME = 'RMI' 
   !--------------------------------------------------------------------------!
-  PUBLIC :: &
-       ! methods
-       InitProgram
+  TYPE(fosite_TYP)   :: Sim
   !--------------------------------------------------------------------------!
 
+CALL InitFosite(Sim)
+
+CALL InitProgram(Sim%Mesh, Sim%Physics, Sim%Fluxes, Sim%Timedisc, &
+                 Sim%Datafile, Sim%Logfile)
+
+! set initial condition
+CALL InitData(Sim%Mesh, Sim%Physics, Sim%Timedisc)
+
+CALL RunFosite(Sim)
+
+CALL CloseFosite(Sim)
 
 CONTAINS
 
@@ -79,26 +88,9 @@ CONTAINS
     !------------------------------------------------------------------------!
     INTENT(OUT)       :: Mesh,Physics,Fluxes,Timedisc,Datafile,Logfile
     !------------------------------------------------------------------------!
-
-    ! physics settings
-    CALL InitPhysics(Physics, &
-         problem = EULER2D, &
-         gamma   = GAMMA, &                 ! ratio of specific heats        !
-         dpmax   = 1.0)                     ! for advanced time step control !
-
-    ! numerical scheme for flux calculation
-    CALL InitFluxes(Fluxes, &
-         scheme = MIDPOINT)                 ! quadrature rule                !
-
-    ! reconstruction method
-    CALL InitReconstruction(Fluxes%reconstruction, &
-         order     = LINEAR, &
-         variables = CONSERVATIVE, &        ! vars. to use for reconstruction!
-         limiter   = MONOCENT, &            ! one of: minmod, monocent,...   !
-         theta     = 1.2)                   ! optional parameter for limiter !
-
     ! mesh settings
-    CALL InitMesh(Mesh,Fluxes, &
+    CALL InitMesh(Mesh,&
+         meshtype = MIDPOINT, &
          geometry = CARTESIAN, &
              inum = XRES, &                 ! resolution in x and            !
              jnum = YRES, &                 !   y direction                  !             
@@ -106,6 +98,19 @@ CONTAINS
              xmax = 60.0, &
              ymin = 0.0, &
              ymax = 40.0)
+
+    ! physics settings
+    CALL InitPhysics(Physics,Mesh, &
+         problem = EULER2D, &
+         gamma   = GAMMA, &                 ! ratio of specific heats        !
+         dpmax   = 1.0)                     ! for advanced time step control !
+
+    ! flux calculation and reconstruction method
+    CALL InitFluxes(Fluxes,Mesh,Physics, &
+         order     = LINEAR, &
+         variables = CONSERVATIVE, &        ! vars. to use for reconstruction!
+         limiter   = MONOCENT, &    ! one of: minmod, monocent,...   !
+         theta     = 1.2)           ! optional parameter for limiter !
 
     ! boundary conditions
     CALL InitBoundary(Timedisc%boundary,Mesh,Physics, &
@@ -123,9 +128,6 @@ CONTAINS
          dtlimit  = 1.0E-4, &
          maxiter  = 1000000)
 
-    ! set initial condition
-    CALL InitData(Mesh,Physics,Timedisc)
-
      ! initialize log input/output
 !!$    CALL InitFileIO(Logfile,Mesh,Physics,Timedisc,&
 !!$         fileformat = BINARY, &
@@ -134,8 +136,9 @@ CONTAINS
 
     ! initialize data input/output
     CALL InitFileIO(Datafile,Mesh,Physics,Timedisc, &
-!!$         fileformat = VTK, &
-         fileformat = GNUPLOT, filecycles = 0, &
+         fileformat = VTK, &
+!!$         fileformat = NETCDF, &
+!!$         fileformat = GNUPLOT, filecycles = 0, &
          filename   = TRIM(ODIR) // TRIM(OFNAME), &
          count      = ONUM)
 
@@ -183,4 +186,4 @@ CONTAINS
 
   END SUBROUTINE InitData
 
-END MODULE Init
+END PROGRAM Init

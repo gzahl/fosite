@@ -63,10 +63,10 @@ MODULE physics_common
   END INTERFACE
   !--------------------------------------------------------------------------!
   TYPE PhysicsStruc_TYP
-     CHARACTER(LEN=16)      :: name
-     INTEGER                :: pos
-     INTEGER                :: dim
-     INTEGER                :: rank     
+     CHARACTER(LEN=16)      :: name                  ! descriptive name      !
+     INTEGER                :: pos                   ! array index           !
+     INTEGER                :: dim                   ! dimensionality and    !
+     INTEGER                :: rank                  !   rank of the data    !
   END TYPE PhysicsStruc_TYP
   TYPE Physics_TYP
      TYPE(Common_TYP)       :: advproblem            ! advection problem     !
@@ -148,6 +148,7 @@ CONTAINS
     TYPE(Physics_TYP), INTENT(IN) :: this
     INTEGER :: ap
     !------------------------------------------------------------------------!
+!CDIR IEXPAND
     ap = GetType_common(this%advproblem)
   END FUNCTION GetAdvProblem
 

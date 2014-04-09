@@ -5,9 +5,10 @@
 # fosite - 2D hydrodynamical simulation program                             #
 # configuration file: configure.ac                                          #
 #                                                                           #
-# Copyright (C) 2008-2010                                                   #
+# Copyright (C) 2008-2012                                                   #
 # Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 # Marc Junker <maj@astrophysik.uni-kiel.de>                                 #
+# Manuel Jung <mjung@astrophysik.uni-kiel.de>                               #
 #                                                                           #
 # This program is free software; you can redistribute it and/or modify      #
 # it under the terms of the GNU General Public License as published by      #
@@ -27,7 +28,7 @@
 #############################################################################
 
 AC_PREREQ(2.62)
-AC_INIT(fosite, 0.4.0, tillense@astrophysik.uni-kiel.de)
+AC_INIT(fosite, 0.5.0, tillense@astrophysik.uni-kiel.de)
 
 # ===========================================================================
 # define command line arguments 
@@ -128,6 +129,26 @@ AC_ARG_WITH([hdf5],
   with_hdf5=no
 ]) # with_hdf5
 
+AC_ARG_WITH([npy],
+	AS_HELP_STRING([--with-npy=[DIR]],[
+		Check for libnpy (>=0.5) installation in directory [DIR];
+		required for numpy npy binary file output @<:@DEFAULT=no@:>@]),[dnl
+	AS_CASE([$withval],[yes],[dnl
+		linkClibs=yes],[no],[],[dnl
+		linkClibs=yes
+		NPYDIR=$withval
+		with_npy=yes
+		# check if the given directory exists
+		AS_IF([test -d "$NPYDIR"],[dnl
+			   npy_libdirs="m4_combine([ ], [$NPYDIR], [/], [lib], [lib64])"
+			   npy_moddirs="m4_combine([ ], [$NPYDIR], [/], [include])"
+		],[dnl
+		   AC_MSG_WARN([NPY installation directory $NPYDIR doesn't exist])
+		])
+	])
+],[dnl
+   with_npy=no
+]) # with_npy
 
 # enable additional features
 AC_ARG_ENABLE([static],
@@ -139,8 +160,18 @@ AC_ARG_ENABLE([static],
 AC_ARG_ENABLE([double],
 	AC_HELP_STRING([--enable-double],
 		[turn on autodouble compiler flag if available. 
-                 @<:@DEFAULT=no@:>@ ]),
- 		[arg_autodouble=$enableval])
+                 @<:@DEFAULT=yes@:>@ ]),[dnl
+ 		 arg_autodouble=$enableval],[dnl
+		 arg_autodouble=yes
+])
+AC_ARG_ENABLE([cbind],
+	AC_HELP_STRING([--enable-cbind],
+		[turn on ISO_C_BINDING compiler flag if available. 
+                 @<:@DEFAULT=no@:>@ ]),[dnl
+ 		 arg_cbind=$enableval],[dnl
+		 arg_cbind=no
+])
+
 
 AC_ARG_ENABLE([fast],
    AC_HELP_STRING([--enable-fast=option],
@@ -177,15 +208,20 @@ AC_ARG_VAR([MPIFC],[MPI fortran compiler command])
 # determine the target host architecture we are building for
 AC_CANONICAL_HOST
 
+# standard archiver
+AR="ar"
+
 # host specific settings
 AS_CASE([$host_cpu],
   [sx8],[dnl
      arg_fast_default="Cvopt"
+	 AR="sxar"
      FCFLAGS="$FCFLAGS -$host_cpu"
      LDFLAGS="$LDFLAGS -$host_cpu"
      DEFS="$DEFS -DNECSX8"],
   [sx9],[dnl
      arg_fast_default="Cvopt"
+	 AR="sxar"
      FCFLAGS="$FCFLAGS -$host_cpu"
      LDFLAGS="$LDFLAGS -$host_cpu"
      DEFS="$DEFS -DNECSX9"],
@@ -273,7 +309,13 @@ AC_FC_CPPFLAG
 AC_FC_STREAMS([DEFS="$DEFS -DFORTRAN_STREAMS"])
 
 # check whether the Fortran compiler supports ISO C bindings
-#AC_FC_ISO_C_BINDING
+AS_VAR_IF([arg_cbind],[yes],[
+   AC_FC_ISO_C_BINDING([
+      DEFS="$DEFS -DHAVE_ISO_C_BINDING"
+      AS_VAR_IF([ac_cv_fc_cbind],[none],[],[dnl	
+           FCFLAGS="$FCFLAGS $ac_cv_fc_cbind"])
+   ])
+])
 
 # enable advanced debugging features if available
 AC_FC_ADVANCED_DEBUG
@@ -282,7 +324,17 @@ AC_FC_ADVANCED_DEBUG
 AC_FC_PROFILING
 
 # check for autodouble flag if requested
-AS_VAR_IF([arg_autodouble],[yes],[AC_FC_AUTODOUBLE])dnl
+# ATTENTION: autdouble may break MPI and/or VTK , because some
+# autodouble compiler flags do not only effect real numbers and
+# promote 4 byte integers to 8 byte as well.
+AS_VAR_IF([arg_autodouble],[yes],[dnl
+   AC_FC_AUTODOUBLE
+   AS_VAR_IF([arg_cbind],[yes],[
+      AS_VAR_IF([ac_cv_fc_cbind],[unknown],[],[dnl
+         AC_MSG_WARN([ISO C binding with autodouble may break MPI and VTK.])
+      ])
+   ])
+])
 
 # create a statically linked binary
 AS_VAR_IF([arg_static],[yes],[AC_FC_STATIC])dnl
@@ -296,14 +348,14 @@ AS_VAR_IF([arg_inline],[yes],[AC_FC_INLINE])dnl
 # code if the given flag is not recognized. Those compilers would pass the
 # test although the given flag is invalid.
 AS_VAR_IF([arg_fast],[no],[],[dnl
-   ac_cv_fc_fast_FCFLAGS_save="$FCFLAGS"
+   ac_cv_fc_FCFLAGS_save="$FCFLAGS"
    AC_CACHE_CHECK([for Fortran compiler optimizations],
       [ac_cv_fc_fast],[dnl
       ac_cv_fc_fast=unknown
       AS_VAR_IF([arg_fast],[yes],[arg_fast="$arg_fast_default"])
       m4_foreach([ac_opt_flag],[[$arg_fast],[$arg_fast_default]],[dnl
          AS_VAR_IF([ac_cv_fc_fast],[unknown],[dnl
-            FCFLAGS="$ac_cv_fc_fast_FCFLAGS_save -ac_opt_flag"
+            FCFLAGS="$ac_cv_fc_FCFLAGS_save -ac_opt_flag"
             AC_LINK_IFELSE([AC_LANG_PROGRAM([],[])],[dnl
                ac_cv_fc_fast="-ac_opt_flag"
                FCFLAGS_OPT="$FCFLAGS_OPT -ac_opt_flag"
@@ -312,7 +364,7 @@ AS_VAR_IF([arg_fast],[no],[],[dnl
          ])
       ])
    ])
-   FCFLAGS="$ac_cv_fc_fast_FCFLAGS_save"
+   FCFLAGS="$ac_cv_fc_FCFLAGS_save"
    AS_VAR_IF([ac_cv_fc_fast],[unknown],[dnl
       AC_MSG_FAILURE([Invalid compiler flag.])
    ])
@@ -729,25 +781,73 @@ integer, parameter :: comm = NF90_COLLECTIVE
 ]) # end NetCDF checks
 
 
+# ==========================================================================
+# NPY library tests
+# ===========================================================================
+ac_npy_FCFLAGS=""
+ac_npy_LDFLAGS=""
+ac_npy_LIBS=""
+ac_npy_DEFS=""
+AS_VAR_IF([with_npy],[no],[],[dnl
+   ac_npy_FCFLAGS_save="$FCFLAGS"
+   ac_npy_LDFLAGS_save="$LDFLAGS"
+   ac_npy_LIBS_save="$LIBS"
+   ac_npy_DEFS_save="$DEFS"
+   for dir in $npy_libdirs; do
+      AS_IF([test -d "$dir"],[ac_npy_LDFLAGS="$ac_npy_LDFLAGS -L$dir"])
+   done
+
+   # set special Fortran compiler flags for linking against C libraries
+   # if possible, otherwise use C compiler to check the linking
+   LDFLAGS="$ac_npy_LDFLAGS_save $ac_npy_LDFLAGS"
+   LIBS=""
+   AS_VAR_IF([ac_cv_fc_preservecase],[unknown],[dnl
+      AC_LANG_PUSH(C)
+      AC_SEARCH_LIBS(npy_save_double,npy,[dnl
+         ac_npy_LIBS="$LIBS $ac_npy_LIBS"
+		 ac_npy_FCFLAGS="$ac_npy_FCFLAGS -I$npy_moddirs"
+         ac_npy_DEFS="$ac_npy_DEFS -DHAVE_NPY"],[],
+         [$ac_npy_LIBS_save $ac_npy_LIBS])
+      AC_LANG_POP(C)
+   ],[dnl
+      LDFLAGS="$ac_cv_fc_linkClibs $LDFLAGS"
+      AC_SEARCH_LIBS(npy_save_double,npy,[dnl
+         ac_npy_LIBS="$LIBS $ac_npy_LIBS"
+		 ac_npy_FCFLAGS="$ac_npy_FCFLAGS -I$npy_moddirs"
+         ac_npy_DEFS="$ac_npy_DEFS -DHAVE_NPY"],[],
+         [$ac_npy_LIBS_save $ac_npy_LIBS])
+   ])
+
+   FCFLAGS="$ac_npy_FCFLAGS_save"
+   LDFLAGS="$ac_npy_LDFLAGS_save"
+   LIBS="$ac_npy_LIBS_save"
+   DEFS="$ac_npy_DEFS_save"
+]) # end NPY checks
+
+
 # ===========================================================================
 # set Makefile variables
 # ===========================================================================
-AC_SUBST(FCFLAGS_ALL,[m4_normalize("$FCFLAGS $ac_hdf5_FCFLAGS $ac_netcdf_FCFLAGS")])
-AC_SUBST(DEFS_ALL,[m4_normalize("$DEFS $ac_hdf5_DEFS $ac_netcdf_DEFS")])
+AC_SUBST(FCFLAGS_ALL,[m4_normalize("$FCFLAGS $ac_hdf5_FCFLAGS \
+                                   $ac_netcdf_FCFLAGS $ac_npy_FCFLAGS")])
+AC_SUBST(DEFS_ALL,[m4_normalize("$DEFS $ac_hdf5_DEFS $ac_netcdf_DEFS $ac_npy_DEFS")])
 AC_SUBST(FCFLAGS_OPT,[m4_normalize("$FCFLAGS_OPT $ac_cv_fc_inline")])
-AC_SUBST(FCFLAGS_DBG,[m4_normalize("$ac_cv_fc_advanced_debug")])
+AC_SUBST(FCFLAGS_DBG,[m4_normalize("$FCFLAGS_DBG -DDEBUG $ac_cv_fc_advanced_debug")])
 AC_SUBST(FCFLAGS_PROF,[m4_normalize("$ac_cv_fc_profiling")])
 AC_SUBST(LDFLAGS_ALL,[m4_normalize("$LDFLAGS $ac_hdf5_LDFLAGS $ac_netcdf_LDFLAGS \
-                                    $LIBS $ac_netcdf_LIBS $ac_hdf5_LIBS")])
+                                    $ac_npy_LDFLAGS \
+                                    $LIBS $ac_netcdf_LIBS $ac_hdf5_LIBS \
+		 		    $ac_npy_LIBS")])
 AC_SUBST(LDFLAGS_OPT)
 AC_SUBST(LDFLAGS_PROF,[m4_normalize("$ac_cv_fc_profiling")])
-AC_SUBST(LDFLAGS_DBG,[m4_normalize("$ac_cv_fc_advanced_debug")])
+AC_SUBST(LDFLAGS_DBG,[m4_normalize("$LDFLAGS_DBG $ac_cv_fc_advanced_debug")])
 
 AC_SUBST(FCFLAGS_MPI,[m4_normalize("$ac_mpi_FCFLAGS")])
 AC_SUBST(DEFS_PARALLEL,[m4_normalize("$ac_mpi_DEFS")])
 AC_SUBST(LDFLAGS_MPI,[m4_normalize("$ac_mpi_LDFLAGS")])
 AC_SUBST(MPILIBS,[m4_normalize("$ac_mpi_LIBS")])
 AC_SUBST(PREP)
+AC_SUBST(AR)
 AC_SUBST(AWK)
 AC_SUBST(SED)
 

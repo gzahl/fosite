@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: mesh_generic.f90                                                  #
 !#                                                                           #
-!# Copyright (C) 2006-2009                                                   #
+!# Copyright (C) 2006-2012                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -30,10 +30,11 @@ MODULE mesh_generic
   USE mesh_midpoint, InitMesh_common => InitMesh, CloseMesh_common => CloseMesh
   USE mesh_trapezoidal
   USE geometry_generic
-  USE fluxes_generic
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   PRIVATE
+  INTEGER, PARAMETER :: MIDPOINT     = 1
+  INTEGER, PARAMETER :: TRAPEZOIDAL  = 2
   !--------------------------------------------------------------------------!
   PUBLIC :: &
        ! types
@@ -44,6 +45,7 @@ MODULE mesh_generic
 #ifdef PARALLEL
        DEFAULT_MPI_REAL, &
 #endif
+       MIDPOINT, TRAPEZOIDAL, &
        CARTESIAN, POLAR, LOGPOLAR, TANPOLAR, SINHPOLAR, &
        CYLINDRICAL, TANCYLINDRICAL, SPHERICAL, SINHSPHERICAL, &
        OBLATE_SPHEROIDAL, &
@@ -51,6 +53,7 @@ MODULE mesh_generic
        InitMesh, &
        Convert2Cartesian, &
        Convert2Curvilinear, &
+       Divergence, &
        GetType, &
        GetName, &
        GetRank, &
@@ -64,41 +67,33 @@ MODULE mesh_generic
 
 CONTAINS
 
-  SUBROUTINE InitMesh(this,Fluxes,geometry,inum,jnum,xmin,xmax,ymin,ymax,gparam)
+  SUBROUTINE InitMesh(this,meshtype,geometry,inum,jnum,xmin,xmax,ymin,ymax, &
+                      gparam)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Mesh_TYP)    :: this
-    TYPE(Fluxes_TYP)  :: Fluxes
+    INTEGER           :: meshtype
     INTEGER           :: geometry
     INTEGER           :: inum,jnum
     REAL              :: xmin,xmax,ymin,ymax
     REAL, OPTIONAL    :: gparam
     !------------------------------------------------------------------------!
     CHARACTER(LEN=32) :: xres,yres
-    REAL              :: gparam_default
     !------------------------------------------------------------------------!
-    INTENT(IN)        :: geometry,inum,jnum,xmin,xmax,ymin,ymax,gparam
+    INTENT(IN)        :: meshtype,geometry,inum,jnum,xmin,xmax,ymin,ymax, &
+                         gparam
     INTENT(INOUT)     :: this
     !------------------------------------------------------------------------!
-    IF (.NOT.Initialized(Fluxes)) &
-         CALL Error(this,"InitMesh","fluxes module uninitialized")
          
-    ! default geometry parameter
-    IF (PRESENT(gparam)) THEN
-       gparam_default = gparam
-    ELSE
-       gparam_default = 1.0
-    END IF
-
-    SELECT CASE(GetType(Fluxes))
+    SELECT CASE(meshtype)
     CASE(MIDPOINT)
-       CALL InitMesh_midpoint(this,geometry,inum,jnum,xmin,xmax,ymin,ymax, &
-            gparam_default)
+       CALL InitMesh_midpoint(this,meshtype,geometry,inum,jnum,xmin,xmax,ymin, &
+                              ymax,gparam)
     CASE(TRAPEZOIDAL)
-       CALL InitMesh_trapezoidal(this,geometry,inum,jnum,xmin,xmax,ymin,ymax, &
-            gparam_default)
+       CALL InitMesh_trapezoidal(this,meshtype,geometry,inum,jnum,xmin,xmax,ymin, &
+                                 ymax,gparam)
     CASE DEFAULT
-       CALL Error(this,"InitMesh", "Unknown flux type.")
+       CALL Error(this,"InitMesh", "Unknown mesh type.")
     END SELECT
 
     ! compute cartesian coordinates for bary center values
@@ -107,9 +102,10 @@ CONTAINS
     CALL Convert2Cartesian(this%geometry,this%cpos,this%cpcart)
 
     ! print some information
+    CALL Info(this, " MESH-----> quadrature rule:   " // TRIM(GetName(this)))
     WRITE (xres, '(I0)') this%INUM    ! this is just for better looking output
     WRITE (yres, '(I0)') this%JNUM
-    CALL Info(this, " MESH-----> resolution:        " // TRIM(xres) // " x " // TRIM(yres))
+    CALL Info(this, "            resolution:        " // TRIM(xres) // " x " // TRIM(yres))
     WRITE (xres, '(ES9.2,A,ES9.2)') this%xmin, " ..", this%xmax
     WRITE (yres, '(ES9.2,A,ES9.2)') this%ymin, " ..", this%ymax
     CALL Info(this, "            computat. domain:  x=" // TRIM(xres) // ACHAR(10)  &
@@ -119,26 +115,41 @@ CONTAINS
     WRITE (yres, '(I0)') this%dims(2)
     CALL Info(this, "            MPI partition:     " // TRIM(xres) // " x " // TRIM(yres))
 #endif
+    ! print warning message if radial coordinate is negative
+    SELECT CASE(geometry)
+    CASE(POLAR,LOGPOLAR,TANPOLAR,SINHPOLAR,SPHERICAL,SINHSPHERICAL)
+       IF(this%xmin < 0.) THEN
+          CALL Warning(this,"InitMesh","xmin < 0 could crash the code and won't" // &
+               ACHAR(10) // "yield the expected results.")
+       END IF
+    CASE(CYLINDRICAL,TANCYLINDRICAL)
+       IF(this%ymin < 0.) THEN
+          CALL Warning(this,"InitMesh","ymin < 0 could crash the code and won't" // &
+               ACHAR(10) // "yield the expected results.")
+       END IF
+    CASE DEFAULT
+       ! do nothing
+    END SELECT
   END SUBROUTINE InitMesh
 
 
-  SUBROUTINE CloseMesh(this,Fluxes)
+  SUBROUTINE CloseMesh(this)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Mesh_TYP)    :: this
-    TYPE(Fluxes_TYP)  :: Fluxes
     !------------------------------------------------------------------------!
     INTENT(IN)        :: this
     !------------------------------------------------------------------------!
     IF (.NOT.Initialized(this)) &
         CALL Error(this,"CloseMesh","not initialized")
-     SELECT CASE(GetType(Fluxes))
+!CDIR IEXPAND
+    SELECT CASE(GetType(this))
     CASE(MIDPOINT)
        CALL CloseMesh_midpoint(this)
     CASE(TRAPEZOIDAL)
        CALL CloseMesh_trapezoidal(this)
     CASE DEFAULT
-       CALL Error(this,"InitMesh", "Unknown flux type.")
+       CALL Error(this,"CloseMesh", "Unknown mesh type.")
     END SELECT
   END SUBROUTINE CloseMesh
 

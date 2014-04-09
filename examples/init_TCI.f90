@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: init_TCI.f90                                                      #
 !#                                                                           #
-!# Copyright (C) 2006-2010                                                   #
+!# Copyright (C) 2006-2012                                                   #
 !# Bjoern Sperling  <sperling@astrophysik.uni-kiel.de>                       #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
@@ -34,7 +34,8 @@
 !     "Bifurcation phenomena in Taylor–Couette flow in a very short annulus"
 !     J. Fluid Mech., vol. 191, p. 1-18
 !----------------------------------------------------------------------------!
-MODULE Init
+PROGRAM Init
+  USE fosite
   USE physics_generic
   USE fluxes_generic
   USE mesh_generic
@@ -45,7 +46,6 @@ MODULE Init
   USE timedisc_generic
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
-  PRIVATE
   ! simulation parameters
   REAL, PARAMETER    :: TSIM       = 1.0E-2    ! simulation time [TVIS]
   REAL, PARAMETER    :: GAMMA      = 1.4       ! ratio of specific heats
@@ -70,11 +70,20 @@ MODULE Init
   REAL               :: TVIS                   ! viscous timescale
   REAL               :: OMEGA_IN,OMEGA_OUT     ! inner/outer angular velocity
   !--------------------------------------------------------------------------!
-  PUBLIC :: &
-       ! methods
-       InitProgram
+  TYPE(fosite_TYP)   :: Sim
   !--------------------------------------------------------------------------!
 
+CALL InitFosite(Sim)
+
+CALL InitProgram(Sim%Mesh, Sim%Physics, Sim%Fluxes, Sim%Timedisc, &
+                 Sim%Datafile, Sim%Logfile)
+
+! set initial condition
+CALL InitData(Sim%Mesh, Sim%Fluxes, Sim%Physics, Sim%Timedisc)
+
+CALL RunFosite(Sim)
+
+CALL CloseFosite(Sim)
 
 CONTAINS
 
@@ -98,25 +107,9 @@ CONTAINS
     OMEGA_IN  = TAYLOR * ETA / RHO0 / SQRT(RMIN*(RMAX-RMIN)**3)
     OMEGA_OUT = MUHAT * OMEGA_IN
 
-    ! physics settings
-    CALL InitPhysics(Physics, &
-         problem = EULER3D_ROTSYM, &
-         gamma   = GAMMA, &                 ! ratio of specific heats        !
-         dpmax   = 1.0E+3)                  ! for advanced time step control !
-
-    ! numerical scheme for flux calculation
-    CALL InitFluxes(Fluxes, &
-         scheme = MIDPOINT)                 ! quadrature rule                !
-
-    ! reconstruction method
-    CALL InitReconstruction(Fluxes%reconstruction, &
-         order     = LINEAR, &
-         variables = CONSERVATIVE, &        ! vars. to use for reconstruction!
-         limiter   = MONOCENT, &            ! one of: minmod, monocent,...   !
-         theta     = 1.2)                   ! optional parameter for limiter !
-
     ! mesh settings
-    CALL InitMesh(Mesh,Fluxes, &
+    CALL InitMesh(Mesh,&
+         meshtype = MIDPOINT, &
          geometry = CYLINDRICAL, &
              inum = ZRES, &                  ! resolution in x and            !
              jnum = RRES, &                  !   y direction                  !             
@@ -124,6 +117,19 @@ CONTAINS
              xmax = 0.5*HEIGHT, &
              ymin = RMIN, &
              ymax = RMAX)
+
+    ! physics settings
+    CALL InitPhysics(Physics,Mesh, &
+         problem = EULER3D_ROTSYM, &
+         gamma   = GAMMA, &                 ! ratio of specific heats        !
+         dpmax   = 1.0E+3)                  ! for advanced time step control !
+
+   ! flux calculation and reconstruction method
+    CALL InitFluxes(Fluxes,Mesh,Physics, &
+         order     = LINEAR, &
+         variables = CONSERVATIVE, &        ! vars. to use for reconstruction!
+         limiter   = MONOCENT, &    ! one of: minmod, monocent,...   !
+         theta     = 1.2)           ! optional parameter for limiter !
 
     ! boundary conditions
     CALL InitBoundary(Timedisc%boundary,Mesh,Physics, &
@@ -150,9 +156,6 @@ CONTAINS
          stoptime = TSIM*TVIS, &
          dtlimit  = 1.0E-12*TVIS, &
          maxiter  = 10000000)
-
-    ! set initial condition
-    CALL InitData(Mesh,Fluxes,Physics,Timedisc)
 
     ! initialize log input/output
 !!$    CALL InitFileIO(Logfile,Mesh,Physics,Timedisc, &
@@ -216,4 +219,4 @@ CONTAINS
 
   END SUBROUTINE InitData
 
-END MODULE Init
+END PROGRAM Init

@@ -3,7 +3,9 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: fileio_vtk.f90                                                    #
 !#                                                                           #
-!# Copyright (C) 2010 Björn Sperling <sperling@astrophysik.uni-kiel.de>      #
+!# Copyright (C) 2010-11                                                     #
+!# Björn Sperling <sperling@astrophysik.uni-kiel.de>                         #
+!# Manuel Jung <mjung@astrophysik.uni-kiel.de>                               #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
 !# it under the terms of the GNU General Public License as published by      #
@@ -88,7 +90,8 @@ CONTAINS
     INTEGER           :: fcycles
     INTEGER, OPTIONAL :: unit
     !------------------------------------------------------------------------!
-    INTEGER           :: iTIPO, err,k,n
+    INTEGER           :: iTIPO, err,k,n,i
+    REAL              :: ftime
     CHARACTER, POINTER:: cTIPO(:)
     CHARACTER(LEN=4)  :: cTIPO4
     CHARACTER(LEN=8)  :: cTIPO8
@@ -98,7 +101,6 @@ CONTAINS
     INTENT(IN)        :: Mesh,Physics,fmt,filename,stoptime,count,fcycles,unit
     INTENT(INOUT)     :: this
     !------------------------------------------------------------------------!
-!rank=0 Prozess zusätzlich eine pvts erzeugen!
     CALL InitFileIO(this,fmt,"VTK",filename,'vts',fcycles,.TRUE.,unit)
        this%stoptime = stoptime
        this%dtwall   = dtwall
@@ -164,6 +166,46 @@ CONTAINS
     IF (err.NE.0) &
          CALL Error(this, "InitFileio_vtk", "Unable to allocate memory.")
 
+
+    IF (GetRank(this).EQ.0) THEN
+      ! write a pvd-file: this is a "master" file of all timesteps of all ranks
+#ifdef HAVE_VTK
+      OPEN(this%unit, FILE=TRIM(filename//'.pvd'), &
+           STATUS     = 'REPLACE',      &
+#ifndef NOSTREAM
+           ACCESS     = 'STREAM' ,   &
+#else
+           FORM='UNFORMATTED',&
+#endif
+           ACTION     = 'WRITE',        &
+           POSITION   = 'REWIND',       &
+           IOSTAT     = this%error)
+       IF (this%error.NE. 0) CALL Error(this,"InitFileIO_vtk","Can't open pvd-file")
+#endif
+       WRITE(this%unit, IOSTAT=this%error)'<?xml version="1.0"?>'//end_rec &
+             //'<VTKFile type="Collection" version="0.1" byte_order='//this%endianness//'>'//end_rec &
+             //repeat(' ',2)//'<Collection>'//end_rec
+       IF (this%error.NE. 0) CALL Error(this,"InitFileIO_vtk","Can't write pvd-file")
+    
+       ftime = 0.0
+       DO k=0,fcycles-1 
+         ftime = stoptime/(fcycles-1)*k
+#ifdef PARALLEL       
+         DO i=0,GetNumProcs(this)-1
+           WRITE(s_buffer,fmt='(A,E11.5,A,I4.4,A,I4.4,A,I4.4,A)',IOSTAT=this%error)repeat(' ',4)//'<DataSet timestep="',&
+              ftime,'" part="', i ,'" file="'//TRIM(filename)//'-r',i,'_',k,'.vts"/>' // end_rec
+           WRITE(this%unit, IOSTAT=this%error) TRIM(s_buffer)
+         END DO
+#else
+         WRITE(s_buffer,fmt='(A,E11.5,A,I4.4,A)',IOSTAT=this%error)repeat(' ',4)//'<DataSet timestep="',ftime, &
+             '" part="0" file="'//TRIM(filename)//'_', k,'.vts"/>' // end_rec
+         WRITE(this%unit, IOSTAT=this%error) TRIM(s_buffer)
+#endif
+       END DO
+       WRITE(this%unit, IOSTAT=this%error)repeat(' ',2)//'</Collection>'//end_rec &
+              //'</VTKFile>'//end_rec
+       CALL CloseFile_vtk(this)
+    END IF
   END SUBROUTINE InitFileIO_vtk
 
 
@@ -241,7 +283,6 @@ CONTAINS
     CLOSE(this%unit,IOSTAT=this%error)
     IF(this%error .NE. 0) CALL ERROR(this, "CloseFileIO_vtk", "Can't close file")
   END SUBROUTINE CloseFile_vtk
-
 
   SUBROUTINE WriteHeader_vtk(this,Mesh,Physics)
     IMPLICIT NONE
@@ -324,7 +365,6 @@ CONTAINS
     INTENT(IN)       :: time
     INTENT(INOUT)    :: this
     !------------------------------------------------------------------------!
-
   END SUBROUTINE WriteTimestamp_vtk
 
   SUBROUTINE ReadTimestamp_vtk(this,time)
@@ -360,7 +400,7 @@ CONTAINS
        IF ( n > 1) THEN
           !no scalar => coordinate transformation (only first 2 dims!)
           CALL Convert2Cartesian(Mesh%geometry,Mesh%bcenter(:,:,:),&
-                                 Timedisc%pvar(:,:,spos:spos+1),this%vtktemp)
+                                 Timedisc%pvar(:,:,spos:spos+1),this%vtktemp(:,:,1:2))
        END IF
 
        DO j=Mesh%JMIN,Mesh%JMAX
@@ -380,6 +420,7 @@ CONTAINS
        WRITE(this%unit,IOSTAT=this%error) N_Byte, &
             this%vtktemp2(1:n,Mesh%IMIN:Mesh%IMAX,Mesh%JMIN:Mesh%JMAX)
     END DO
+
     WRITE(this%unit,IOSTAT=this%error)end_rec//repeat(' ',2)//&
          '</AppendedData>'//end_rec//'</VTKFile>'//end_rec
       

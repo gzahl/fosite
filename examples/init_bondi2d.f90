@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: init_bondi2d.f90                                                  #
 !#                                                                           #
-!# Copyright (C) 2006 - 2010                                                 #
+!# Copyright (C) 2006-2012                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -38,7 +38,9 @@
 !* - compile with autodouble          *!
 !**************************************!
 
-MODULE Init
+PROGRAM Init
+  USE fosite
+  USE constants_generic
   USE physics_generic
   USE fluxes_generic
   USE mesh_generic
@@ -48,12 +50,12 @@ MODULE Init
   USE sources_generic
   USE timedisc_generic
   IMPLICIT NONE
+  EXTERNAL :: funcd
   !--------------------------------------------------------------------------!
-  PRIVATE
   ! general constants
   REAL, PARAMETER    :: MSUN = 1.989E+30   ! solar mass [kg]
   ! simulation parameters
-  REAL, PARAMETER    :: TSIM    = 10.0     ! simulation time [TAU] (free fall)
+  REAL, PARAMETER    :: TSIM    = 20.0    ! simulation time [TAU] (free fall)
   REAL, PARAMETER    :: ACCMASS = 1.0*MSUN ! mass of the accreting object
   REAL, PARAMETER    :: GAMMA   = 1.4      ! ratio of specific heats 
   ! boundary conditions
@@ -78,11 +80,20 @@ MODULE Init
   REAL               :: RB                 ! Bondi radius
   REAL               :: TAU                ! free fall time scale
   !--------------------------------------------------------------------------!
-  PUBLIC :: &
-       ! methods
-       InitProgram
+  TYPE(fosite_TYP)   :: Sim
   !--------------------------------------------------------------------------!
 
+CALL InitFosite(Sim)
+
+CALL InitProgram(Sim%Mesh, Sim%Physics, Sim%Fluxes, Sim%Timedisc, &
+                 Sim%Datafile, Sim%Logfile)
+
+! set initial condition
+CALL InitData(Sim%Mesh,Sim%Physics,Sim%Fluxes,Sim%Timedisc)
+
+CALL RunFosite(Sim)
+
+CALL CloseFosite(Sim)
 
 CONTAINS
 
@@ -101,26 +112,14 @@ CONTAINS
     !------------------------------------------------------------------------!
     INTENT(OUT)       :: Mesh,Physics,Fluxes,Timedisc,Datafile,Logfile
     !------------------------------------------------------------------------!
-    ! physics settings
-    CALL InitPhysics(Physics, &
-         problem = EULER2D, &
-         gamma   = GAMMA, &                 ! ratio of specific heats        !
-         dpmax   = 1.0)                     ! for advanced time step control !
+    ! initialize constants (normally done within Physics)
+    ! because we need some constants prior to Physics initialization
+    CALL InitConstants(Physics%Constants, &
+            units = SI)
 
     ! derived constants
     RB  = Physics%Constants%GN * ACCMASS / CSINF**2  ! bondi radius [m]      !
     TAU = RB / CSINF                        ! free fall time scale [s]       !
-
-    ! numerical scheme for flux calculation
-    CALL InitFluxes(Fluxes, &
-         scheme = MIDPOINT)                 ! quadrature rule                !
-
-    ! reconstruction method
-    CALL InitReconstruction(Fluxes%reconstruction, &
-         order     = LINEAR, &
-         variables = CONSERVATIVE, &        ! vars. to use for reconstruction!
-         limiter   = MONOCENT, &            ! one of: minmod, monocent,...   !
-         theta     = 1.2)                   ! optional parameter for limiter !
 
     ! mesh settings
     SELECT CASE(MGEO)
@@ -143,7 +142,8 @@ CONTAINS
     CASE DEFAULT
        CALL Error(Physics,"InitProgram","mesh geometry not supported for 2D Bondi accretion")
     END SELECT
-    CALL InitMesh(Mesh,Fluxes, &
+    CALL InitMesh(Mesh,&
+         meshtype = MIDPOINT, &
          geometry = MGEO, &
              inum = XRES, &
              jnum = YRES, &
@@ -151,7 +151,20 @@ CONTAINS
              xmax = x2, &
              ymin = 0.0, &
              ymax = 2*PI, &
-           gparam = scale)
+           gparam = RB)
+
+    ! physics settings
+    CALL InitPhysics(Physics,Mesh, &
+         problem = EULER2D, &
+         gamma   = GAMMA, &                 ! ratio of specific heats        !
+         dpmax   = 1.0)                     ! for advanced time step control !
+
+    ! flux calculation and reconstruction method
+    CALL InitFluxes(Fluxes,Mesh,Physics, &
+         order     = LINEAR, &
+         variables = CONSERVATIVE, &        ! vars. to use for reconstruction!
+         limiter   = MONOCENT, &    ! one of: minmod, monocent,...   !
+         theta     = 1.2)           ! optional parameter for limiter !
 
     ! source term due to a point mass
     CALL InitSources(Physics%sources,Mesh,Fluxes,Physics,Timedisc%boundary, &
@@ -175,9 +188,6 @@ CONTAINS
          dtlimit  = 1.0E-6 * TAU, &
          maxiter  = 1000000)
 
-    ! set initial condition
-    CALL InitData(Mesh,Physics,Fluxes,Timedisc)
-
     ! initialize log input/output
 !!$    CALL InitFileIO(Logfile,Mesh,Physics,Timedisc,&
 !!$         fileformat = BINARY, &
@@ -186,8 +196,8 @@ CONTAINS
 
     ! initialize data input/output
     CALL InitFileIO(Datafile,Mesh,Physics,Timedisc, &
-         fileformat = GNUPLOT, &
-         filecycles = 0, &                ! all time steps in one file
+!!$         fileformat = BINARY, &
+         fileformat = GNUPLOT, filecycles = 0, &   ! all time steps in one file
          filename   = TRIM(ODIR) // TRIM(OFNAME), &
          count      = ONUM)
   END SUBROUTINE InitProgram
@@ -209,9 +219,12 @@ CONTAINS
     INTENT(IN)        :: Mesh,Physics,Fluxes
     INTENT(INOUT)     :: Timedisc
     !------------------------------------------------------------------------!
-    ! Bondi solution at the outer boundary
-    CALL bondi(Mesh%xmax/RB,GAMMA,RHOINF,CSINF,rho,vr)
-    cs2 = CSINF**2 * (rho/RHOINF)**(GAMMA-1.0)
+    ! Bondi solution at the Bondi radius RB
+!!$    CALL bondi(1.0,GAMMA,RHOINF,CSINF,rho,vr)
+!!$    cs2 = CSINF**2 * (rho/RHOINF)**(GAMMA-1.0)
+    ! take values at infinity as initial condition
+    rho = RHOINF
+    cs2 = CSINF**2
     
     ! initial condition
     Timedisc%pvar(:,:,Physics%DENSITY)   = rho
@@ -250,7 +263,6 @@ CONTAINS
          // TRIM(info_str) // " s")
   END SUBROUTINE InitData
 
-
   SUBROUTINE bondi(r,gamma,rhoinf,csinf,rho,vr)
     USE roots
     IMPLICIT NONE
@@ -269,6 +281,14 @@ CONTAINS
     !------------------------------------------------------------------------!
     REAL, INTENT(IN)  :: r,gamma,rhoinf,csinf
     REAL, INTENT(OUT) :: rho,vr
+    !------------------------------------------------------------------------!
+    INTERFACE
+       SUBROUTINE funcd(x,fx,dfx)
+         IMPLICIT NONE
+         REAL, INTENT(IN)  :: x
+         REAL, INTENT(OUT) :: fx,dfx
+       END SUBROUTINE funcd
+    END INTERFACE
     !------------------------------------------------------------------------!
     REAL, PARAMETER :: xacc = 1.0E-6     ! accuracy for root finding
     REAL :: gp1,gm1,rc,chi,lambda,psi,gr
@@ -299,18 +319,21 @@ CONTAINS
   END SUBROUTINE bondi
 
 
-  ! find the root of fy to compute the exact Bondi solution
-  SUBROUTINE funcd(y,fy,dfy)
-    IMPLICIT NONE
-    !------------------------------------------------------------------------!
-    REAL, INTENT(IN)  :: y
-    REAL, INTENT(OUT) :: fy,dfy
-    !------------------------------------------------------------------------!
-    REAL :: gm1,gr
-    COMMON /funcd_parameter/ gm1,gr
-    !------------------------------------------------------------------------!
-    fy  = 0.5*y*y + y**(-gm1) / gm1 - gr
-    dfy = y - y**(-gm1-1.)
-  END SUBROUTINE funcd
+END PROGRAM Init
 
-END MODULE Init
+
+! find the root of fy to compute the exact Bondi solution
+SUBROUTINE funcd(y,fy,dfy)
+  IMPLICIT NONE
+  !------------------------------------------------------------------------!
+  REAL, INTENT(IN)  :: y
+  REAL, INTENT(OUT) :: fy,dfy
+  !------------------------------------------------------------------------!
+  REAL :: gm1,gr
+  COMMON /funcd_parameter/ gm1,gr
+  !------------------------------------------------------------------------!
+  fy  = 0.5*y*y + y**(-gm1) / gm1 - gr
+  dfy = y - y**(-gm1-1.)
+END SUBROUTINE funcd
+
+

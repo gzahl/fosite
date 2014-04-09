@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: fluxes_generic.f90                                                #
 !#                                                                           #
-!# Copyright (C) 2007-2008                                                   #
+!# Copyright (C) 2007-2012                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -27,17 +27,15 @@
 ! generic module for numerical flux functions
 !----------------------------------------------------------------------------!
 MODULE fluxes_generic
-  USE mesh_common, ONLY : Mesh_TYP
   USE physics_common, ONLY : Physics_TYP
   USE fluxes_midpoint, InitFluxes_common => InitFluxes, &
        CloseFluxes_common => CloseFluxes
   USE fluxes_trapezoidal
+  USE mesh_generic
   USE reconstruction_generic
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   PRIVATE
-  INTEGER, PARAMETER :: MIDPOINT     = 1
-  INTEGER, PARAMETER :: TRAPEZOIDAL  = 2
   !--------------------------------------------------------------------------!
   PUBLIC :: &
        ! types
@@ -47,7 +45,6 @@ MODULE fluxes_generic
        ! methods
        InitFluxes, &
        CloseFluxes, &
-       MallocFluxes, &
        CalculateFluxes, &
        PrimRecon, &
        GetBoundaryFlux, &
@@ -62,65 +59,60 @@ MODULE fluxes_generic
 
 CONTAINS
 
-  SUBROUTINE InitFluxes(this,scheme)
-    IMPLICIT NONE
-    !------------------------------------------------------------------------!
-    TYPE(Fluxes_TYP)  :: this
-    INTEGER           :: scheme
-    !------------------------------------------------------------------------!
-    INTENT(IN)        :: scheme
-    INTENT(INOUT)     :: this
-    !------------------------------------------------------------------------!
-
-    ! set flux function properties
-    SELECT CASE(scheme)
-    CASE(MIDPOINT)
-       CALL InitFluxes_midpoint(this,scheme)
-    CASE(TRAPEZOIDAL)
-       CALL InitFluxes_trapezoidal(this,scheme)
-    CASE DEFAULT
-       CALL Error(this, "InitFluxes", "Unknown flux type.")
-    END SELECT
-
-    ! print some information
-    CALL Info(this, " FLUXES---> quadrature rule    " // TRIM(GetName(this)))
-  END SUBROUTINE InitFluxes
-  
-
-  SUBROUTINE MallocFluxes(this,Mesh,Physics)
+  SUBROUTINE InitFluxes(this,Mesh,Physics,order,variables,limiter,theta)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Fluxes_TYP)  :: this
     TYPE(Mesh_TYP)    :: Mesh
     TYPE(Physics_TYP) :: Physics
+    INTEGER, OPTIONAL :: order
+    LOGICAL, OPTIONAL :: variables
+    INTEGER, OPTIONAL :: limiter
+    REAL, OPTIONAL    :: theta
     !------------------------------------------------------------------------!
-    INTEGER           :: err
+    INTEGER                  :: err
     !------------------------------------------------------------------------!
-    INTENT(IN)        :: Mesh,Physics
+    INTENT(IN)        :: Mesh,Physics,order,variables,limiter,theta
     INTENT(INOUT)     :: this
     !------------------------------------------------------------------------!
-    IF (.NOT.Initialized(this)) &
-         CALL Error(this,"MallocFluxes","fluxes module uninitialized")
-    IF (.NOT.Initialized(Physics).OR..NOT.Initialized(Mesh)) &
-         CALL Error(this,"MallocFluxes","physics and/or mesh module uninitialized")
-    ! allocate memory for reconstruction object
-    CALL MallocReconstruction(this%Reconstruction,Mesh,Physics)
+    ! check initialization of Mesh and Physics
+    IF (.NOT.Initialized(Mesh).OR..NOT.Initialized(Physics)) &
+         CALL Error(this,"InitFluxes","mesh and/or physics module uninitialized")
+
+    ! call specific flux initialization routines
+    ! flux module type depends on mesh module type, see mesh_generic
+!CDIR IEXPAND
+    SELECT CASE(GetType(Mesh))
+    CASE(MIDPOINT)
+       CALL InitFluxes_midpoint(this,Mesh,MIDPOINT)
+    CASE(TRAPEZOIDAL)
+       CALL InitFluxes_trapezoidal(this,Mesh,TRAPEZOIDAL)
+    CASE DEFAULT
+       CALL Error(this, "InitFluxes", "Unknown mesh type.")
+    END SELECT
 
     ! allocate memory for all arrays used in fluxes
-    ALLOCATE(this%cons(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,4,Physics%vnum), &
-         this%prim(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,4,Physics%vnum), &
-         this%pfluxes(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,4,Physics%vnum), &
-         this%qfluxes(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,4,Physics%vnum), &
-         this%bxflux(Mesh%JGMIN:Mesh%JGMAX,2,Physics%vnum), &
-         this%byflux(Mesh%IGMIN:Mesh%IGMAX,2,Physics%vnum), &
-         this%bxfold(Mesh%JGMIN:Mesh%JGMAX,2,Physics%vnum), &
-         this%byfold(Mesh%IGMIN:Mesh%IGMAX,2,Physics%vnum), &
+    ALLOCATE(this%cons(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,4,Physics%VNUM), &
+         this%prim(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,4,Physics%VNUM), &
+         this%pfluxes(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,4,Physics%VNUM), &
+         this%qfluxes(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,4,Physics%VNUM), &
+         this%bxflux(Mesh%JGMIN:Mesh%JGMAX,2,Physics%VNUM), &
+         this%byflux(Mesh%IGMIN:Mesh%IGMAX,2,Physics%VNUM), &
+         this%bxfold(Mesh%JGMIN:Mesh%JGMAX,2,Physics%VNUM), &
+         this%byfold(Mesh%IGMIN:Mesh%IGMAX,2,Physics%VNUM), &
          STAT = err)
     IF (err.NE.0) THEN
-       CALL Error(this, "MallocFluxes", "Unable to allocate memory.")
+       CALL Error(this, "InitFluxes", "Unable to allocate memory.")
     END IF
 
+    ! print some information
+    CALL Info(this, " FLUXES---> quadrature rule    " // TRIM(GetName(this)))
+
+    ! initialize reconstruction modules
+    CALL InitReconstruction(this%reconstruction,Mesh,Physics,order,variables,limiter,theta)
+
     ! set reconstruction pointer
+!CDIR IEXPAND
     IF (PrimRecon(this%Reconstruction)) THEN
        this%rstates => this%prim
     ELSE
@@ -130,8 +122,8 @@ CONTAINS
     ! initialize boundary fluxes
     this%bxflux = 0.
     this%byflux = 0.
-  END SUBROUTINE MallocFluxes
-
+  END SUBROUTINE InitFluxes
+  
 
   PURE SUBROUTINE CalculateFluxes(this,Mesh,Physics,pvar,cvar,xflux,yflux)
     IMPLICIT NONE
@@ -139,17 +131,18 @@ CONTAINS
     TYPE(Fluxes_TYP)   :: this
     TYPE(Mesh_TYP)     :: Mesh
     TYPE(Physics_TYP)  :: Physics
-    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum) :: pvar,cvar
-    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum) :: xflux,yflux
+    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%VNUM) :: pvar,cvar
+    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%VNUM) :: xflux,yflux
     !------------------------------------------------------------------------!
     INTENT(IN)        :: Mesh,pvar,cvar
     INTENT(INOUT)     :: this,Physics
     INTENT(OUT)       :: xflux,yflux
     !------------------------------------------------------------------------!
     ! calculate numerical fluxes depending on the integration rule
+!CDIR IEXPAND
     SELECT CASE(GetType(this))
     CASE(MIDPOINT)
-        CALL CalculateFluxes_midpoint(this,Mesh,Physics,pvar,cvar,xflux,yflux)
+       CALL CalculateFluxes_midpoint(this,Mesh,Physics,pvar,cvar,xflux,yflux)
     CASE(TRAPEZOIDAL)
        CALL CalculateFluxes_trapezoidal(this,Mesh,Physics,pvar,cvar,xflux,yflux)
     END SELECT
@@ -167,6 +160,12 @@ CONTAINS
         CALL Error(this,"CloseFluxes","not initialized")
     DEALLOCATE(this%cons,this%prim,this%pfluxes,this%qfluxes, &
          this%bxflux,this%byflux,this%bxfold,this%byfold)
+    SELECT CASE(GetType(this))
+    CASE(MIDPOINT)
+       CALL CloseFluxes_midpoint(this)
+    CASE(TRAPEZOIDAL)
+       CALL CloseFluxes_trapezoidal(this)
+    END SELECT
     CALL CloseReconstruction(this%Reconstruction)
     CALL CloseFluxes_common(this)
   END SUBROUTINE CloseFluxes

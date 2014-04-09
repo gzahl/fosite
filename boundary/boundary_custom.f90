@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: boundary_custom.f90                                               #
 !#                                                                           #
-!# Copyright (C) 2006-2010                                                   #
+!# Copyright (C) 2006-2012                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -29,11 +29,8 @@
 MODULE boundary_custom
   USE mesh_common, ONLY : Mesh_TYP
   USE physics_common, ONLY : Physics_TYP
-  USE fluxes_common, ONLY : Fluxes_TYP
-  USE reconstruction_common, ONLY : Reconstruction_TYP, PrimRecon
   USE boundary_nogradients
   USE boundary_fixed
-  USE physics_generic
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   PRIVATE
@@ -74,12 +71,10 @@ CONTAINS
     ! allocate memory for boundary data and mask
     SELECT CASE(GetDirection(this))
     CASE(WEST,EAST)
-       ALLOCATE(this%data(Mesh%GNUM,Mesh%JMIN:Mesh%JMAX,Physics%VNUM), &
-            this%cbtype(Mesh%JMIN:Mesh%JMAX,Physics%VNUM), &
+       ALLOCATE(this%cbtype(Mesh%JMIN:Mesh%JMAX,Physics%VNUM), &
             STAT=err)
     CASE(SOUTH,NORTH)
-       ALLOCATE(this%data(Mesh%IMIN:Mesh%IMAX,Mesh%GNUM,Physics%VNUM), &
-            this%cbtype(Mesh%IMIN:Mesh%IMAX,Physics%VNUM), &
+       ALLOCATE(this%cbtype(Mesh%IMIN:Mesh%IMAX,Physics%VNUM), &
             STAT=err)
     END SELECT
     IF (err.NE.0) THEN
@@ -94,91 +89,99 @@ CONTAINS
   END SUBROUTINE InitBoundary_custom
 
 
-  PURE SUBROUTINE CenterBoundary_custom(this,Mesh,Physics,Fluxes,pvar)
+  PURE SUBROUTINE CenterBoundary_custom(this,Mesh,Physics,pvar)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Boundary_TYP) :: this
     TYPE(Mesh_TYP)     :: Mesh
     TYPE(Physics_TYP)  :: Physics
-    TYPE(Fluxes_TYP)   :: Fluxes
     REAL :: pvar(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum)
     !------------------------------------------------------------------------!
     INTEGER       :: i,j,k
     !------------------------------------------------------------------------!
-    INTENT(IN)    :: this,Mesh,Physics,Fluxes
+    INTENT(IN)    :: this,Mesh,Physics
     INTENT(INOUT) :: pvar  
     !------------------------------------------------------------------------!
     ! ATTENTION: If this%bctype(:) contains bogus values, this boundary module
     !            behaves like the NO_GRADIENTS boundary condition.
+!CDIR IEXPAND
     SELECT CASE(GetDirection(this))
     CASE(WEST)
        DO i=1,Mesh%GNUM
-          WHERE (this%cbtype(:,:).EQ.CUSTOM_PERIOD)
-             pvar(Mesh%IMIN-i,:,:) = pvar(Mesh%IMAX-i+1,:,:)
-          ELSEWHERE(this%cbtype(:,:).EQ.CUSTOM_REFLECT)
-             pvar(Mesh%IMIN-i,:,:) = pvar(Mesh%IMIN+i-1,:,:)
-          ELSEWHERE(this%cbtype(:,:).EQ.CUSTOM_REFLNEG)
-             pvar(Mesh%IMIN-i,:,:) = -pvar(Mesh%IMIN+i-1,:,:)
-          ELSEWHERE(this%cbtype(:,:).EQ.CUSTOM_EXTRAPOL)
-             pvar(Mesh%IMIN-i,:,:) = (i+1)*pvar(Mesh%IMIN,:,:) - i*pvar(Mesh%IMIN+1,:,:)
-          ELSEWHERE(this%cbtype(:,:).EQ.CUSTOM_FIXED)
-             pvar(Mesh%IMIN-i,:,:) = this%data(i,:,:)
-          ELSEWHERE
-             ! defaults to NO_GRADIENTS
-             pvar(Mesh%IMIN-i,:,:) = pvar(Mesh%IMIN,:,:)               
-          END WHERE
+          DO j=Mesh%JMIN,Mesh%JMAX
+             WHERE (this%cbtype(j,:).EQ.CUSTOM_PERIOD)
+                pvar(Mesh%IMIN-i,j,:) = pvar(Mesh%IMAX-i+1,j,:)
+             ELSEWHERE(this%cbtype(j,:).EQ.CUSTOM_REFLECT)
+                pvar(Mesh%IMIN-i,j,:) = pvar(Mesh%IMIN+i-1,j,:)
+             ELSEWHERE(this%cbtype(j,:).EQ.CUSTOM_REFLNEG)
+                pvar(Mesh%IMIN-i,j,:) = -pvar(Mesh%IMIN+i-1,j,:)
+             ELSEWHERE(this%cbtype(j,:).EQ.CUSTOM_EXTRAPOL)
+                pvar(Mesh%IMIN-i,j,:) = (i+1)*pvar(Mesh%IMIN,j,:) - i*pvar(Mesh%IMIN+1,j,:)
+             ELSEWHERE(this%cbtype(j,:).EQ.CUSTOM_FIXED)
+                pvar(Mesh%IMIN-i,j,:) = this%data(i,j,:)
+             ELSEWHERE
+                ! defaults to NO_GRADIENTS
+                pvar(Mesh%IMIN-i,j,:) = pvar(Mesh%IMIN,j,:)               
+             END WHERE
+          END DO
        END DO
     CASE(EAST)
        DO i=1,Mesh%GNUM
-          WHERE (this%cbtype(:,:).EQ.CUSTOM_PERIOD)
-             pvar(Mesh%IMAX+i,:,:) = pvar(Mesh%IMIN+i-1,:,:)
-          ELSEWHERE (this%cbtype(:,:).EQ.CUSTOM_REFLECT)
-             pvar(Mesh%IMAX+i,:,:) = pvar(Mesh%IMAX-i+1,:,:)
-          ELSEWHERE (this%cbtype(:,:).EQ.CUSTOM_REFLNEG)
-             pvar(Mesh%IMAX+i,:,:) = -pvar(Mesh%IMAX-i+1,:,:)
-          ELSEWHERE (this%cbtype(:,:).EQ.CUSTOM_EXTRAPOL)
-             pvar(Mesh%IMAX+i,:,:) = (i+1)*pvar(Mesh%IMAX,:,:) - i*pvar(Mesh%IMAX-1,:,:)
-          ELSEWHERE (this%cbtype(:,:).EQ.CUSTOM_FIXED)
-             pvar(Mesh%IMAX+i,:,:) = this%data(i,:,:)
-          ELSEWHERE
-             ! defaults to NO_GRADIENTS
-             pvar(Mesh%IMAX+i,:,:) = pvar(Mesh%IMAX,:,:)               
-          END WHERE
+          DO j=Mesh%JMIN,Mesh%JMAX
+             WHERE (this%cbtype(j,:).EQ.CUSTOM_PERIOD)
+                pvar(Mesh%IMAX+i,j,:) = pvar(Mesh%IMIN+i-1,j,:)
+             ELSEWHERE (this%cbtype(j,:).EQ.CUSTOM_REFLECT)
+                pvar(Mesh%IMAX+i,j,:) = pvar(Mesh%IMAX-i+1,j,:)
+             ELSEWHERE (this%cbtype(j,:).EQ.CUSTOM_REFLNEG)
+                pvar(Mesh%IMAX+i,j,:) = -pvar(Mesh%IMAX-i+1,j,:)
+             ELSEWHERE (this%cbtype(j,:).EQ.CUSTOM_EXTRAPOL)
+                pvar(Mesh%IMAX+i,j,:) = (i+1)*pvar(Mesh%IMAX,j,:) - i*pvar(Mesh%IMAX-1,j,:)
+             ELSEWHERE (this%cbtype(j,:).EQ.CUSTOM_FIXED)
+                pvar(Mesh%IMAX+i,j,:) = this%data(i,j,:)
+             ELSEWHERE
+                ! defaults to NO_GRADIENTS
+                pvar(Mesh%IMAX+i,j,:) = pvar(Mesh%IMAX,j,:)               
+             END WHERE
+          END DO
        END DO
     CASE(SOUTH)
        DO j=1,Mesh%GNUM
-          WHERE (this%cbtype(:,:).EQ.CUSTOM_PERIOD)
-             pvar(:,Mesh%JMIN-j,:) = pvar(:,Mesh%JMAX-j+1,:)
-          ELSEWHERE (this%cbtype(:,:).EQ.CUSTOM_REFLECT)
-             pvar(:,Mesh%JMIN-j,:) = pvar(:,Mesh%JMIN+j-1,:)
-          ELSEWHERE (this%cbtype(:,:).EQ.CUSTOM_REFLNEG)
-             pvar(:,Mesh%JMIN-j,:) = -pvar(:,Mesh%JMIN+j-1,:)
-          ELSEWHERE (this%cbtype(:,:).EQ.CUSTOM_EXTRAPOL)
-             pvar(:,Mesh%JMIN-j,:) = (j+1)*pvar(:,Mesh%JMIN,:) - j*pvar(:,Mesh%JMIN+1,:)
-          ELSEWHERE (this%cbtype(:,:).EQ.CUSTOM_FIXED)
-             pvar(:,Mesh%JMIN-j,:) = this%data(:,j,:)
-          ELSEWHERE
-             ! defaults to NO_GRADIENTS
-             pvar(:,Mesh%JMIN-j,:) = pvar(:,Mesh%JMIN,:)
-          END WHERE
+          DO i=Mesh%IMIN,Mesh%IMAX
+             WHERE (this%cbtype(i,:).EQ.CUSTOM_PERIOD)
+                pvar(i,Mesh%JMIN-j,:) = pvar(i,Mesh%JMAX-j+1,:)
+             ELSEWHERE (this%cbtype(i,:).EQ.CUSTOM_REFLECT)
+                pvar(i,Mesh%JMIN-j,:) = pvar(i,Mesh%JMIN+j-1,:)
+             ELSEWHERE (this%cbtype(i,:).EQ.CUSTOM_REFLNEG)
+                pvar(i,Mesh%JMIN-j,:) = -pvar(i,Mesh%JMIN+j-1,:)
+             ELSEWHERE (this%cbtype(i,:).EQ.CUSTOM_EXTRAPOL)
+                pvar(i,Mesh%JMIN-j,:) = (j+1)*pvar(i,Mesh%JMIN,:) - j*pvar(i,Mesh%JMIN+1,:)
+             ELSEWHERE (this%cbtype(i,:).EQ.CUSTOM_FIXED)
+                pvar(i,Mesh%JMIN-j,:) = this%data(i,j,:)
+             ELSEWHERE
+                ! defaults to NO_GRADIENTS
+                pvar(i,Mesh%JMIN-j,:) = pvar(i,Mesh%JMIN,:)
+             END WHERE
+          END DO
        END DO
     CASE(NORTH)
        DO j=1,Mesh%GNUM
-          WHERE (this%cbtype(:,:).EQ.CUSTOM_PERIOD)
-             pvar(:,Mesh%JMAX+j,:) = pvar(:,Mesh%JMIN+j-1,:)
-          ELSEWHERE (this%cbtype(:,:).EQ.CUSTOM_REFLECT)
-             pvar(:,Mesh%JMAX+j,:) = pvar(:,Mesh%JMAX-j+1,:)
-          ELSEWHERE (this%cbtype(:,:).EQ.CUSTOM_REFLNEG)
-             pvar(:,Mesh%JMAX+j,:) = -pvar(:,Mesh%JMAX-j+1,:)
-          ELSEWHERE (this%cbtype(:,:).EQ.CUSTOM_EXTRAPOL)
-             pvar(:,Mesh%JMAX+j,:) = (j+1)*pvar(:,Mesh%JMAX,:) - j*pvar(:,Mesh%JMAX-1,:)
-          ELSEWHERE (this%cbtype(:,:).EQ.CUSTOM_FIXED)
-             pvar(:,Mesh%JMAX+j,:) = this%data(:,j,:)
-          ELSEWHERE
-             ! defaults to NO_GRADIENTS
-             pvar(:,Mesh%JMAX+j,:) = pvar(:,Mesh%JMAX,:)
-          END WHERE
-       END DO
+           DO i=Mesh%IMIN,Mesh%IMAX
+              WHERE (this%cbtype(i,:).EQ.CUSTOM_PERIOD)
+                 pvar(i,Mesh%JMAX+j,:) = pvar(i,Mesh%JMIN+j-1,:)
+              ELSEWHERE (this%cbtype(i,:).EQ.CUSTOM_REFLECT)
+                 pvar(i,Mesh%JMAX+j,:) = pvar(i,Mesh%JMAX-j+1,:)
+              ELSEWHERE (this%cbtype(i,:).EQ.CUSTOM_REFLNEG)
+                 pvar(i,Mesh%JMAX+j,:) = -pvar(i,Mesh%JMAX-j+1,:)
+              ELSEWHERE (this%cbtype(i,:).EQ.CUSTOM_EXTRAPOL)
+                 pvar(i,Mesh%JMAX+j,:) = (j+1)*pvar(i,Mesh%JMAX,:) - j*pvar(i,Mesh%JMAX-1,:)
+              ELSEWHERE (this%cbtype(i,:).EQ.CUSTOM_FIXED)
+                 pvar(i,Mesh%JMAX+j,:) = this%data(i,j,:)
+              ELSEWHERE
+                 ! defaults to NO_GRADIENTS
+                 pvar(i,Mesh%JMAX+j,:) = pvar(i,Mesh%JMAX,:)
+              END WHERE
+           END DO
+        END DO
     END SELECT
   END SUBROUTINE CenterBoundary_custom
 
@@ -190,7 +193,8 @@ CONTAINS
     !------------------------------------------------------------------------!
     INTENT(INOUT) :: this
     !------------------------------------------------------------------------!
-    DEALLOCATE(this%data,this%cbtype)
+    CALL CloseBoundary_fixed(this)
+    DEALLOCATE(this%cbtype)
   END SUBROUTINE CloseBoundary_custom
 
 END MODULE boundary_custom

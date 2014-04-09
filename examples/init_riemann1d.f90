@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: init_riemann1d.f90                                                #
 !#                                                                           #
-!# Copyright (C) 2006-2010                                                   #
+!# Copyright (C) 2006-2012                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -35,7 +35,8 @@
 !     viscosity and an artificial heat-flux, J. Comput. Phys. 72 (1987), 78-120
 !     DOI: 10.1016/0021-9991(87)90074-X
 !----------------------------------------------------------------------------!
-MODULE Init
+PROGRAM Init
+  USE fosite
   USE physics_generic
   USE fluxes_generic
   USE mesh_generic
@@ -45,7 +46,6 @@ MODULE Init
   USE timedisc_generic
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
-  PRIVATE
   ! initial condition, one of
   !   1: Sod problem, see ref. [1],[2]
   !   2: Toro test no. 2, see ref. [1]
@@ -69,11 +69,20 @@ MODULE Init
   REAL               :: TSIM             ! simulation time
   REAL               :: CSISO            ! isothermal sound speed (test no. 6)
   !--------------------------------------------------------------------------!
-  PUBLIC :: &
-       ! methods
-       InitProgram
+  TYPE(fosite_TYP)   :: Sim
   !--------------------------------------------------------------------------!
 
+CALL InitFosite(Sim)
+
+CALL InitProgram(Sim%Mesh, Sim%Physics, Sim%Fluxes, Sim%Timedisc, &
+                 Sim%Datafile, Sim%Logfile)
+
+! set initial condition
+CALL InitData(Sim%Mesh, Sim%Physics, Sim%Timedisc)
+
+CALL RunFosite(Sim)
+
+CALL CloseFosite(Sim)
 
 CONTAINS
 
@@ -116,7 +125,7 @@ CONTAINS
        TESTSTR= "1D Riemannn problem: Toro test no. 5"
        OFNAME = "toro5"
        GAMMA  = 1.4
-       TSIM   = 0.035
+       TSIM   = 0.012
     CASE(6)
        TESTSTR= "1D Riemannn problem: Noh problem"
        OFNAME = "noh"
@@ -131,31 +140,9 @@ CONTAINS
        CALL Error(Mesh,"InitProgram", "Test problem number should be 1,2,3,4,5,6 or 7")
     END SELECT
 
-    ! physics settings
-    IF (ICNUM.EQ.7) THEN
-       CALL InitPhysics(Physics, &
-            problem = EULER2D_ISOTHERM, &
-            cs      = CSISO)
-    ELSE   
-       CALL InitPhysics(Physics, &
-            problem = EULER2D, &
-            gamma   = GAMMA, &         ! ratio of specific heats        !
-            dpmax   = 1.0E+06)         ! for advanced time step control !
-    END IF
-
-    ! numerical scheme for flux calculation
-    CALL InitFluxes(Fluxes, &
-         scheme = MIDPOINT)            ! quadrature rule                !
-
-    ! reconstruction method
-    CALL InitReconstruction(Fluxes%reconstruction, &
-         order     = LINEAR, &
-         variables = CONSERVATIVE,&    ! vars. to use for reconstruction!
-         limiter   = MONOCENT, &       ! one of: minmod, monocent,...   !
-         theta     = 1.2)              ! optional parameter for limiter !
-
     ! mesh settings
-    CALL InitMesh(Mesh,Fluxes, &
+    CALL InitMesh(Mesh,&
+         meshtype = MIDPOINT, &
          geometry = CARTESIAN, &
              inum = XRES,&             ! resolution in x and            !
              jnum = YRES, &            !   y direction                  !             
@@ -164,17 +151,33 @@ CONTAINS
              ymin = 0.0, &
              ymax = 1.0)
 
+    ! physics settings
+    IF (ICNUM.EQ.7) THEN
+       CALL InitPhysics(Physics,Mesh, &
+            problem = EULER2D_ISOTHERM, &
+            cs      = CSISO)
+    ELSE   
+       CALL InitPhysics(Physics,Mesh, &
+            problem = EULER2D, &
+            gamma   = GAMMA, &         ! ratio of specific heats        !
+            dpmax   = 1.0E+06)         ! for advanced time step control !
+    END IF
+
+    ! flux calculation and reconstruction method
+    CALL InitFluxes(Fluxes,Mesh,Physics, &
+         order     = LINEAR, &
+         variables = CONSERVATIVE, &        ! vars. to use for reconstruction!
+         limiter   = MONOCENT, &    ! one of: minmod, monocent,...   !
+         theta     = 1.2)           ! optional parameter for limiter !
+
     ! time discretization settings
     CALL InitTimedisc(Timedisc,Mesh,Physics,&
          method   = MODIFIED_EULER, &
          order    = 3, &
-         cfl      = 0.3, &
+         cfl      = 0.4, &
          stoptime = TSIM, &
          dtlimit  = 1.0E-10, &
          maxiter  = 100000)
-
-    ! set initial condition
-    CALL InitData(Mesh,Physics,Timedisc)
 
     ! boundary conditions
     CALL InitBoundary(Timedisc%boundary,Mesh,Physics, &
@@ -238,21 +241,21 @@ CONTAINS
        p_l   = 1000.
        p_r   = 0.01
     CASE(4) ! Toro's test no. 4
-       x0    = 0.5
-       rho_l = 1.0
-       rho_r = 1.0
-       u_l   = 0.0
-       u_r   = 0.
-       p_l   = 0.01
-       p_r   = 100.0
-    CASE(5) ! Toro's test no. 5
-       x0    = 0.3
+       x0    = 0.4
        rho_l = 5.99924
-       rho_r = 5.99242
+       rho_r = 5.99924
        u_l   = 19.5975
        u_r   = -6.19633
        p_l   = 460.894
        p_r   = 46.0950
+    CASE(5) ! Toro's test no. 5
+       x0    = 0.8
+       rho_l = 1.0
+       rho_r = 1.0
+       u_l   = -19.5975
+       u_r   = -19.5975
+       p_l   = 1000.0
+       p_r   = 0.01
     CASE(6) ! Noh problem
        x0    = 0.5
        rho_l = 1.0
@@ -314,4 +317,4 @@ CONTAINS
 
   END SUBROUTINE InitData
 
-END MODULE Init
+END PROGRAM Init

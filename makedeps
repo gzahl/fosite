@@ -28,7 +28,7 @@ BEGIN { dependencies=""; objnum=split(objfiles,objlist)}
        || (tolower($1) ~/program/))
       target=builddir$2".o :"
 
-   if (tolower($1) ~/use/)
+   if (tolower($1) ~/use/ && !(tolower($1) ~/!use/))
    {
       module=$2
       sub(/,/,"",module)

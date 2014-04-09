@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: fluxes_midpoint.f90                                               #
 !#                                                                           #
-!# Copyright (C) 2007-2008                                                   #
+!# Copyright (C) 2007-2012                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -28,7 +28,7 @@
 !----------------------------------------------------------------------------!
 MODULE fluxes_midpoint
   USE fluxes_common
-  USE mesh_common, ONLY : Mesh_TYP
+  USE mesh_common, ONLY : Mesh_TYP, GetName
   USE boundary_common, ONLY : &
 #ifdef PARALLEL
        DEFAULT_MPI_REAL, &
@@ -49,8 +49,6 @@ MODULE fluxes_midpoint
 #endif
   !--------------------------------------------------------------------------!
   PRIVATE
-  ! name for the numerical flux function
-  CHARACTER(LEN=32), PARAMETER :: qrule_name = "midpoint"
   !--------------------------------------------------------------------------!
   PUBLIC :: &
        ! types
@@ -61,6 +59,7 @@ MODULE fluxes_midpoint
        InitFluxes_midpoint, &
        CalculateFaceData, &
        CalculateFluxes_midpoint, &
+       CloseFluxes_midpoint, &
        GetBoundaryFlux, &
        PrimRecon, &
        GetType, &
@@ -75,16 +74,31 @@ MODULE fluxes_midpoint
 
 CONTAINS
 
-  SUBROUTINE InitFluxes_midpoint(this,qrule)
+  SUBROUTINE InitFluxes_midpoint(this,Mesh,qrule)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Fluxes_TYP)  :: this
+    TYPE(Mesh_TYP)    :: Mesh
     INTEGER           :: qrule
     !------------------------------------------------------------------------!
-    INTENT(IN)        :: qrule
+    INTEGER           :: err,n
+    !------------------------------------------------------------------------!
+    INTENT(IN)        :: Mesh,qrule
     INTENT(INOUT)     :: this
     !------------------------------------------------------------------------!
-    CALL InitFluxes(this,qrule,qrule_name)
+    CALL InitFluxes(this,qrule,GetName(Mesh))
+    ! allocate arrays used in fluxes_midpoint
+    ALLOCATE(this%dx(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,4), &
+         this%dy(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,4), &
+         STAT=err)
+    IF (err.NE.0) &
+       CALL Error(this, "InitFluxes_midpoint","Unable to allocate memory.")
+    ! set relative positions for reconstruction points:
+    ! cell face positions
+    DO n=1,4
+       this%dx(:,:,n) = Mesh%fpos(:,:,n,1) - Mesh%bcenter(:,:,1)
+       this%dy(:,:,n) = Mesh%fpos(:,:,n,2) - Mesh%bcenter(:,:,2)
+    END DO
   END SUBROUTINE InitFluxes_midpoint
 
 
@@ -102,15 +116,16 @@ CONTAINS
     !------------------------------------------------------------------------!
 
     ! reconstruct data on cell faces
+!CDIR IEXPAND
     IF (PrimRecon(this%reconstruction)) THEN
        CALL CalculateSlopes(this%Reconstruction,Mesh,Physics,pvar)
-       CALL CalculateStates(this%Reconstruction,Mesh,Physics,4,Mesh%bcenter,&
-            Mesh%fpos,pvar,this%rstates)
+       CALL CalculateStates(this%Reconstruction,Mesh,Physics,4,this%dx,&
+            this%dy,pvar,this%rstates)
        CALL Convert2Conservative(Physics,Mesh,this%rstates,this%cons)
     ELSE
        CALL CalculateSlopes(this%Reconstruction,Mesh,Physics,cvar)
-       CALL CalculateStates(this%Reconstruction,Mesh,Physics,4,Mesh%bcenter,&
-            Mesh%fpos,cvar,this%rstates)
+       CALL CalculateStates(this%Reconstruction,Mesh,Physics,4,this%dx,&
+            this%dy,cvar,this%rstates)
        CALL Convert2Primitive(Physics,Mesh,this%rstates,this%prim)
     END IF
 
@@ -305,5 +320,15 @@ CONTAINS
     CALL MPI_Group_free(dest_group,ierror)
 #endif
   END FUNCTION GetBoundaryFlux
+
+  SUBROUTINE CloseFluxes_midpoint(this)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Fluxes_TYP)  :: this
+    !------------------------------------------------------------------------!
+    INTENT(INOUT)     :: this
+    !------------------------------------------------------------------------!
+    DEALLOCATE(this%dx,this%dy)
+  END SUBROUTINE CloseFluxes_midpoint
 
 END MODULE fluxes_midpoint

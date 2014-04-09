@@ -30,63 +30,55 @@ MODULE Integration
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   PRIVATE
-  INTEGER, PARAMETER :: GaussN  = 15       ! number of abscissas and weights !
-  INTEGER, PARAMETER :: GaussN2 = GaussN / 2
-  INTEGER, PARAMETER :: MAXREC = 100              ! max. depth for recursion !
-  REAL, DIMENSION(:), ALLOCATABLE :: GaussXk, GaussAk ! abscissas and weights!
-  REAL, DIMENSION(:,:), ALLOCATABLE :: stack      ! stack for iterative alg. !
-  !--------------------------------------------------------------------------!
-  PUBLIC InitIntegration, CloseIntegration, integrate
-  !--------------------------------------------------------------------------!
+#ifndef GAUSSN
+! number of abscissas and weights !
+#define GAUSSN (15)
+#endif
+#define GAUSSN2 (GAUSSN / 2)
+  INTEGER, PARAMETER        :: MAXREC = 100       ! max. depth for recursion !
+  REAL, DIMENSION(3,MAXREC) :: stack              ! stack for iterative alg. !
 
-CONTAINS
-
-  SUBROUTINE InitIntegration
-    IMPLICIT NONE
-    !----------------------------------------------------------------------!
-    INTEGER      :: err
-    !----------------------------------------------------------------------!
-    
-    ALLOCATE(GaussXk(GaussN), GaussAk(GaussN), stack(3,MAXREC), &
-         STAT = err)
-    
-    IF (err.NE.0) THEN
-       PRINT *, "ERROR in InitIntegration: Can't allocate memory!"
-       STOP
-    END IF
-      
-    SELECT CASE(GaussN)
-    CASE(2)
+! abscissas and weights    !
+#if GAUSSN == 2
+  REAL, DIMENSION(GAUSSN), PARAMETER :: &
        GaussXk = (/ -0.577350269189626, 0.577350269189626 /)
+  REAL, DIMENSION(GAUSSN), PARAMETER :: &
        GaussAk = (/  1.000000000000000, 1.000000000000000 /)
-    CASE(4)
+#elif GAUSSN == 4
+  REAL, DIMENSION(GAUSSN), PARAMETER :: &
        GaussXk = (/ -0.861136311594053, -0.339981043584856, &
                      0.339981043584856,  0.861136311594053 /)
+  REAL, DIMENSION(GAUSSN), PARAMETER :: &
        GaussAk = (/  0.347854845137454,  0.652145154862546, &
                      0.652145154862546,  0.347854845137454 /)
-    CASE(8)
+#elif GAUSSN == 8
+  REAL, DIMENSION(GAUSSN), PARAMETER :: &
        GaussXk = (/ -0.960289856497536, -0.796666477413627, &
                     -0.525532409916329, -0.183434642495650, &
                      0.183434642495650,  0.525532409916329, &
                      0.796666477413627,  0.960289856497536 /)
+  REAL, DIMENSION(GAUSSN), PARAMETER :: &
        GaussAk = (/  0.101228536290376,  0.222381034453374, &
                      0.313706645877887,  0.362683783378362, &
                      0.362683783378362,  0.313706645877887, &
                      0.222381034453374,  0.101228536290376 /)
-    CASE(12)
+#elif GAUSSN == 12
+  REAL, DIMENSION(GAUSSN), PARAMETER :: &
        GaussXk = (/ -0.9815606342467193, -0.9041172563704749, &
                     -0.7699026741943047, -0.5873179542866174, &
                     -0.3678314989981802, -0.1252334085114689, &
                      0.1252334085114689,  0.3678314989981802, &
                      0.5873179542866174,  0.7699026741943047, &
                      0.9041172563704749,  0.9815606342467193 /)
+  REAL, DIMENSION(GAUSSN), PARAMETER :: &
        GaussAk = (/  0.047175336386512,   0.106939325995318, &
                      0.160078328543346,   0.203167426723066, &
                      0.233492536538355,   0.249147045813403, &
                      0.249147045813403,   0.233492536538355, &
                      0.203167426723066,   0.160078328543346, &
                      0.106939325995318,   0.04717533638651 /)
-    CASE(15)
+#elif GAUSSN == 15
+  REAL, DIMENSION(GAUSSN), PARAMETER :: &
        GaussXk = (/ -0.9879925180204854, -0.9372733924007059, &
                     -0.8482065834104272, -0.7244177313601700, &
                     -0.5709721726085388, -0.3941513470775634, &
@@ -96,6 +88,7 @@ CONTAINS
                      0.3941513470775634,  0.5709721726085388, &
                      0.7244177313601700,  0.8482065834104272, &
                      0.9372733924007059,  0.9879925180204854 /)
+  REAL, DIMENSION(GAUSSN), PARAMETER :: &
        GaussAk = (/  0.030753241996117,   0.070366047488108, &
                      0.107159220467172,   0.139570677926154, &
                      0.166269205816994,   0.186161000015562, &
@@ -105,13 +98,14 @@ CONTAINS
                      0.186161000015562,   0.166269205816994, &
                      0.139570677926154,   0.107159220467172, &
                      0.070366047488108,   0.03075324199612 /)
-    CASE DEFAULT
-       PRINT *, "ERROR in InitIntegration: select one of 2,4,8,12,15 for GaussN"
-       STOP
-    END SELECT
-     
-  END SUBROUTINE InitIntegration
+#else 
+# error Wrong GAUSSN number in numtools/integration.f90
+#endif
+  !--------------------------------------------------------------------------!
+  PUBLIC integrate
+  !--------------------------------------------------------------------------!
 
+CONTAINS
 
   FUNCTION integrate(fkt,xl,xr,eps,plist,method) RESULT(integral)
     IMPLICIT NONE
@@ -231,7 +225,7 @@ CONTAINS
     res = resL + resR
 
     ! error estimate
-    qerr = (oldS - res) / (4**GaussN - 1.0)
+    qerr = (oldS - res) / (4**GAUSSN - 1.0)
 
     IF (ABS(qerr).GE.tol) THEN
        ! recursion
@@ -282,7 +276,7 @@ CONTAINS
        resL = qgauss1D(fkt, l, m, plist)       ! integrate over [xl..m]
        resR = qgauss1D(fkt, m, r, plist)       ! integrate over [m..xr]
        res = resL + resR                       ! add two results
-       qerr = (resO - res) / (4**GaussN - 1.0) ! error estimate
+       qerr = (resO - res) / (4**GAUSSN - 1.0) ! error estimate
        ! check error
        IF (ABS(qerr) < err) THEN
           ! store result
@@ -345,13 +339,13 @@ CONTAINS
     h = 0.5 * (xr-xl)
     Sgauss = 0.0
     
-    DO j=1,GaussN2
+    DO j=1,GAUSSN2
        t  = h * GaussXk(j)
        Sgauss = Sgauss + GaussAk(j) * (fkt(m-t,plist)+fkt(m+t,plist))
     END DO
 
-    IF (MOD(GaussN,2) /= 0) THEN
-       Sgauss = Sgauss + GaussAk(GaussN2+1) * fkt(m,plist)
+    IF (MOD(GAUSSN,2) /= 0) THEN
+       Sgauss = Sgauss + GaussAk(GAUSSN2+1) * fkt(m,plist)
     END IF
     Sgauss = h * Sgauss
   END FUNCTION qgauss1D
@@ -416,14 +410,5 @@ CONTAINS
     
     Srom = res(j-1,j-1)
   END FUNCTION qromberg
-
-
-  SUBROUTINE CloseIntegration
-    IMPLICIT NONE
-    !------------------------------------------------------------------------!
-    
-    DEALLOCATE(GaussXk,GaussAk,stack)
-  END SUBROUTINE CloseIntegration
-
 
 END MODULE Integration

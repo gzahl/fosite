@@ -1,3 +1,7 @@
+fluxes_common.o : \
+	common_types.o \
+	reconstruction_common.o
+
 boundary_common.o : \
 	common_types.o
 
@@ -9,39 +13,43 @@ fileio_common.o : \
 	mesh_common.o \
 	physics_common.o
 
-fluxes_common.o : \
-	common_types.o \
-	reconstruction_common.o
-
-geometry_common.o : \
+reconstruction_common.o : \
 	common_types.o
 
-mesh_common.o : \
+fosite_common.o : \
 	common_types.o \
-	geometry_common.o
-
-multipole_common.o : \
-	common_types.o \
-	mesh_common.o
-
-physics_common.o : \
-	common_types.o \
-	sources_common.o \
-	constants_common.o
+	mesh_common.o \
+	fluxes_common.o \
+	physics_common.o \
+	fileio_common.o \
+	timedisc_common.o
 
 poisson_common.o : \
 	common_types.o \
 	multipole_common.o
 
-reconstruction_common.o : \
-	common_types.o
+timedisc_common.o : \
+	common_types.o \
+	boundary_common.o
 
 sources_common.o : \
 	common_types.o \
 	mesh_common.o \
 	poisson_common.o
 
-timedisc_common.o : \
+multipole_common.o : \
 	common_types.o \
-	boundary_common.o
+	mesh_common.o
+
+mesh_common.o : \
+	common_types.o \
+	geometry_common.o
+
+physics_common.o : \
+	common_types.o \
+	sources_common.o \
+	constants_common.o
+
+geometry_common.o : \
+	common_types.o
 

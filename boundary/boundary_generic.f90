@@ -284,9 +284,9 @@ CONTAINS
                        :: pvar, cvar
     !------------------------------------------------------------------------!
     INTEGER       :: i,j
-    INTEGER       :: ierr
 #ifdef PARALLEL
     INTEGER       :: req(4)
+    INTEGER       :: ierr
 #ifdef MPI_USE_SENDRECV
     INTEGER       :: status(MPI_STATUS_SIZE)
 #else
@@ -518,10 +518,11 @@ CONTAINS
     ! set boundary data for (real) physical boundaries in direction "dir"
     SUBROUTINE SetBoundaryData(dir)
       IMPLICIT NONE
-      INTEGER :: dir
+      INTEGER, INTENT(IN) :: dir
+!CDIR IEXPAND
       SELECT CASE(GetType(this(dir)))
       CASE(NO_GRADIENTS)
-         CALL CenterBoundary_nogradients(this(dir),Mesh,Physics,Fluxes,pvar)
+         CALL CenterBoundary_nogradients(this(dir),Mesh,Physics,pvar)
       CASE(PERIODIC)
          ! do nothing in parallel version, because periodicity is
          ! handled via MPI communication
@@ -529,23 +530,23 @@ CONTAINS
          CALL CenterBoundary_periodic(this(dir),Mesh,Physics,pvar)
 #endif
       CASE(REFLECTING)
-         CALL CenterBoundary_reflecting(this(dir),Mesh,Physics,Fluxes,pvar)
+         CALL CenterBoundary_reflecting(this(dir),Mesh,Physics,pvar)
       CASE(AXIS)
-         CALL CenterBoundary_axis(this(dir),Mesh,Physics,Fluxes,pvar)
+         CALL CenterBoundary_axis(this(dir),Mesh,Physics,pvar)
       CASE(FOLDED)
-         CALL CenterBoundary_folded(this(dir),Mesh,Physics,Fluxes,pvar)
+         CALL CenterBoundary_folded(this(dir),Mesh,Physics,pvar)
       CASE(FIXED)
-         CALL CenterBoundary_fixed(this(dir),Mesh,Physics,Fluxes,pvar)
+         CALL CenterBoundary_fixed(this(dir),Mesh,Physics,pvar)
       CASE(EXTRAPOLATION)
-         CALL CenterBoundary_extrapolation(this(dir),Mesh,Physics,Fluxes,pvar)
+         CALL CenterBoundary_extrapolation(this(dir),Mesh,Physics,pvar)
       CASE(NOH2D,NOH3D)
-         CALL CenterBoundary_noh(this(dir),Mesh,Physics,Fluxes,time,pvar)
+         CALL CenterBoundary_noh(this(dir),Mesh,Physics,time,pvar)
       CASE(NOSLIP)
-         CALL CenterBoundary_noslip(this(dir),Mesh,Physics,Fluxes,pvar)
+         CALL CenterBoundary_noslip(this(dir),Mesh,Physics,pvar)
       CASE(CUSTOM)
-         CALL CenterBoundary_custom(this(dir),Mesh,Physics,Fluxes,pvar)
+         CALL CenterBoundary_custom(this(dir),Mesh,Physics,pvar)
       CASE(FARFIELD)
-         CALL CenterBoundary_farfield(this(dir),Mesh,Physics,Fluxes,pvar)
+         CALL CenterBoundary_farfield(this(dir),Mesh,Physics,pvar)
       END SELECT
     END SUBROUTINE SetBoundaryData
 
@@ -561,6 +562,11 @@ CONTAINS
     !------------------------------------------------------------------------!
     IF (.NOT.Initialized(this)) &
         CALL Error(this,"CloseBoundary_one","not initialized")
+#ifdef PARALLEL
+    ! deallocate MPI send/recv buffers 
+    DEALLOCATE(this%sendbuf,this%recvbuf)
+#endif
+!CDIR IEXPAND
     SELECT CASE(GetType(this))
     CASE(NO_GRADIENTS,PERIODIC,EXTRAPOLATION)
        ! do nothing
@@ -583,23 +589,19 @@ CONTAINS
   END SUBROUTINE CloseBoundary_one
 
 
-  SUBROUTINE CloseBoundary_all(this,dir)
+  SUBROUTINE CloseBoundary_all(this)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Boundary_TYP), DIMENSION(4) :: this
+    !------------------------------------------------------------------------!
     INTEGER       :: dir
     !------------------------------------------------------------------------!
-    INTENT(IN)    :: dir
     INTENT(INOUT) :: this
     !------------------------------------------------------------------------!
-    SELECT CASE(dir)
-    CASE(WEST,EAST,SOUTH,NORTH)
-#ifdef PARALLEL
-       ! deallocate MPI send/recv buffers 
-       DEALLOCATE(this(dir)%sendbuf,this(dir)%recvbuf)
-#endif
-      CALL CloseBoundary_one(this(dir))
-    END SELECT
+    ! loop over all boundaries
+    DO dir=1,4
+       CALL CloseBoundary_one(this(dir))
+    END DO
   END SUBROUTINE CloseBoundary_all
 
 

@@ -91,7 +91,10 @@ CONTAINS
     REAL, INTENT(OUT) :: r,phi
     !------------------------------------------------------------------------!
     r = SQRT(x*x+y*y)
-    phi = ATAN2(y,x)+pi
+    phi = ATAN2(y,x)
+    IF(phi.LT.0.0) THEN
+        phi = phi + 2.0*PI
+    END IF
   END SUBROUTINE Cartesian2Polar_coords
 
 

@@ -103,7 +103,11 @@ CONTAINS
     x1 = x/gp
     y1 = y/gp
     rho = 0.5*LOG(x1*x1+y1*y1)
-    phi = ATAN2(y1,x1)+pi
+    phi = ATAN2(y1,x1)
+    IF(phi.LT.0.0) THEN
+        phi = phi + 2.0*PI
+    END IF
+        
   END SUBROUTINE Cartesian2Logpolar_coords
 
 

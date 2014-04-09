@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: boundary_folded.f90                                               #
 !#                                                                           #
-!# Copyright (C) 2006-2008                                                   #
+!# Copyright (C) 2006-2012                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -31,9 +31,7 @@
 MODULE boundary_folded
   USE mesh_common, ONLY : Mesh_TYP
   USE boundary_reflecting, CloseBoundary_folded => CloseBoundary_reflecting
-  USE fluxes_common, ONLY : Fluxes_TYP
-  USE reconstruction_common, ONLY : Reconstruction_TYP, PrimRecon
-  USE physics_generic
+  USE physics_generic, ONLY : Physics_TYP, ReflectionMasks
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   PRIVATE
@@ -84,20 +82,20 @@ CONTAINS
   END SUBROUTINE InitBoundary_folded
 
 
-  PURE SUBROUTINE CenterBoundary_folded(this,Mesh,Physics,Fluxes,pvar)
+  PURE SUBROUTINE CenterBoundary_folded(this,Mesh,Physics,pvar)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Boundary_TYP) :: this
     TYPE(Mesh_TYP)     :: Mesh
     TYPE(Physics_TYP)  :: Physics
-    TYPE(Fluxes_TYP)   :: Fluxes
     REAL :: pvar(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum)
     !------------------------------------------------------------------------!
     INTEGER       :: i,j
     !------------------------------------------------------------------------!
-    INTENT(IN)    :: this,Mesh,Physics,Fluxes
+    INTENT(IN)    :: this,Mesh,Physics
     INTENT(INOUT) :: pvar
     !------------------------------------------------------------------------!
+!CDIR IEXPAND
     SELECT CASE(GetDirection(this))
     CASE(WEST)
        ! middle cell transmissive (no gradient) boundaries

@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: init_poiseuille.f90                                               #
 !#                                                                           #
-!# Copyright (C) 2006-2010                                                   #
+!# Copyright (C) 2006-2012                                                   #
 !# Bjoern Sperling  <sperling@astrophysik.uni-kiel.de>                       #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
@@ -27,7 +27,8 @@
 !----------------------------------------------------------------------------!
 ! Program and data initialization for a test of Hagen-Poiseuille equ. in a tube
 !----------------------------------------------------------------------------!
-MODULE Init
+PROGRAM Init
+  USE fosite
   USE physics_generic
   USE fluxes_generic
   USE mesh_generic
@@ -38,33 +39,44 @@ MODULE Init
   USE timedisc_generic
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
-  PRIVATE
   ! simulation parameters
-  REAL, PARAMETER :: TSIM  = 1.0                ! simulation time            !
+  REAL, PARAMETER :: TSIM  = 30.0                ! simulation time            !
   REAL, PARAMETER :: RE    = 4.375              ! Reynolds Number            !
   REAL, PARAMETER :: PIN   = 24.0               ! inflow pressure            !
   REAL, PARAMETER :: POUT  = 23.0               ! outflow pressure           !
   REAL, PARAMETER :: RHO0  = 1.0                ! initial density            !
   ! mesh settings
-  INTEGER, PARAMETER :: RRES = 40               ! radial resolution          !
-  INTEGER, PARAMETER :: ZRES = 80               ! resolution along the tube  !
+  INTEGER, PARAMETER :: MGEO = CYLINDRICAL
+!  INTEGER, PARAMETER :: MGEO = CARTESIAN
+  INTEGER, PARAMETER :: XRES = 40               ! radial resolution          !
+  INTEGER, PARAMETER :: YRES = 80               ! resolution along the tube  !
   REAL, PARAMETER    :: LTUBE = 10.0            ! length of the tube         !
   REAL, PARAMETER    :: RTUBE = 1.0             ! radius of the tube         !
   !--------------------------------------------------------------------------!
   ! output file parameter
-  INTEGER, PARAMETER :: ONUM = 100         ! number of output data sets
+  INTEGER, PARAMETER :: ONUM = 30           ! number of output data sets
   CHARACTER(LEN=256), PARAMETER &          ! output data dir
                      :: ODIR = './'
   CHARACTER(LEN=256), PARAMETER &          ! output data file name
                      :: OFNAME = 'poiseuille' 
   !--------------------------------------------------------------------------!
-  PUBLIC :: &
-       ! methods
-       InitProgram
+  TYPE(fosite_TYP)   :: Sim
   !--------------------------------------------------------------------------!
 
+  CALL InitFosite(Sim)
 
-CONTAINS
+  CALL InitProgram(Sim%Mesh, Sim%Physics, Sim%Fluxes, Sim%Timedisc, &
+                   Sim%Datafile, Sim%Logfile)
+
+  ! set initial condition
+  CALL InitData(Sim%Mesh, Sim%Physics, Sim%Timedisc)
+
+  CALL RunFosite(Sim)
+
+  CALL CloseFosite(Sim)
+
+
+  CONTAINS
 
   SUBROUTINE InitProgram(Mesh,Physics,Fluxes,Timedisc,Datafile,Logfile)
     IMPLICIT NONE
@@ -77,7 +89,8 @@ CONTAINS
     TYPE(FILEIO_TYP)  :: Logfile
     !------------------------------------------------------------------------!
     ! Local variable declaration
-    REAL              :: dvis, bvis
+    INTEGER           :: bc(4)
+    REAL              :: dvis, bvis,x1,x2,y1,y2
     !------------------------------------------------------------------------!
     INTENT(OUT)       :: Mesh,Physics,Fluxes,Timedisc,Datafile,Logfile
     !------------------------------------------------------------------------!
@@ -88,46 +101,66 @@ CONTAINS
     ! bulk viscosity
     bvis = -2./3. * dvis
 
+    ! geometry dependent setttings
+    SELECT CASE(MGEO)
+     CASE(CYLINDRICAL)
+       x1 = 0.0
+       x2 = LTUBE
+       y1 = 0.0
+       y2 = RTUBE
+       bc(WEST)  = FIXED
+       bc(EAST)  = FIXED
+       bc(SOUTH) = AXIS
+       bc(NORTH) = NOSLIP
+    CASE(CARTESIAN)
+       x1 = 0.0
+       x2 = LTUBE
+       y1 = 0.0
+       y2 = RTUBE
+       bc(WEST)  = FIXED
+       bc(EAST)  = FIXED
+       bc(SOUTH) = NOSLIP
+       bc(NORTH) = NOSLIP
+    END SELECT
+
+    ! mesh settings
+    CALL InitMesh(Mesh,&
+         meshtype = MIDPOINT, &
+         geometry = MGEO, &
+             inum = XRES, &         ! resolution in x and            !
+             jnum = YRES, &         !   y direction                  !             
+             xmin = x1, &
+             xmax = x2, &
+             ymin = y1, &
+             ymax = y2)
+
     ! physics settings
-    CALL InitPhysics(Physics, &
+    CALL InitPhysics(Physics,Mesh, &
          problem = EULER3D_ROTSYM, &
          gamma   = 1.4, &           ! ratio of specific heats        !
          dpmax   = 1.0)             ! for advanced time step control !
 
-    ! numerical scheme for flux calculation
-    CALL InitFluxes(Fluxes, &
-         scheme = MIDPOINT)         ! quadrature rule                !
-
-    ! reconstruction method
-    CALL InitReconstruction(Fluxes%reconstruction, &
+    ! flux calculation and reconstruction method
+    CALL InitFluxes(Fluxes,Mesh,Physics, &
          order     = LINEAR, &
-         variables = PRIMITIVE, &! vars. to use for reconstruction!
+         variables = PRIMITIVE, &   ! vars. to use for reconstruction!
          limiter   = MONOCENT, &    ! one of: minmod, monocent,...   !
          theta     = 1.2)           ! optional parameter for limiter !
 
-    ! mesh settings
-    CALL InitMesh(Mesh,Fluxes, &
-         geometry = CYLINDRICAL, &
-             inum = ZRES, &         ! resolution in x and            !
-             jnum = RRES, &         !   y direction                  !             
-             xmin = 0.0, &
-             xmax = LTUBE, &
-             ymin = 0.0, &
-             ymax = RTUBE)
-
     ! boundary conditions
     CALL InitBoundary(Timedisc%boundary,Mesh,Physics, &
-         western  = FIXED, &
-         eastern  = FIXED, &
-         southern = AXIS, &
-         northern = NOSLIP)
+         western  = bc(WEST), &
+         eastern  = bc(EAST), &
+         southern = bc(SOUTH), &
+         northern = bc(NORTH))
 
     ! viscosity source term
     CALL InitSources(Physics%sources,Mesh,Fluxes,Physics,Timedisc%Boundary, &
           stype    = VISCOSITY, &
           vismodel = MOLECULAR, &
           dynconst = dvis, &
-         bulkconst = bvis)
+         bulkconst = bvis, &
+              cvis = 0.5)
 
 
     ! time discretization settings
@@ -138,9 +171,6 @@ CONTAINS
          stoptime = TSIM, &
          dtlimit  = 1.0E-8, &
          maxiter  = 1000000)
-
-    ! set initial condition
-    CALL InitData(Mesh,Physics,Timedisc)
 
     ! initialize log input/output
 !!$    CALL InitFileIO(Logfile,Mesh,Physics,Timedisc,&
@@ -217,4 +247,4 @@ CONTAINS
 
   END SUBROUTINE InitData
 
-END MODULE Init
+END PROGRAM Init

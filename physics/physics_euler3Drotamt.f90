@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: physics_euler3Drotamt.f90                                         #
 !#                                                                           #
-!# Copyright (C) 2007-2010                                                   #
+!# Copyright (C) 2007-2012                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !# Björn Sperling   <sperling@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
@@ -33,7 +33,6 @@ MODULE physics_euler3Drotamt
   USE mesh_common, ONLY : Mesh_TYP
   USE physics_euler2D, ONLY : MomentumSourcesX_euler2D, MomentumSourcesY_euler2D
   USE physics_euler3Drotsym, &
-       MallocPhysics_euler3Dra => MallocPhysics_euler3Drs, &
        CheckData_euler3Dra => CheckData_euler3Drs, &
        CalculateWaveSpeeds_euler3Dra => CalculateWaveSpeeds_euler3Drs, &
        CalculateFluxesX_euler3Dra => CalculateFluxesX_euler3Drs, &
@@ -42,6 +41,7 @@ MODULE physics_euler3Drotamt
        ReflectionMasks_euler3Dra => ReflectionMasks_euler3Drs, &
        AxisMasks_euler3Dra => AxisMasks_euler3Drs, &
        ClosePhysics_euler3Dra => ClosePhysics_euler3Drs
+  USE mesh_generic
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   INTERFACE GeometricalSources_euler3Dra
@@ -63,7 +63,6 @@ MODULE physics_euler3Drotamt
   !--------------------------------------------------------------------------!
   PUBLIC :: &
        InitPhysics_euler3Dra, &
-       MallocPhysics_euler3Dra, &
        CheckData_euler3Dra, &
        CalculateWaveSpeeds_euler3Dra, &
        CalculateFluxesX_euler3Dra, &
@@ -79,15 +78,16 @@ MODULE physics_euler3Drotamt
 
 CONTAINS
 
-  SUBROUTINE InitPhysics_euler3Dra(this,problem)
+  SUBROUTINE InitPhysics_euler3Dra(this,Mesh,problem)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Physics_TYP) :: this
+    TYPE(Mesh_TYP)    :: Mesh
     INTEGER           :: problem
     !------------------------------------------------------------------------!
     INTEGER           :: err
     !------------------------------------------------------------------------!
-    INTENT(IN)        :: problem
+    INTENT(IN)        :: Mesh,problem
     INTENT(INOUT)     :: this
     !------------------------------------------------------------------------!
     CALL InitPhysics(this,problem,problem_name,num_var)
@@ -113,10 +113,14 @@ CONTAINS
     this%cvarname(this%ZMOMENTUM) = "ang-momentum"
     this%cvarname(this%ENERGY)    = "energy"
 
-    ALLOCATE(this%structure(4),this%errormap(0:3),STAT = err)
+    ! allocate memory for arrays used in Euler3Drotamt
+    ALLOCATE(this%csound(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,4), &
+         this%fcent(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,4,2), &
+         this%structure(4),this%errormap(0:3),STAT = err)
     ! abort if allocation fails
     IF (err.NE.0) &
-         CALL Error(this, "InitPhysics_euler3Drotamt", "Unable to allocate memory.")
+         CALL Error(this, "InitPhysics_euler3Dra", "Unable to allocate memory.")
+
     this%nstruc = 4
     this%structure(1)%name = "coordinates"
     this%structure(1)%pos = -1
@@ -156,6 +160,7 @@ CONTAINS
     INTENT(OUT)       :: sterm
     !------------------------------------------------------------------------!
     ! calculate centrifugal forces
+!CDIR IEXPAND
     CALL CentrifugalForces(pvar(:,:,this%DENSITY),pvar(:,:,this%ZVELOCITY), &
          Mesh%bhz(:,:),Mesh%czxz(:,:,1),Mesh%czyz(:,:,1),this%fcent(:,:,1,1), &
          this%fcent(:,:,2,1))
@@ -166,9 +171,11 @@ CONTAINS
 
     ! geometrical source terms in momentum equationes
     ! with centrifugal forces
+!CDIR IEXPAND
     sterm(:,:,this%XMOMENTUM) = MomentumSourcesX_euler2D(cvar(:,:,this%YMOMENTUM), &
          pvar(:,:,this%XVELOCITY),pvar(:,:,this%YVELOCITY),pvar(:,:,this%PRESSURE), &
          Mesh%cxyx(:,:,1),Mesh%cyxy(:,:,1),Mesh%czxz(:,:,1)) + this%fcent(:,:,1,1)
+!CDIR IEXPAND
     sterm(:,:,this%YMOMENTUM) = MomentumSourcesY_euler2D(cvar(:,:,this%XMOMENTUM), &
          pvar(:,:,this%XVELOCITY),pvar(:,:,this%YVELOCITY),pvar(:,:,this%PRESSURE), &
          Mesh%cxyx(:,:,1),Mesh%cyxy(:,:,1),Mesh%czyz(:,:,1)) + this%fcent(:,:,2,1)
@@ -194,6 +201,7 @@ CONTAINS
     INTENT(OUT)       :: sterm
     !------------------------------------------------------------------------!
     ! calculate centrifugal forces
+!CDIR IEXPAND
     CALL CentrifugalForces(prim(:,:,:,this%DENSITY),prim(:,:,:,this%ZVELOCITY), &
          Mesh%chz(:,:,:),Mesh%czxz(:,:,:),Mesh%czyz(:,:,:),this%fcent(:,:,:,1), &
          this%fcent(:,:,:,2))
@@ -204,9 +212,11 @@ CONTAINS
 
     ! geometrical source terms in momentum equationes
     ! sum up all four corner values
+!CDIR IEXPAND
     sterm(:,:,this%XMOMENTUM) = SUM(MomentumSourcesX_euler2D(cons(:,:,:,this%YMOMENTUM), &
          prim(:,:,:,this%XVELOCITY),prim(:,:,:,this%YVELOCITY),prim(:,:,:,this%PRESSURE), &
          Mesh%cxyx(:,:,:),Mesh%cyxy(:,:,:),Mesh%czxz(:,:,:)) + this%fcent(:,:,:,1),DIM=3)
+!CDIR IEXPAND
     sterm(:,:,this%YMOMENTUM) = SUM(MomentumSourcesY_euler2D(cons(:,:,:,this%XMOMENTUM), &
          prim(:,:,:,this%XVELOCITY),prim(:,:,:,this%YVELOCITY),prim(:,:,:,this%PRESSURE), &
          Mesh%cxyx(:,:,:),Mesh%cyxy(:,:,:),Mesh%czyz(:,:,:)) + this%fcent(:,:,:,2),DIM=3)
@@ -229,6 +239,7 @@ CONTAINS
     INTENT(IN)  :: this,Mesh,i1,i2,j1,j2,cvar
     INTENT(OUT) :: pvar
     !------------------------------------------------------------------------!
+!CDIR IEXPAND
     CALL Cons2Prim_euler3Dra(this%gamma,cvar(i1:i2,j1:j2,this%DENSITY), &
          cvar(i1:i2,j1:j2,this%XMOMENTUM),cvar(i1:i2,j1:j2,this%YMOMENTUM), &
          cvar(i1:i2,j1:j2,this%ZMOMENTUM),cvar(i1:i2,j1:j2,this%ENERGY), &
@@ -250,6 +261,7 @@ CONTAINS
     INTENT(IN)  :: this,Mesh,i1,i2,j1,j2,cons
     INTENT(OUT) :: prim
     !------------------------------------------------------------------------!
+!CDIR IEXPAND
     CALL Cons2Prim_euler3Dra(this%gamma,cons(i1:i2,j1:j2,:,this%DENSITY), &
          cons(i1:i2,j1:j2,:,this%XMOMENTUM),cons(i1:i2,j1:j2,:,this%YMOMENTUM), &
          cons(i1:i2,j1:j2,:,this%ZMOMENTUM),cons(i1:i2,j1:j2,:,this%ENERGY), &
@@ -271,6 +283,7 @@ CONTAINS
     INTENT(IN)  :: this,Mesh,i1,i2,j1,j2,pvar
     INTENT(OUT) :: cvar
     !------------------------------------------------------------------------!
+!CDIR IEXPAND
     CALL Prim2Cons_euler3Dra(this%gamma,pvar(i1:i2,j1:j2,this%DENSITY), &
          pvar(i1:i2,j1:j2,this%XVELOCITY),pvar(i1:i2,j1:j2,this%YVELOCITY), &
          pvar(i1:i2,j1:j2,this%ZVELOCITY),pvar(i1:i2,j1:j2,this%PRESSURE), &
@@ -292,6 +305,7 @@ CONTAINS
     INTENT(IN)  :: this,Mesh,i1,i2,j1,j2,prim
     INTENT(OUT) :: cons
     !------------------------------------------------------------------------!
+!CDIR IEXPAND
     CALL Prim2Cons_euler3Dra(this%gamma,prim(i1:i2,j1:j2,:,this%DENSITY), &
          prim(i1:i2,j1:j2,:,this%XVELOCITY),prim(i1:i2,j1:j2,:,this%YVELOCITY), &
          prim(i1:i2,j1:j2,:,this%ZVELOCITY),prim(i1:i2,j1:j2,:,this%PRESSURE), &

@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: init_gauss2d.f90                                                  #
 !#                                                                           #
-!# Copyright (C) 2006-2011                                                   #
+!# Copyright (C) 2006-2012                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -26,7 +26,8 @@
 !----------------------------------------------------------------------------!
 ! Program and data initialization for 2D Gaussian pressure pulse
 !----------------------------------------------------------------------------!
-MODULE Init
+PROGRAM Init
+  USE fosite
   USE physics_generic
   USE fluxes_generic
   USE mesh_generic
@@ -37,7 +38,6 @@ MODULE Init
   USE timedisc_generic
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
-  PRIVATE
   ! simulation parameter
   REAL, PARAMETER :: TSIM   = 0.3         ! simulation time
   REAL, PARAMETER :: GAMMA  = 1.4         ! ratio of specific heats
@@ -67,11 +67,20 @@ MODULE Init
   CHARACTER(LEN=256), PARAMETER &          ! output data file name
                      :: OFNAME = 'gauss2d' 
   !--------------------------------------------------------------------------!
-  PUBLIC :: &
-       ! methods
-       InitProgram
+  TYPE(fosite_TYP)   :: Sim
   !--------------------------------------------------------------------------!
 
+CALL InitFosite(Sim)
+
+CALL InitProgram(Sim%Mesh, Sim%Physics, Sim%Fluxes, Sim%Timedisc, &
+                 Sim%Datafile, Sim%Logfile)
+
+! set initial condition
+CALL InitData(Sim%Mesh, Sim%Physics, Sim%Timedisc)
+
+CALL RunFosite(Sim)
+
+CALL CloseFosite(Sim)
 
 CONTAINS
 
@@ -91,29 +100,6 @@ CONTAINS
     !------------------------------------------------------------------------!
     INTENT(OUT)       :: Mesh,Physics,Fluxes,Timedisc,Datafile,Logfile
     !------------------------------------------------------------------------!
-    ! physics settings
-    IF (CSISO.GT.TINY(CSISO)) THEN
-       CALL InitPhysics(Physics, &
-            problem = EULER2D_ISOTHERM, &
-            cs      = CSISO)                       ! isothermal sound speed  !
-    ELSE
-       CALL InitPhysics(Physics, &
-            problem   = EULER2D, &
-            gamma     = GAMMA, &            ! ratio of specific heats        !
-            dpmax     = 1.0)                ! for advanced time step control !
-    END IF
-
-    ! numerical scheme for flux calculation
-    CALL InitFluxes(Fluxes, &
-         scheme = MIDPOINT)                 ! quadrature rule                !
-
-    ! reconstruction method
-    CALL InitReconstruction(Fluxes%reconstruction, &
-         order     = LINEAR, &
-         variables = CONSERVATIVE, &! vars. to use for reconstruction!
-         limiter   = MONOCENT, &    ! one of: minmod, monocent,...   !
-         theta     = 1.2)           ! optional parameter for limiter !
-
     ! mesh settings
     SELECT CASE(MGEO)
     CASE(CARTESIAN)
@@ -168,7 +154,8 @@ CONTAINS
             " geometry should be one of cartesian,polar,logpolar,tanpolar,sinhpolar or bipolar")
     END SELECT
 
-    CALL InitMesh(Mesh,Fluxes, &
+    CALL InitMesh(Mesh,&
+         meshtype = MIDPOINT, &
          geometry = MGEO, &
              inum = XRES, &       ! resolution in x and            !
              jnum = YRES, &       !   y direction                  !             
@@ -177,6 +164,25 @@ CONTAINS
              ymin = y1, &
              ymax = y2, &
            gparam = GPAR)
+
+    ! physics settings
+    IF (CSISO.GT.TINY(CSISO)) THEN
+       CALL InitPhysics(Physics,Mesh, &
+            problem = EULER2D_ISOTHERM, &
+            cs      = CSISO)                       ! isothermal sound speed  !
+    ELSE
+       CALL InitPhysics(Physics,Mesh, &
+            problem   = EULER2D, &
+            gamma     = GAMMA, &            ! ratio of specific heats        !
+            dpmax     = 1.0)                ! for advanced time step control !
+    END IF
+
+    ! flux calculation and reconstruction method
+    CALL InitFluxes(Fluxes,Mesh,Physics, &
+         order     = LINEAR, &
+         variables = CONSERVATIVE, &        ! vars. to use for reconstruction!
+         limiter   = MONOCENT, &    ! one of: minmod, monocent,...   !
+         theta     = 1.2)           ! optional parameter for limiter !
 
     ! boundary conditions (depends on the geometry, see above)
     CALL InitBoundary(Timedisc%boundary,Mesh,Physics, &
@@ -202,9 +208,6 @@ CONTAINS
          tol_rel  = 0.01, &
          dtlimit  = 1.0E-5, &
          maxiter  = 1000000)
-
-    ! set initial condition
-    CALL InitData(Mesh,Physics,Timedisc)
 
     ! initialize log input/output
 !!$    CALL InitFileIO(Logfile,Mesh,Physics,Timedisc,&
@@ -269,4 +272,4 @@ CONTAINS
 
   END SUBROUTINE InitData
 
-END MODULE Init
+END PROGRAM Init

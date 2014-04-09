@@ -69,12 +69,23 @@ Then type
 
    make
 
-at the command line. At the end of the build process there should be
-a new executable file named fosite in the directory. Type
+at the command line to build the fosite library and all example simulations
+in the examples subdirectory. These are just executable programs linked against
+the fosite library. The default behaviour of the build process is to compile
+all examples. If you just want to compile one of them you should tell make which
+one you want to build, e.g. type
 
-   ./fosite
+   TARGET=examples/gauss2d make
 
-to start the calculation.
+to build the simulation of the 2D Gaussian pressure pulse. To run the simulation
+you simply have to enter the name of the binary executable
+
+   examples/init_gauss2d.out
+
+at the command line. The simulation data is written to a file in the current
+working directory by default.
+
+
 The code has been verified to compile with the Intel(R) Fortran Compiler
 (vers. 8.x,  9.x, 11.x), GNU fortran compiler (vers. 4.1, 4.3, 4.4, 4.5),
 g95 (vers. 4.0.3) on various Linux boxes and NEC sxf90 (Rev.360 2006/11/30 and
@@ -144,23 +155,22 @@ This is probably necessary if you are using mpich2.
 4. SIMPLE CUSTOMIZATION
 
 Maybe the best way to learn how to customize the code is to take a look
-at the init files in the examples subdirectory. To use one of them
-copy it into the base directory
-
-  cp examples/init_gauss3d.f90 ./init.f90
-
-or generate a symbolic link
-
-  ln -sf examples/init_gauss3d.f90 ./init.f90
-
-rebuild the program and run it. The initialization module contains
-at least 2 subroutines which can be modified by the user.
+at the init files in the examples subdirectory. The initialization module
+contains at least 2 subroutines which can be modified by the user.
 
    InitProgram: set control variables
    InitData: set initial conditions
 
 For a short description of some control variables take a look at the
-example files.
+example files. If you want to create your own simulation just copy one
+of the examples to a new file, say init_mysim.f90, modify anything you like
+and compile it with
+
+   TARGET=exmples/init_mysim make
+
+This should generate a new binary called init_mysim.out in the examples
+directory and you can run the simulation simply by typing its file name.
+
 
 
 5. ADVANCED CUSTOMIZATION
@@ -298,12 +308,54 @@ MPI and HDF5 support:
 You may also give configure a hint where find your MPI and HDF5 installation
 (see Sec. 3).
 
+7. Python Interface Baldr
+
+Fosite has an simple python interface, which is based on the f2py interface
+generator and a custom build python object called baldr. It depends on
+python 2.6 or greater, numpy including f2py and scipy and is known to work
+with numpy 1.6.1 and scipy 0.10.0, which are e.g. included in the python
+distribution EPD 7.2-1 (Enthought Python Distribution). For more information
+please see http://www.enthought.com/.
+
+All baldr related data is located in the directory baldr. If you want 
+to use baldr, you have to './configure' fosite like before and then 
+build with
+
+make baldr
+
+Please be sure to do a 'make clean', so no old object files are left. 
+Baldr is in a pretty early state of development and does not support all 
+fosite features, e.g. mpi builds. Please take a look at the baldr/gauss2d.py 
+file for an example. It recreates the original examples/init_gauss2d.f90 
+fortran example. 
+
+7.1 Python Plotting
+
+If you choose netcdf as output format, you can use baldr/plot.py, which
+depends on numpy, matplotlib and netcdf4-python, to plot your results.
+Known working library versions are numpy 1.6.1, matplotlib 1.1.0 and
+netcdf4-python 0.9.5. 
+baldr/plot.py reads automaticly the grid data and makes a color plot. 
+If you call the script without arguments with the -h option, it 
+prints the possible command line arguments for you.
+
+baldr/plot.py -h
+
+A simple plot would be done with
+
+baldr/plot.py plot simulation_0000.nc
+
+Please notice: HDF5 output is not yet working with baldr/plot.py. Also
+baldr needs not to be compiled for baldr/plot.py. It is independent of
+of the Python Interface Baldr.
 
 The code is distributed under the GNU General Public License - see the
 accompanying LICENSE file for more details. So feel free to experiment
 with this.
 
-Copyright (C) 2006-2010 Tobias Illenseer <tillense@astrophysik.uni-kiel.de>
+Copyright (C) 2006-2012 
+Tobias Illenseer <tillense@astrophysik.uni-kiel.de>
+Manuel Jung <mjung@astrophysik.uni-kiel.de>
 
 
 

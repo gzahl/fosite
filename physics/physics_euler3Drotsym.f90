@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: physics_euler3Drotsym.f90                                         #
 !#                                                                           #
-!# Copyright (C) 2007 - 2010                                                 #
+!# Copyright (C) 2007-2012                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !# Björn Sperling   <sperling@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
@@ -34,6 +34,7 @@ MODULE physics_euler3Drotsym
   USE physics_euler2D, &
        CheckData_euler3Drs => CheckData_euler2D, &
        CalculateWaveSpeeds_euler3Drs => CalculateWaveSpeeds_euler2D
+  USE mesh_generic
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   INTERFACE GeometricalSources_euler3Drs
@@ -55,7 +56,6 @@ MODULE physics_euler3Drotsym
   !--------------------------------------------------------------------------!
   PUBLIC :: &
        InitPhysics_euler3Drs, &
-       MallocPhysics_euler3Drs, &
        CheckData_euler3Drs, &
        CalculateWaveSpeeds_euler3Drs, &
        CalculateFluxesX_euler3Drs, &
@@ -71,17 +71,18 @@ MODULE physics_euler3Drotsym
        ClosePhysics_euler3Drs
   !--------------------------------------------------------------------------!
 
-CONTAINS
+  CONTAINS
 
-  SUBROUTINE InitPhysics_euler3Drs(this,problem)
+  SUBROUTINE InitPhysics_euler3Drs(this,Mesh,problem)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Physics_TYP) :: this
+    TYPE(Mesh_TYP)    :: Mesh
     INTEGER           :: problem
     !------------------------------------------------------------------------!
     INTEGER           :: err
     !------------------------------------------------------------------------!
-    INTENT(IN)        :: problem
+    INTENT(IN)        :: Mesh,problem
     INTENT(INOUT)     :: this
     !------------------------------------------------------------------------!
     CALL InitPhysics(this,problem,problem_name,num_var)
@@ -107,10 +108,14 @@ CONTAINS
     this%cvarname(this%ZMOMENTUM) = "z-momentum"
     this%cvarname(this%ENERGY)    = "energy"
 
-    ALLOCATE(this%structure(4),this%errormap(0:3),STAT = err)
+    ! allocate memory for arrays used in Euler3Drotsym
+    ALLOCATE(this%csound(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,4), &
+         this%fcent(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,4,2), &
+         this%structure(4),this%errormap(0:3),STAT = err)
     ! abort if allocation fails
     IF (err.NE.0) &
          CALL Error(this, "InitPhysics_euler3Drs", "Unable to allocate memory.")
+
     this%nstruc = 4
     this%structure(1)%name = "coordinates"
     this%structure(1)%pos = -1
@@ -137,27 +142,6 @@ CONTAINS
   END SUBROUTINE InitPhysics_euler3Drs
 
 
-  SUBROUTINE MallocPhysics_euler3Drs(this,Mesh)
-    IMPLICIT NONE
-    !------------------------------------------------------------------------!
-    TYPE(Physics_TYP) :: this
-    TYPE(Mesh_TYP)    :: Mesh
-    !------------------------------------------------------------------------!
-    INTEGER           :: err
-    !------------------------------------------------------------------------!
-    INTENT(IN)        :: Mesh
-    INTENT(INOUT)     :: this
-    !------------------------------------------------------------------------!
-    ! allocate memory for arrays used in Euler3D w/ rotational symmetry
-    CALL MallocPhysics_euler2D(this,Mesh)
-    ALLOCATE(this%fcent(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,4,2), &
-         STAT = err)
-    IF (err.NE.0) THEN
-       CALL Error(this, "MallocPhysics_euler3Drs", "Unable to allocate memory.")
-    END IF
-  END SUBROUTINE MallocPhysics_euler3Drs
-
-
   PURE SUBROUTINE CalculateFluxesX_euler3Drs(this,Mesh,nmin,nmax,prim,cons,xfluxes)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
@@ -177,7 +161,7 @@ CONTAINS
          xfluxes(:,:,nmin:nmax,this%DENSITY),xfluxes(:,:,nmin:nmax,this%XMOMENTUM), &
          xfluxes(:,:,nmin:nmax,this%YMOMENTUM),xfluxes(:,:,nmin:nmax,this%ZMOMENTUM), &
          xfluxes(:,:,nmin:nmax,this%ENERGY))
-   END SUBROUTINE CalculateFluxesX_euler3Drs
+  END SUBROUTINE CalculateFluxesX_euler3Drs
 
 
   PURE SUBROUTINE CalculateFluxesY_euler3Drs(this,Mesh,nmin,nmax,prim,cons,yfluxes)
@@ -214,43 +198,37 @@ CONTAINS
     !------------------------------------------------------------------------!
     INTEGER           :: i,j
     !------------------------------------------------------------------------!
-    INTENT(IN)        :: this,Mesh,pvar,dynvis,bulkvis
-    INTENT(INOUT)     :: btxx,btxy,btxz,btyy,btyz,btzz
+    INTENT(IN)        :: Mesh,pvar,dynvis,bulkvis
+    INTENT(INOUT)     :: this
+    INTENT(OUT)       :: btxx,btxy,btxz,btyy,btyz,btzz
     !------------------------------------------------------------------------!
     ! compute components of the stress tensor at cell bary centers
     ! inside the computational domain including one slice of ghost cells
-!CDIR UNROLL=4
+
+    ! compute bulk viscosity first and store the result in this%amin
+!CDIR IEXPAND
+    CALL Divergence(Mesh,pvar(:,:,this%XVELOCITY),pvar(:,:,this%YVELOCITY),this%amin(:,:))
+    this%amin(:,:) = bulkvis(:,:)*this%amin(:,:)
+
+!CDIR OUTERUNROLL=8
     DO j=Mesh%JMIN-1,Mesh%JMAX+1
 !CDIR NODEP
        DO i=Mesh%IMIN-1,Mesh%IMAX+1
-          ! compute bulk viscosity first and store the result in btxy
-          btxy(i,j) = bulkvis(i,j) * 0.5 * (&
-                ( Mesh%fhy(i,j,2) * Mesh%fhz(i,j,2) * &
-                ( pvar(i+1,j,this%XVELOCITY)+pvar(i,j,this%XVELOCITY) ) &
-                - Mesh%fhy(i,j,1) * Mesh%fhz(i,j,1) * &
-                ( pvar(i,j,this%XVELOCITY)+pvar(i-1,j,this%XVELOCITY) ) ) &
-                * Mesh%dydV(i,j) &
-                +(Mesh%fhx(i,j,4) * Mesh%fhz(i,j,4) * &
-                ( pvar(i,j+1,this%YVELOCITY)+pvar(i,j,this%YVELOCITY) ) &
-                - Mesh%fhx(i,j,3) * Mesh%fhz(i,j,3) * &
-                ( pvar(i,j,this%YVELOCITY)+pvar(i,j-1,this%YVELOCITY) ) ) &
-                * Mesh%dxdV(i,j) )
-          
           ! compute the diagonal elements of the stress tensor
           btxx(i,j) = dynvis(i,j) * &
                ( (pvar(i+1,j,this%XVELOCITY) - pvar(i-1,j,this%XVELOCITY)) / Mesh%dlx(i,j) &
                + 2.0 * Mesh%cxyx(i,j,1) * pvar(i,j,this%YVELOCITY) ) &
-               + btxy(i,j) ! bulk viscosity contribution
+               + this%amin(i,j) ! bulk viscosity contribution
                
           btyy(i,j) = dynvis(i,j) * &
                ( (pvar(i,j+1,this%YVELOCITY) - pvar(i,j-1,this%YVELOCITY)) / Mesh%dly(i,j) &
                + 2.0 * Mesh%cyxy(i,j,1) * pvar(i,j,this%XVELOCITY) ) &
-               + btxy(i,j) ! bulk viscosity contribution
+               + this%amin(i,j) ! bulk viscosity contribution
 
           btzz(i,j) = dynvis(i,j) * &
                ( 2.0 * ( Mesh%czxz(i,j,1) * pvar(i,j,this%XVELOCITY) ) &
                + Mesh%czyz(i,j,1) * pvar(i,j,this%YVELOCITY) ) &
-               + btxy(i,j) ! bulk viscosity contribution
+               + this%amin(i,j) ! bulk viscosity contribution
 
           ! compute the off-diagonal elements (no bulk viscosity)
           btxy(i,j) = dynvis(i,j) * ( 0.5 * &
@@ -268,7 +246,6 @@ CONTAINS
                - Mesh%czyz(i,j,1) * pvar(i,j,this%ZVELOCITY) )
        END DO
     END DO
-
   END SUBROUTINE CalculateStresses_euler3Drs
 
 
@@ -288,9 +265,10 @@ CONTAINS
     !------------------------------------------------------------------------!
 !CDIR COLLAPSE
     DO j=Mesh%JGMIN,Mesh%JGMAX
+!CDIR NODEP
        DO i=Mesh%IGMIN,Mesh%IGMAX
           ! calculate centrifugal forces
-          CALL CentrifugalForces(pvar(i,j,this%DENSITY),pvar(i,j,this%ZVELOCITY), &
+          CALL CentrifugalForces_euler3Drs(pvar(i,j,this%DENSITY),pvar(i,j,this%ZVELOCITY), &
                Mesh%czxz(i,j,1),Mesh%czyz(i,j,1),this%fcent(i,j,1,1),this%fcent(i,j,2,1))
           
           ! no geometrical sources in continuity and energy equations
@@ -322,28 +300,59 @@ CONTAINS
     REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,this%VNUM) &
          :: sterm
     !------------------------------------------------------------------------!
+    INTEGER           :: i,j,k
+    !------------------------------------------------------------------------!
     INTENT(IN)        :: Mesh,prim,cons
     INTENT(INOUT)     :: this
     INTENT(OUT)       :: sterm
     !------------------------------------------------------------------------!
-    ! calculate centrifugal forces
-    CALL CentrifugalForces(prim(:,:,:,this%DENSITY),prim(:,:,:,this%ZVELOCITY), &
-         Mesh%czxz(:,:,:),Mesh%czyz(:,:,:),this%fcent(:,:,:,1),this%fcent(:,:,:,2))
+!CDIR COLLAPSE
+    DO j=Mesh%JGMIN,Mesh%JGMAX
+!CDIR NODEP
+       DO i=Mesh%IGMIN,Mesh%IGMAX
+          ! no geometrical sources in continuity and energy equations
+          sterm(i,j,this%DENSITY) = 0.0
+          sterm(i,j,this%ENERGY)  = 0.0
+!CDIR UNROLL=4
+          DO k=1,4
+            ! calculate centrifugal forces
+            CALL CentrifugalForces_euler3Drs(prim(i,j,k,this%DENSITY), &
+                  prim(i,j,k,this%ZVELOCITY),Mesh%czxz(i,j,k),Mesh%czyz(i,j,k), &
+                  this%fcent(i,j,k,1),this%fcent(i,j,k,2))
+            ! add momentum sources to centrifugal forces
+            this%fcent(i,j,k,1) = this%fcent(i,j,k,1) + MomentumSourcesX_euler2D( &
+                  cons(i,j,k,this%YMOMENTUM),prim(i,j,k,this%XVELOCITY), &
+                  prim(i,j,k,this%YVELOCITY),prim(i,j,k,this%PRESSURE), &
+                  Mesh%cxyx(i,j,k),Mesh%cyxy(i,j,k),Mesh%czxz(i,j,k))
 
-    ! no geometrical sources in continuity and energy equations
-    sterm(:,:,this%DENSITY) = 0.0
-    sterm(:,:,this%ENERGY)  = 0.0
+            this%fcent(i,j,k,2) = this%fcent(i,j,k,2) + MomentumSourcesY_euler2D( &
+                  cons(i,j,k,this%XMOMENTUM),prim(i,j,k,this%XVELOCITY), &
+                  prim(i,j,k,this%YVELOCITY),prim(i,j,k,this%PRESSURE), &
+                  Mesh%cxyx(i,j,k),Mesh%cyxy(i,j,k),Mesh%czyz(i,j,k))
 
-    ! geometrical source terms in momentum equationes
-    ! sum up all four corner values
-    sterm(:,:,this%XMOMENTUM) = SUM(MomentumSourcesX_euler2D(cons(:,:,:,this%YMOMENTUM), &
-         prim(:,:,:,this%XVELOCITY),prim(:,:,:,this%YVELOCITY),prim(:,:,:,this%PRESSURE), &
-         Mesh%cxyx(:,:,:),Mesh%cyxy(:,:,:),Mesh%czxz(:,:,:)) + this%fcent(:,:,:,1),DIM=3)
-    sterm(:,:,this%YMOMENTUM) = SUM(MomentumSourcesY_euler2D(cons(:,:,:,this%XMOMENTUM), &
-         prim(:,:,:,this%XVELOCITY),prim(:,:,:,this%YVELOCITY),prim(:,:,:,this%PRESSURE), &
-         Mesh%cxyx(:,:,:),Mesh%cyxy(:,:,:),Mesh%czyz(:,:,:)) + this%fcent(:,:,:,2),DIM=3)
-    sterm(:,:,this%ZMOMENTUM) = SUM(-prim(:,:,:,this%ZVELOCITY)*(Mesh%czxz(:,:,:) * &
-         cons(:,:,:,this%XMOMENTUM) + Mesh%czyz(:,:,:) * cons(:,:,:,this%YMOMENTUM)),DIM=3)
+
+          END DO
+
+          ! momentum sources (sum up corner values, don't use SUM function,
+          ! because it prevents COLLAPSING and causes poor vectorization
+          sterm(i,j,this%XMOMENTUM) = this%fcent(i,j,1,1)+this%fcent(i,j,2,1) &
+                  +this%fcent(i,j,3,1)+this%fcent(i,j,4,1)
+          sterm(i,j,this%YMOMENTUM) = this%fcent(i,j,1,2)+this%fcent(i,j,2,2) &
+                  +this%fcent(i,j,3,2)+this%fcent(i,j,4,2)
+          sterm(i,j,this%ZMOMENTUM) = -prim(i,j,1,this%ZVELOCITY) &
+                  * (Mesh%czxz(i,j,1)*cons(i,j,1,this%XMOMENTUM) &
+                    +Mesh%czyz(i,j,1)*cons(i,j,1,this%YMOMENTUM)) &
+                - prim(i,j,2,this%ZVELOCITY) &
+                  * (Mesh%czxz(i,j,2)*cons(i,j,2,this%XMOMENTUM) &
+                    +Mesh%czyz(i,j,2)*cons(i,j,2,this%YMOMENTUM)) &
+                - prim(i,j,3,this%ZVELOCITY) &
+                  * (Mesh%czxz(i,j,3)*cons(i,j,3,this%XMOMENTUM) &
+                    +Mesh%czyz(i,j,3)*cons(i,j,3,this%YMOMENTUM)) &
+                - prim(i,j,4,this%ZVELOCITY) &
+                  * (Mesh%czxz(i,j,4)*cons(i,j,4,this%XMOMENTUM) &
+                    +Mesh%czyz(i,j,4)*cons(i,j,4,this%YMOMENTUM))
+       END DO
+    END DO
   END SUBROUTINE GeometricalSources_faces
 
 
@@ -369,7 +378,7 @@ CONTAINS
 
 
   PURE SUBROUTINE ViscositySources_euler3Drs(this,Mesh,pvar,btxx,btxy,btxz, &
-       btyy,btyz,btzz,ftxx,ftxy,ftxz,ftyy,ftyz,ftzz,sterm)
+       btyy,btyz,btzz,sterm)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Physics_TYP) :: this
@@ -378,109 +387,37 @@ CONTAINS
          pvar,sterm
     REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX) :: &
          btxx,btxy,btxz,btyy,btyz,btzz
-    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,4) :: &
-         ftxx,ftxy,ftxz,ftyy,ftyz,ftzz
     !------------------------------------------------------------------------!
-    INTEGER           :: i,j
-    !------------------------------------------------------------------------!
-    INTENT(IN)        :: this,Mesh,pvar, btxx,btxy,btxz,btyy,btyz,btzz
-    INTENT(INOUT)     :: ftxx,ftxy,ftxz,ftyy,ftyz,ftzz
+    INTENT(IN)        :: Mesh,pvar, btxx,btxy,btxz,btyy,btyz,btzz
+    INTENT(INOUT)     :: this
     INTENT(OUT)       :: sterm
     !------------------------------------------------------------------------!
-    ! mean values of stress tensor components across the cell interfaces
-!CDIR UNROLL=4
-    DO j=Mesh%JMIN,Mesh%JMAX
-!CDIR NODEP
-       DO i=Mesh%IMIN,Mesh%IMAX
-          ftxx(i,j,1) = 0.5 * ( btxx(i-1,j) + btxx(i,j) )
-          ftxx(i,j,2) = 0.5 * ( btxx(i+1,j) + btxx(i,j) )
-          ftxx(i,j,3) = 0.5 * ( btxx(i,j-1) + btxx(i,j) )
-          ftxx(i,j,4) = 0.5 * ( btxx(i,j+1) + btxx(i,j) )
-
-          ftyy(i,j,1) = 0.5 * ( btyy(i-1,j) + btyy(i,j) )
-          ftyy(i,j,2) = 0.5 * ( btyy(i+1,j) + btyy(i,j) )
-          ftyy(i,j,3) = 0.5 * ( btyy(i,j-1) + btyy(i,j) )
-          ftyy(i,j,4) = 0.5 * ( btyy(i,j+1) + btyy(i,j) )
-
-          ftzz(i,j,1) = 0.5 * ( btzz(i-1,j) + btzz(i,j) )
-          ftzz(i,j,2) = 0.5 * ( btzz(i+1,j) + btzz(i,j) )
-          ftzz(i,j,3) = 0.5 * ( btzz(i,j-1) + btzz(i,j) )
-          ftzz(i,j,4) = 0.5 * ( btzz(i,j+1) + btzz(i,j) )
-
-          ftxy(i,j,1) = 0.5 * ( btxy(i-1,j) + btxy(i,j) )
-          ftxy(i,j,2) = 0.5 * ( btxy(i+1,j) + btxy(i,j) )
-          ftxy(i,j,3) = 0.5 * ( btxy(i,j-1) + btxy(i,j) )
-          ftxy(i,j,4) = 0.5 * ( btxy(i,j+1) + btxy(i,j) )
-
-          ftxz(i,j,1) = 0.5 * ( btxz(i-1,j) + btxz(i,j) )
-          ftxz(i,j,2) = 0.5 * ( btxz(i+1,j) + btxz(i,j) )
-          ftxz(i,j,3) = 0.5 * ( btxz(i,j-1) + btxz(i,j) )
-          ftxz(i,j,4) = 0.5 * ( btxz(i,j+1) + btxz(i,j) )
-          
-          ftyz(i,j,1) = 0.5 * ( btyz(i-1,j) + btyz(i,j) )
-          ftyz(i,j,2) = 0.5 * ( btyz(i+1,j) + btyz(i,j) )
-          ftyz(i,j,3) = 0.5 * ( btyz(i,j-1) + btyz(i,j) )
-          ftyz(i,j,4) = 0.5 * ( btyz(i,j+1) + btyz(i,j) )
-       END DO
-    END DO
-
     ! viscosity source terms
     sterm(:,:,this%DENSITY) = 0.0 
-
-    ! (a) momentum sources
-    sterm(:,:,this%XMOMENTUM) = Mesh%dydV(:,:) * &
-         ( Mesh%fhy(:,:,2) * Mesh%fhz(:,:,2) * ftxx(:,:,2) &
-         - Mesh%fhy(:,:,1) * Mesh%fhz(:,:,1) * ftxx(:,:,1) &
-         - Mesh%bhz(:,:) * (Mesh%fhy(:,:,2) - Mesh%fhy(:,:,1)) * btyy(:,:) &
-         - Mesh%bhy(:,:) * (Mesh%fhz(:,:,2) - Mesh%fhz(:,:,1)) * btzz(:,:) ) &
-         + Mesh%dxdV(:,:) * &
-         ( Mesh%fhx(:,:,4) * Mesh%fhz(:,:,4) * ftxy(:,:,4) &
-         - Mesh%fhx(:,:,3) * Mesh%fhz(:,:,3) * ftxy(:,:,3) &
-         + Mesh%bhz(:,:) * (Mesh%fhx(:,:,4) - Mesh%fhx(:,:,3)) * btxy(:,:) )
-
-    sterm(:,:,this%YMOMENTUM) = Mesh%dydV(:,:) * &
-         ( Mesh%fhy(:,:,2) * Mesh%fhz(:,:,2) * ftxy(:,:,2) &
-         - Mesh%fhy(:,:,1) * Mesh%fhz(:,:,1) * ftxy(:,:,1) &
-         + Mesh%bhz(:,:) * (Mesh%fhy(:,:,2) - Mesh%fhy(:,:,1)) * btxy(:,:) ) &
-         + Mesh%dxdV(:,:) * &
-         ( Mesh%fhx(:,:,4) * Mesh%fhz(:,:,4) * ftyy(:,:,4) &
-         - Mesh%fhx(:,:,3) * Mesh%fhz(:,:,3) * ftyy(:,:,3) &
-         - Mesh%bhz(:,:) * (Mesh%fhx(:,:,4) - Mesh%fhx(:,:,3)) * btxx(:,:) &
-         - Mesh%bhx(:,:) * (Mesh%fhz(:,:,4) - Mesh%fhz(:,:,3)) * btzz(:,:) )
-    
-    sterm(:,:,this%ZMOMENTUM) = Mesh%dydV(:,:) * &
-         ( Mesh%fhy(:,:,2) * Mesh%fhz(:,:,2) * ftxz(:,:,2) &
-         - Mesh%fhy(:,:,1) * Mesh%fhz(:,:,1) * ftxz(:,:,1) &
-         + Mesh%bhy(:,:) * ( Mesh%fhz(:,:,2) - Mesh%fhz(:,:,1) ) * btxz(:,:) ) &
-         + Mesh%dxdV(:,:) * &
-         ( Mesh%fhx(:,:,4) * Mesh%fhz(:,:,4) * ftyz(:,:,4) &
-         - Mesh%fhx(:,:,3) * Mesh%fhz(:,:,3) * ftyz(:,:,3) &
-         + Mesh%bhx(:,:) * (Mesh%fhz(:,:,4) - Mesh%fhz(:,:,3)) * btyz(:,:) )
-
-    ! (b) energy sources
-!CDIR UNROLL=4
-    DO j=Mesh%JMIN,Mesh%JMAX
+ 
+    ! compute 3D tensor divergence for symmetric tensor btxy=btyx, btxz=btzx, etc.
+!CDIR IEXPAND
+    CALL Divergence(Mesh,btxx,btxy,btxz,btxy,btyy,btyz,btxz,btyz,btzz, &
+                    sterm(:,:,this%XMOMENTUM),sterm(:,:,this%YMOMENTUM), &
+                    sterm(:,:,this%ZMOMENTUM))
+ 
+    ! compute scalar product of v and btx (x-component)
+    ! use amin for temporary storage
 !CDIR NODEP
-       DO i=Mesh%IMIN,Mesh%IMAX
-          sterm(i,j,this%ENERGY) = 0.5 * (&
-                 Mesh%dydV(i,j) * ( Mesh%fhy(i,j,2) * Mesh%fhz(i,j,2) * &
-               ( (pvar(i+1,j,this%XVELOCITY)+pvar(i,j,this%XVELOCITY)) * ftxx(i,j,2) &
-               + (pvar(i+1,j,this%YVELOCITY)+pvar(i,j,this%YVELOCITY)) * ftxy(i,j,2) &
-               + (pvar(i+1,j,this%ZVELOCITY)+pvar(i,j,this%ZVELOCITY)) * ftxz(i,j,2) ) &
-               - Mesh%fhy(i,j,1) * Mesh%fhz(i,j,1) * &
-               ( (pvar(i,j,this%XVELOCITY)+pvar(i-1,j,this%XVELOCITY)) * ftxx(i,j,1) &
-               + (pvar(i,j,this%YVELOCITY)+pvar(i-1,j,this%YVELOCITY)) * ftxy(i,j,1) &
-               + (pvar(i,j,this%ZVELOCITY)+pvar(i-1,j,this%ZVELOCITY)) * ftxz(i,j,1) ) ) &
-               + Mesh%dxdV(i,j) * ( Mesh%fhx(i,j,4) * Mesh%fhz(i,j,4) * &
-               ( (pvar(i,j+1,this%XVELOCITY)+pvar(i,j,this%XVELOCITY)) * ftxy(i,j,4) &
-               + (pvar(i,j+1,this%YVELOCITY)+pvar(i,j,this%YVELOCITY)) * ftyy(i,j,4) &
-               + (pvar(i,j+1,this%ZVELOCITY)+pvar(i,j,this%ZVELOCITY)) * ftyz(i,j,4) ) &
-               - Mesh%fhx(i,j,3) * Mesh%fhz(i,j,3) * &
-               ( (pvar(i,j,this%XVELOCITY)+pvar(i,j-1,this%XVELOCITY)) * ftxy(i,j,3) &
-               + (pvar(i,j,this%YVELOCITY)+pvar(i,j-1,this%YVELOCITY)) * ftyy(i,j,3) &
-               + (pvar(i,j,this%ZVELOCITY)+pvar(i,j-1,this%ZVELOCITY)) * ftyz(i,j,3) ) ) )
-       END DO
-    END DO
+    this%amin(:,:)  = pvar(:,:,this%XVELOCITY)*btxx(:,:) &
+                    + pvar(:,:,this%YVELOCITY)*btxy(:,:) &
+                    + pvar(:,:,this%ZVELOCITY)*btxz(:,:)
+
+   ! compute scalar product of v and bty (y-component)
+   ! use amax for temporary storage
+!CDIR NODEP 
+    this%amax(:,:) = pvar(:,:,this%XVELOCITY)*btxy(:,:) &
+                   + pvar(:,:,this%YVELOCITY)*btyy(:,:) &
+                   + pvar(:,:,this%ZVELOCITY)*btyz(:,:) 
+ 
+    ! compute vector divergence of scalar product v_i * bt_ij
+!CDIR IEXPAND
+    CALL Divergence(Mesh,this%amin,this%amax,sterm(:,:,this%ENERGY))
   END SUBROUTINE ViscositySources_euler3Drs
 
 
@@ -630,18 +567,16 @@ CONTAINS
   END SUBROUTINE CalculateFlux_euler3Drs
 
 
-  ELEMENTAL SUBROUTINE CentrifugalForces(rho,vz,czxz,czyz,fcx,fcy)
+  ELEMENTAL SUBROUTINE CentrifugalForces_euler3Drs(rho,vz,czxz,czyz,fcx,fcy)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     REAL, INTENT(IN)  :: rho,vz,czxz,czyz
     REAL, INTENT(OUT) :: fcx,fcy
     !------------------------------------------------------------------------!
-    REAL :: tmp2
-    !------------------------------------------------------------------------!
-    tmp2 = rho*vz*vz
-    fcx  = tmp2 * czxz
-    fcy  = tmp2 * czyz
-  END SUBROUTINE CentrifugalForces
+    fcx  = rho*vz*vz ! temporary 
+    fcy  = fcx * czyz
+    fcx  = fcx * czxz
+  END SUBROUTINE CentrifugalForces_euler3Drs
 
 
   ELEMENTAL SUBROUTINE Cons2Prim_euler3Drs(gamma,rho_in,mu,mv,mw,E,rho_out,u,v,w,P)
@@ -685,6 +620,5 @@ CONTAINS
     CALL ClosePhysics_euler2D(this)
     DEALLOCATE(this%fcent)
   END SUBROUTINE ClosePhysics_euler3Drs
-
 
 END MODULE physics_euler3Drotsym

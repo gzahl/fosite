@@ -121,6 +121,7 @@ CONTAINS
     TYPE(Geometry_TYP), INTENT(IN) :: this
     INTEGER :: cs
     !------------------------------------------------------------------------!
+!CDIR IEXPAND
     cs = GetType_common(this%coordsys)
   END FUNCTION GetCoordsys
 
@@ -131,6 +132,7 @@ CONTAINS
     TYPE(Geometry_TYP), INTENT(IN) :: this
     CHARACTER(LEN=32) :: cn    
     !------------------------------------------------------------------------!
+!CDIR IEXPAND
     cn = GetName_common(this%coordsys)
   END FUNCTION GetCoordsysName
 

@@ -150,7 +150,7 @@ CONTAINS
     REAL, INTENT(IN), DIMENSION(:,:,:) :: coords
     REAL, INTENT(OUT), DIMENSION(:,:) :: hx,hy,hz
     !------------------------------------------------------------------------!
-    
+!CDIR IEXPAND    
     SELECT CASE(GetType(this))
     CASE(CARTESIAN)
        CALL ScaleFactors_cartesian(hx,hy,hz)
@@ -186,7 +186,7 @@ CONTAINS
     REAL, INTENT(IN), DIMENSION(:,:,:,:) :: coords
     REAL, INTENT(OUT), DIMENSION(:,:,:) :: hx,hy,hz
     !------------------------------------------------------------------------!
-    
+!CDIR IEXPAND
     SELECT CASE(GetType(this))
     CASE(CARTESIAN)
        CALL ScaleFactors_cartesian(hx,hy,hz)
@@ -225,7 +225,7 @@ CONTAINS
     INTENT(IN)    :: this,curv
     INTENT(OUT)   :: cart
     !------------------------------------------------------------------------!
-
+!CDIR IEXPAND
     SELECT CASE(GetType(this))
     CASE(CARTESIAN)
        cart(:,:,:) = curv(:,:,:)
@@ -269,7 +269,7 @@ CONTAINS
     INTENT(IN)    :: this,curv
     INTENT(OUT)   :: cart
     !------------------------------------------------------------------------!
-
+!CDIR IEXPAND
     SELECT CASE(GetType(this))
     CASE(CARTESIAN)
        cart(:,:,:,:) = curv(:,:,:,:)
@@ -313,7 +313,7 @@ CONTAINS
     INTENT(IN)    :: this,cart
     INTENT(OUT)   :: curv
     !------------------------------------------------------------------------!
-
+!CDIR IEXPAND
     SELECT CASE(GetType(this))
     CASE(CARTESIAN)
        curv(:,:,:) = cart(:,:,:)
@@ -355,7 +355,7 @@ CONTAINS
     INTENT(IN)    :: this,cart
     INTENT(OUT)   :: curv
     !------------------------------------------------------------------------!
-
+!CDIR IEXPAND
     SELECT CASE(GetType(this))
     CASE(CARTESIAN)
        curv(:,:,:,:) = cart(:,:,:,:)
@@ -398,7 +398,7 @@ CONTAINS
     INTENT(IN)    :: this,curv,v_curv
     INTENT(OUT)   :: v_cart
     !------------------------------------------------------------------------!
-
+!CDIR IEXPAND
     SELECT CASE(GetType(this))
     CASE(CARTESIAN)
        v_cart(:,:,:) = v_curv(:,:,:)
@@ -443,7 +443,7 @@ CONTAINS
     INTENT(IN)    :: this,curv,v_cart
     INTENT(OUT)   :: v_curv
     !------------------------------------------------------------------------!
-
+!CDIR IEXPAND
     SELECT CASE(GetType(this))
     CASE(CARTESIAN)
        v_curv(:,:,:) = v_cart(:,:,:)

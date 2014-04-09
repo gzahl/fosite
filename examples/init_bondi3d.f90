@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: init_bondi3d.f90                                                  #
 !#                                                                           #
-!# Copyright (C) 2006-2011                                                   #
+!# Copyright (C) 2006-2012                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -38,7 +38,9 @@
 !* - compile with autodouble          *!
 !**************************************!
  
-MODULE Init
+PROGRAM Init
+  USE fosite
+  USE constants_generic
   USE physics_generic
   USE fluxes_generic
   USE mesh_generic
@@ -49,7 +51,6 @@ MODULE Init
   USE timedisc_generic
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
-  PRIVATE
   ! general constants
   REAL, PARAMETER    :: MSUN = 1.989E+30   ! solar mass [kg]                 !
   ! simulation parameters
@@ -79,11 +80,20 @@ MODULE Init
   REAL               :: RB                 ! Bondi radius
   REAL               :: TAU                ! free fall time scale
   !--------------------------------------------------------------------------!
-  PUBLIC :: &
-       ! methods
-       InitProgram
+  TYPE(fosite_TYP)   :: Sim
   !--------------------------------------------------------------------------!
 
+CALL InitFosite(Sim)
+
+CALL InitProgram(Sim%Mesh, Sim%Physics, Sim%Fluxes, Sim%Timedisc, &
+                 Sim%Datafile, Sim%Logfile)
+
+! set initial condition
+CALL InitData(Sim%Mesh,Sim%Physics,Sim%Fluxes,Sim%Timedisc)
+
+CALL RunFosite(Sim)
+
+CALL CloseFosite(Sim)
 
 CONTAINS
 
@@ -103,27 +113,14 @@ CONTAINS
     !------------------------------------------------------------------------!
     INTENT(OUT)       :: Mesh,Physics,Fluxes,Timedisc,Datafile,Logfile
     !------------------------------------------------------------------------!
-    ! physics settings
-    CALL InitPhysics(Physics, &
-         problem = EULER3D_ROTSYM, &
-         gamma   = GAMMA, &                 ! ratio of specific heats        !
-         dpmax   = 1.0E+3)                  ! for advanced time step control !
+    ! initialize constants (normally done within Physics)
+    ! because we need some constants prior to Physics initialization
+    CALL InitConstants(Physics%Constants, &
+            units = SI)
 
     ! derived constants
     RB  = Physics%Constants%GN * ACCMASS / CSINF**2  ! bondi radius [m]      !
     TAU = RB / CSINF                        ! free fall time scale [s]       !
-
-    ! numerical scheme for flux calculation
-    CALL InitFluxes(Fluxes, &
-         scheme = MIDPOINT)                 ! quadrature rule                !
-
-    ! reconstruction method
-    CALL InitReconstruction(Fluxes%reconstruction, &
-         order     = LINEAR, &
-         variables = PRIMITIVE, &           ! vars. to use for reconstruction!
-         limiter   = MONOCENT, &            ! one of: minmod, monocent,...   !
-!!$         limiter   = SUPERBEE, &            ! for better entropy conservation !
-         theta     = 1.2)                   ! optional parameter for limiter !
 
     ! geometry dependent setttings
     SELECT CASE(MGEO)
@@ -177,7 +174,8 @@ CONTAINS
     END SELECT
 
     ! mesh settings
-    CALL InitMesh(Mesh,Fluxes, &
+    CALL InitMesh(Mesh,&
+         meshtype = MIDPOINT, &
          geometry = MGEO, &
              inum = XRES, &
              jnum = YRES, &
@@ -186,6 +184,19 @@ CONTAINS
              ymin = y1, &
              ymax = y2, &
            gparam = RB)
+
+    ! physics settings
+    CALL InitPhysics(Physics,Mesh, &
+         problem = EULER3D_ROTSYM, &
+         gamma   = GAMMA, &                 ! ratio of specific heats        !
+         dpmax   = 1.0E+3)                  ! for advanced time step control !
+
+    ! flux calculation and reconstruction method
+    CALL InitFluxes(Fluxes,Mesh,Physics, &
+         order     = LINEAR, &
+         variables = PRIMITIVE, &   ! vars. to use for reconstruction!
+         limiter   = MONOCENT, &    ! one of: minmod, monocent,...   !
+         theta     = 1.2)           ! optional parameter for limiter !
 
     ! boundary conditions
     CALL InitBoundary(Timedisc%boundary,Mesh,Physics, &
@@ -208,9 +219,6 @@ CONTAINS
          stoptime = TSIM * TAU, &
          dtlimit  = 1.0E-6 * TAU, &
          maxiter  = 1000000)
-
-    ! set initial condition
-    CALL InitData(Mesh,Physics,Fluxes,Timedisc)
 
     ! initialize log input/output
 !!$    CALL InitFileIO(Logfile,Mesh,Physics,Timedisc,&
@@ -362,6 +370,14 @@ CONTAINS
     REAL, INTENT(IN)  :: r,gamma,rhoinf,csinf
     REAL, INTENT(OUT) :: rho,vr
     !------------------------------------------------------------------------!
+    INTERFACE
+       SUBROUTINE funcd(x,fx,dfx)
+         IMPLICIT NONE
+         REAL, INTENT(IN)  :: x
+         REAL, INTENT(OUT) :: fx,dfx
+       END SUBROUTINE funcd
+    END INTERFACE
+    !------------------------------------------------------------------------!
     REAL, PARAMETER :: xacc = 1.0E-6     ! accuracy for root finding
     REAL :: gp1,gm1,g35,rc,chi,lambda,psi,gr
     COMMON /funcd_parameter/ gm1, gr
@@ -391,18 +407,20 @@ CONTAINS
   END SUBROUTINE bondi
 
 
-  ! for exact Bondi solution at the outer boundary
-  SUBROUTINE funcd(y,fy,dfy)
-    IMPLICIT NONE
-    !------------------------------------------------------------------------!
-    REAL, INTENT(IN)  :: y
-    REAL, INTENT(OUT) :: fy,dfy
-    !------------------------------------------------------------------------!
-    REAL :: gm1,gr
-    COMMON /funcd_parameter/ gm1,gr
-    !------------------------------------------------------------------------!
-    fy  = 0.5*y*y + y**(-gm1) / gm1 - gr
-    dfy = y - y**(-gm1-1.)
-  END SUBROUTINE funcd
+END PROGRAM Init
 
-END MODULE Init
+
+! for exact Bondi solution at the outer boundary
+SUBROUTINE funcd(y,fy,dfy)
+  IMPLICIT NONE
+  !------------------------------------------------------------------------!
+  REAL, INTENT(IN)  :: y
+  REAL, INTENT(OUT) :: fy,dfy
+  !------------------------------------------------------------------------!
+  REAL :: gm1,gr
+  COMMON /funcd_parameter/ gm1,gr
+  !------------------------------------------------------------------------!
+  fy  = 0.5*y*y + y**(-gm1) / gm1 - gr
+  dfy = y - y**(-gm1-1.)
+END SUBROUTINE funcd
+

@@ -129,6 +129,7 @@ CONTAINS
     TYPE(Reconstruction_TYP), INTENT(IN) :: this
     INTEGER :: rt
     !------------------------------------------------------------------------!
+!CDIR IEXPAND
     rt = GetType_common(this%order)
   END FUNCTION GetOrder
 
@@ -139,6 +140,7 @@ CONTAINS
     TYPE(Reconstruction_TYP), INTENT(IN) :: this
     CHARACTER(LEN=32) :: rn
     !------------------------------------------------------------------------!
+!CDIR IEXPAND
     rn = GetName(this%order)
   END FUNCTION GetOrderName
 
@@ -149,6 +151,7 @@ CONTAINS
     TYPE(Reconstruction_TYP), INTENT(IN) :: this
     LOGICAL :: pc
     !------------------------------------------------------------------------!
+!CDIR IEXPAND
     pc = this%primcons
   END FUNCTION PrimRecon
   

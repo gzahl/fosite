@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: fluxes_trapezoidal.f90                                            #
 !#                                                                           #
-!# Copyright (C) 2007-2008                                                   #
+!# Copyright (C) 2007-2012                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -28,35 +28,48 @@
 !----------------------------------------------------------------------------!
 MODULE fluxes_trapezoidal
   USE mesh_common, ONLY : Mesh_TYP
-  USE fluxes_midpoint
+  USE fluxes_midpoint, CloseFluxes_trapezoidal => CloseFluxes_midpoint
   USE physics_generic
   USE reconstruction_generic
   IMPLICIT NONE
-  PRIVATE
   !--------------------------------------------------------------------------!
-  ! name for the numerical flux function
-  CHARACTER(LEN=32), PARAMETER :: qrule_name = "trapezoidal"
+  PRIVATE
   !--------------------------------------------------------------------------!
   PUBLIC :: &
        InitFluxes_trapezoidal, &
        CalculateFluxes_trapezoidal, &
-       BilinearInterpolation
+       BilinearInterpolation, &
+       CloseFluxes_trapezoidal
   !--------------------------------------------------------------------------!
 
 CONTAINS
 
-  SUBROUTINE InitFluxes_trapezoidal(this,qrule)
+  SUBROUTINE InitFluxes_trapezoidal(this,Mesh,qrule)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Fluxes_TYP)  :: this
+    TYPE(Mesh_TYP)    :: Mesh
     INTEGER           :: qrule
     !------------------------------------------------------------------------!
-    INTENT(IN)        :: qrule
+    INTEGER           :: err,n
+    !------------------------------------------------------------------------!
+    INTENT(IN)        :: Mesh,qrule
     INTENT(INOUT)     :: this
     !------------------------------------------------------------------------!
-    CALL InitFluxes(this,qrule,qrule_name)
+    CALL InitFluxes(this,qrule,GetName(Mesh))
+    ! allocate arrays used in fluxes_trapezoidal
+    ALLOCATE(this%dx(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,4), &
+         this%dy(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,4), &
+         STAT=err)
+    IF (err.NE.0) &
+       CALL Error(this, "InitFluxes_midpoint","Unable to allocate memory.")
+    ! set relative positions for reconstruction points:
+    ! cell corner positions
+    DO n=1,4
+       this%dx(:,:,n) = Mesh%cpos(:,:,n,1) - Mesh%bcenter(:,:,1)
+       this%dy(:,:,n) = Mesh%cpos(:,:,n,2) - Mesh%bcenter(:,:,2)
+    END DO
   END SUBROUTINE InitFluxes_trapezoidal
-
 
   PURE SUBROUTINE CalculateFluxes_trapezoidal(this,Mesh,Physics,pvar,cvar,xflux,yflux)
     IMPLICIT NONE
@@ -77,17 +90,6 @@ CONTAINS
     !------------------------------------------------------------------------!
     ! get slopes and wave speeds
     CALL CalculateFaceData(this,Mesh,Physics,pvar,cvar) 
-
-    ! reconstruct corner states
-    IF (PrimRecon(this%Reconstruction)) THEN
-       CALL CalculateStates(this%Reconstruction,Mesh,Physics,4,Mesh%bcenter,&
-            Mesh%cpos,pvar,this%rstates)
-       CALL Convert2Conservative(Physics,Mesh,this%rstates,this%cons)
-    ELSE
-       CALL CalculateStates(this%Reconstruction,Mesh,Physics,4,Mesh%bcenter,&
-            Mesh%cpos,cvar,this%rstates)
-       CALL Convert2Primitive(Physics,Mesh,this%rstates,this%prim)
-    END IF
 
     ! west and east
     IF (Mesh%INUM.GT.1) THEN

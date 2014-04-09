@@ -3,8 +3,9 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: fileio_netcdf.f90                                                 #
 !#                                                                           #
-!# Copyright (C) 2008-2010                                                   #
+!# Copyright (C) 2008-2012                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
+!# Manuel Jung <mjung@astrophysik.uni-kiel.de>                               #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
 !# it under the terms of the GNU General Public License as published by      #
@@ -37,6 +38,7 @@ MODULE fileio_netcdf
 #endif
   USE fileio_gnuplot
   USE geometry_common, ONLY : Geometry_TYP, GetName, GetType
+  USE geometry_generic, ONLY : Convert2Cartesian
   USE mesh_common, ONLY : Mesh_TYP
   USE physics_common, ONLY : Physics_TYP, GetName, GetType
   USE timedisc_common, ONLY : Timedisc_TYP
@@ -51,8 +53,11 @@ MODULE fileio_netcdf
   INTEGER :: DEFAULT_NF90_REAL                     ! default real data type  !
   CHARACTER(LEN=*), PARAMETER :: IDIM_NAME="inum"  ! names for dimensions &  !
   CHARACTER(LEN=*), PARAMETER :: JDIM_NAME="jnum"  !   variables             !
-  CHARACTER(LEN=*), PARAMETER :: VSIZE_NAME="vsize" 
+  CHARACTER(LEN=*), PARAMETER :: CNUM_NAME="cnum"
+  CHARACTER(LEN=*), PARAMETER :: VSIZE_NAME="vsize"
+  CHARACTER(LEN=*), PARAMETER :: CVSIZE_NAME="cvsize" 
   CHARACTER(LEN=*), PARAMETER :: POSITIONS_NAME ="bary_centers"
+  CHARACTER(LEN=*), PARAMETER :: CPOSITIONS_NAME ="corners"
   CHARACTER(LEN=*), PARAMETER :: TIME_NAME="time"
   CHARACTER(LEN=*), PARAMETER :: PHYSICS_NAME="physics"
   CHARACTER(LEN=*), PARAMETER :: GEOMETRY_NAME="geometry"
@@ -62,10 +67,11 @@ MODULE fileio_netcdf
        FileIO_TYP, &
        ! constants
 #ifdef HAVE_NETCDF
+       NF90_NOCLOBBER, NF90_SHARE, NF90_64BIT_OFFSET, &
+#ifdef HAVE_HDF5
        NF90_FORMAT_CLASSIC, NF90_FORMAT_64BIT, &
        NF90_FORMAT_NETCDF4, NF90_FORMAT_NETCDF4_CLASSIC, &
-#ifdef HAVE_HDF5
-       NF90_CLASSIC_MODEL, NF90_NETCDF4, &
+       NF90_CLASSIC_MODEL, NF90_NETCDF4, NF90_HDF5, &
 #endif
 #endif
        ! methods
@@ -110,7 +116,9 @@ CONTAINS
          dtwall,count,fcycles,.FALSE.,unit)
 #ifdef HAVE_NETCDF
 #ifdef PARALLEL
+#ifdef HAVE_HDF5
     IF (ncfmt.NE.NF90_NETCDF4) &
+#endif
          CALL Error(this,"InitFileIO","NetCDF: parallel file format must be NF90_NETCDF4")
 #endif
     this%ncfmt = ncfmt
@@ -152,19 +160,25 @@ CONTAINS
     SELECT CASE(action)
     CASE(READONLY,READEND)
 #ifdef PARALLEL
-       this%error = nf90_open_par(GetFilename(this),NF90_NOWRITE,comm,MPI_INFO_NULL,this%ncid)
+!       this%error = nf90_open_par(GetFilename(this),NF90_NOWRITE,comm,MPI_INFO_NULL,this%ncid)
+       this%error = nf90_open(GetFilename(this),NF90_NOWRITE,this%ncid,&
+                              comm=comm,info=MPI_INFO_NULL)
 #else
        this%error = nf90_open(GetFilename(this),NF90_NOWRITE,this%ncid)
 #endif
     CASE(REPLACE)
 #ifdef PARALLEL
-       this%error = nf90_create_par(GetFilename(this),this%ncfmt,comm,MPI_INFO_NULL,this%ncid)
+!       this%error = nf90_create_par(GetFilename(this),this%ncfmt,comm,MPI_INFO_NULL,this%ncid)
+       this%error = nf90_create(GetFilename(this),this%ncfmt,this%ncid,&
+                                comm=comm,info=MPI_INFO_NULL)
 #else
        this%error = nf90_create(GetFilename(this),this%ncfmt,this%ncid)
 #endif
     CASE(APPEND)
 #ifdef PARALLEL
-       this%error = nf90_open_par(GetFilename(this),NF90_WRITE,comm,MPI_INFO_NULL,this%ncid)
+!       this%error = nf90_open_par(GetFilename(this),NF90_WRITE,comm,MPI_INFO_NULL,this%ncid)
+       this%error = nf90_open(GetFilename(this),NF90_WRITE,this%ncid,&
+                              comm=comm,info=MPI_INFO_NULL)
 #else
        this%error = nf90_open(GetFilename(this),NF90_WRITE,this%ncid)
 #endif
@@ -198,12 +212,14 @@ CONTAINS
     !------------------------------------------------------------------------!
     CHARACTER(LEN=8)  :: series_attr
     INTEGER           :: k
-    INTEGER           :: posid,timeid,varid,physid,geoid
+    INTEGER           :: posid,timeid,varid,physid,geoid,cposid
     INTEGER           :: vsize
-    INTEGER, DIMENSION(:), POINTER :: posdims, vardims
+    INTEGER, PARAMETER:: cnum = 4
+    INTEGER, DIMENSION(:), POINTER :: posdims, vardims, cposdims
     INTEGER, DIMENSION(1), TARGET :: dims1D, timedims
     INTEGER, DIMENSION(2), TARGET :: dims2D
     INTEGER, DIMENSION(3), TARGET :: dims3D
+    INTEGER, DIMENSION(4), TARGET :: dims4D
     !------------------------------------------------------------------------!
     INTENT(IN)        :: Mesh,Physics
     INTENT(INOUT)     :: this
@@ -214,6 +230,7 @@ CONTAINS
           ! 1D case
           ! save positions as a 1D column vector -> 2D array
           posdims => dims2D
+          cposdims => dims4D ! allways 4D array
           vsize = 1
           ! save variables as a 2D array, last dimension accounts for time dependence 
           vardims => dims2D
@@ -221,6 +238,7 @@ CONTAINS
           ! 2D case
           ! save positions as a 2D vector for each grid point -> 3D array
           posdims => dims3D
+          cposdims => dims4D
           vsize = 2
           ! variables are scalar 2D data with time dependence -> 3D array
           vardims => dims3D
@@ -232,6 +250,7 @@ CONTAINS
           ! 1D case
           ! save positions as a 1D column vector -> 2D array
           posdims => dims2D
+          cposdims => dims4D ! allways 4D array
           vsize = 1
           ! save variables as a 1D array, no time dependence -> 1D array
           vardims => dims1D
@@ -239,6 +258,7 @@ CONTAINS
           ! 2D case
           ! save positions as a 2D vector for each grid point -> 3D array
           posdims => dims3D
+          cposdims => dims4D
           vsize = 2
           ! variables are scalar 2D data without time dependence -> 2D array
           vardims => dims2D
@@ -268,20 +288,42 @@ CONTAINS
             this%error = nf90_def_var(this%ncid,TIME_NAME,DEFAULT_NF90_REAL, &
                                       timeid)       
     END IF
-
-    ! define dimensions and variables for positions
-    IF (this%error.EQ.NF90_NOERR) &
-         this%error = nf90_def_dim(this%ncid,VSIZE_NAME,vsize,&
-                                   posdims(1))
+    ! define dimensions and variables for bary center positions
     IF ((this%error.EQ.NF90_NOERR).AND.(Mesh%INUM.GT.1)) &
          this%error = nf90_def_dim(this%ncid,IDIM_NAME,Mesh%INUM,&
-                                   posdims(2)) ! <- maybe overwritten by next command
+                                   posdims(1)) ! <- maybe overwritten by next command
     IF ((this%error.EQ.NF90_NOERR).AND.(Mesh%JNUM.GT.1)) &
          this%error = nf90_def_dim(this%ncid,JDIM_NAME,Mesh%JNUM,&
+                                   posdims(this%rank))
+    IF (this%error.EQ.NF90_NOERR) &
+         this%error = nf90_def_dim(this%ncid,VSIZE_NAME,vsize,&
                                    posdims(this%rank+1))
     IF (this%error.EQ.NF90_NOERR) &
          this%error = nf90_def_var(this%ncid,POSITIONS_NAME,DEFAULT_NF90_REAL, &
                                    posdims,posid)
+    ! define dimensions and variables for corner positions
+    IF ((this%error.EQ.NF90_NOERR).AND.(Mesh%INUM.EQ.1)) THEN
+         this%error = nf90_def_dim(this%ncid,IDIM_NAME,1, &
+                                   cposdims(1))
+    ELSE
+        cposdims(1) = posdims(1)
+    END IF
+    IF ((this%error.EQ.NF90_NOERR).AND.(Mesh%JNUM.EQ.1)) THEN
+         this%error = nf90_def_dim(this%ncid,JDIM_NAME,1, &
+                                   cposdims(2))
+    ELSE
+        cposdims(2) = posdims(this%rank)
+    END IF
+    IF (this%error.EQ.NF90_NOERR) &
+         this%error = nf90_def_dim(this%ncid,CNUM_NAME,cnum,&
+                                   cposdims(3))
+    IF (this%error.EQ.NF90_NOERR) &
+         this%error = nf90_def_dim(this%ncid,CVSIZE_NAME,2,&
+                                    cposdims(4))
+
+    IF (this%error.EQ.NF90_NOERR) &
+         this%error = nf90_def_var(this%ncid,CPOSITIONS_NAME,DEFAULT_NF90_REAL, &
+                                   cposdims,cposid)
     ! define attributes for computational domain extent
     IF (Mesh%INUM.GT.1) THEN
        IF (this%error.EQ.NF90_NOERR) &
@@ -298,7 +340,7 @@ CONTAINS
     
     ! rearrange vardims array (identical to posdims)
     DO k=1,this%rank
-       vardims(k) = posdims(k+1)
+       vardims(k) = posdims(k)
     END DO
     ! change last dimension to account for time dependence
     IF (this%cycles.EQ.0) THEN
@@ -317,6 +359,9 @@ CONTAINS
        IF (this%error.EQ.NF90_NOERR) &
             this%error = nf90_put_att(this%ncid,varid,"positions",&
                          POSITIONS_NAME)
+       IF (this%error.EQ.NF90_NOERR) &
+            this%error = nf90_put_att(this%ncid,varid,"cpositions",&
+                         CPOSITIONS_NAME)
     END DO
     
     ! finish variable definition
@@ -324,6 +369,7 @@ CONTAINS
          this%error = nf90_enddef(this%ncid)
     ! in NetCDF positions are only written once, hence it is done here
     IF (this%error.EQ.NF90_NOERR) CALL WritePositions_netcdf(this,Mesh,posid)
+    IF (this%error.EQ.NF90_NOERR) CALL WriteCPositions_netcdf(this,Mesh,cposid)
     IF (this%error.NE.NF90_NOERR) CALL Error(this,"WriteHeader_netcdf",&
          TRIM(nf90_strerror(this%error)))
   END SUBROUTINE WriteHeader_netcdf
@@ -428,26 +474,26 @@ CONTAINS
     !------------------------------------------------------------------------!
     IF (Mesh%JNUM.EQ.1) THEN
        ! 1D x-direction
-       num(:)   = (/ 1, Mesh%IMAX-Mesh%IMIN+1 /)
-       start(:) = (/ 1, Mesh%IMIN /)
+       num(:)   = (/ Mesh%IMAX-Mesh%IMIN+1, 1 /)
+       start(:) = (/ Mesh%IMIN, 1 /)
        this%error = nf90_put_var(this%ncid,posid,&
             Mesh%bcenter(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN,1), &
             start=start,count=num)
     ELSE IF (Mesh%INUM.EQ.1) THEN
        ! 1D y-direction
-       num(:)   = (/ 1, Mesh%JMAX-Mesh%JMIN+1 /)
-       start(:) = (/ 1, Mesh%JMIN /)
+       num(:)   = (/ Mesh%JMAX-Mesh%JMIN+1, 1 /)
+       start(:) = (/ Mesh%JMIN, 1 /)
        this%error = nf90_put_var(this%ncid,posid,&
             Mesh%bcenter(Mesh%IMIN,Mesh%JMIN:Mesh%JMAX,2), &
             start=start,count=num)
     ELSE
        ! 2D
-       num(:)    = (/ 1, Mesh%IMAX-Mesh%IMIN+1, Mesh%JMAX-Mesh%JMIN+1 /)
-       start(:)  = (/ 1, Mesh%IMIN, Mesh%JMIN /)
+       num(:)    = (/ Mesh%IMAX-Mesh%IMIN+1, Mesh%JMAX-Mesh%JMIN+1, 1 /)
+       start(:)  = (/ Mesh%IMIN, Mesh%JMIN, 1 /)
        this%error = nf90_put_var(this%ncid,posid,&
             Mesh%bcenter(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN:Mesh%JMAX,1), &
             start=start,count=num)
-       start(:)  = (/ 2, Mesh%IMIN, Mesh%JMIN /)
+       start(:)  = (/ Mesh%IMIN, Mesh%JMIN, 2 /)
        IF (this%error.EQ.NF90_NOERR) &
             this%error = nf90_put_var(this%ncid,posid,&
             Mesh%bcenter(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN:Mesh%JMAX,2), &
@@ -458,6 +504,37 @@ CONTAINS
          TRIM(nf90_strerror(this%error)))
   END SUBROUTINE WritePositions_netcdf
 
+  SUBROUTINE WriteCPositions_netcdf(this,Mesh,cposid)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(FileIO_TYP) :: this
+    TYPE(Mesh_TYP)   :: Mesh
+    INTEGER          :: cposid, k
+    !------------------------------------------------------------------------!
+    INTEGER, DIMENSION(4) :: start, num
+    !------------------------------------------------------------------------!
+    INTENT(IN)       :: Mesh,cposid
+    INTENT(INOUT)    :: this
+    !------------------------------------------------------------------------!
+    ! define array shape and slices
+    num(:)    = (/ Mesh%IMAX-Mesh%IMIN+1, Mesh%JMAX-Mesh%JMIN+1, 4, 1 /)
+    start(:)  = (/ Mesh%IMIN, Mesh%JMIN, 1, 1 /)
+
+    ! write corner positions to file
+    ! x-coordinates
+    this%error = nf90_put_var(this%ncid,cposid,&
+         Mesh%cpcart(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN:Mesh%JMAX,:,1), &
+         start=start,count=num)
+    ! y-coordinates
+    start(:)  = (/ Mesh%IMIN, Mesh%JMIN, 1, 2 /)
+    IF (this%error.EQ.NF90_NOERR) &
+         this%error = nf90_put_var(this%ncid,cposid,&
+              Mesh%cpcart(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN:Mesh%JMAX,:,2), &
+              start=start,count=num)
+
+    IF (this%error.NE.NF90_NOERR) CALL Error(this,"WriteCPositions_netcdf",&
+         TRIM(nf90_strerror(this%error)))
+  END SUBROUTINE WriteCPositions_netcdf
 
   SUBROUTINE WriteTimestamp_netcdf(this,time)
     IMPLICIT NONE
@@ -561,10 +638,10 @@ CONTAINS
        start(1) = Mesh%JMIN
        num(1)   = Mesh%JMAX-Mesh%JMIN+1
     ELSE
-       start(1)  = Mesh%IMIN
-       start(2)  = Mesh%JMIN
-       num(1) = Mesh%IMAX-Mesh%IMIN+1
-       num(2) = Mesh%JMAX-Mesh%JMIN+1
+       num(1)   = Mesh%IMAX-Mesh%IMIN+1
+       num(2)   = Mesh%JMAX-Mesh%JMIN+1
+       start(1) = Mesh%IMIN
+       start(2) = Mesh%JMIN
     END IF
     ! time step to write
     IF (this%cycles.GT.0) THEN

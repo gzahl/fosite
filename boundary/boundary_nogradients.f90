@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: boundary_nogradients.f90                                          #
 !#                                                                           #
-!# Copyright (C) 2006-2008                                                   #
+!# Copyright (C) 2006-2012                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -28,11 +28,8 @@
 !----------------------------------------------------------------------------!
 MODULE boundary_nogradients
   USE boundary_common
-  USE fluxes_common, ONLY : Fluxes_TYP
-  USE reconstruction_common, ONLY : Reconstruction_TYP, PrimRecon
   USE mesh_common, ONLY : Mesh_TYP
   USE physics_common, ONLY : Physics_TYP
-  USE physics_generic
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   PRIVATE
@@ -78,20 +75,20 @@ CONTAINS
   END SUBROUTINE InitBoundary_nogradients
 
 
-  PURE SUBROUTINE CenterBoundary_nogradients(this,Mesh,Physics,Fluxes,pvar)
+  PURE SUBROUTINE CenterBoundary_nogradients(this,Mesh,Physics,pvar)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Boundary_TYP) :: this
     TYPE(Mesh_TYP)     :: Mesh
     TYPE(Physics_TYP)  :: Physics
-    TYPE(Fluxes_TYP)   :: Fluxes
     REAL :: pvar(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum)
     !------------------------------------------------------------------------!
     INTEGER       :: i,j
     !------------------------------------------------------------------------!
-    INTENT(IN)    :: this,Mesh,Physics,Fluxes
+    INTENT(IN)    :: this,Mesh,Physics
     INTENT(INOUT) :: pvar
     !------------------------------------------------------------------------!
+!CDIR IEXPAND
     SELECT CASE(GetDirection(this))
     CASE(WEST)
        ! UNROLL=Mesh%GNUM would be sufficient, but the compiler does

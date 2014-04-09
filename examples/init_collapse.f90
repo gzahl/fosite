@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: init_collapse.f90                                                 #
 !#                                                                           #
-!# Copyright (C) 2008-2011                                                   #
+!# Copyright (C) 2008-2012                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !# Björn Sperling   <sperling@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
@@ -37,7 +37,8 @@
 !     Astrophysical Journal, vol. 143, p.626
 !     DOI: 10.1086/148549                      
 !----------------------------------------------------------------------------!
-MODULE Init
+PROGRAM Init
+  USE fosite
   USE physics_generic
   USE fluxes_generic
   USE mesh_generic
@@ -48,7 +49,6 @@ MODULE Init
   USE timedisc_generic
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
-  PRIVATE
   ! simulation parameters
   REAL, PARAMETER    :: TSIM      = 1.0E-0 ! simulation time in terms of the
                                            !   free-fall time [TAU]
@@ -86,12 +86,22 @@ MODULE Init
   REAL               :: RHO0               ! initial density of the sphere
   REAL               :: P0                 ! initial hydrostatic pressure
   !--------------------------------------------------------------------------!
-  PUBLIC :: &
-       ! methods
-       InitProgram
+  TYPE(fosite_TYP)   :: Sim
   !--------------------------------------------------------------------------!
 
-CONTAINS
+  CALL InitFosite(Sim)
+
+  CALL InitProgram(Sim%Mesh, Sim%Physics, Sim%Fluxes, Sim%Timedisc, &
+                   Sim%Datafile, Sim%Logfile)
+
+  ! set initial condition
+  CALL InitData(Sim%Mesh,Sim%Physics, Sim%Timedisc)
+
+  CALL RunFosite(Sim)
+
+  CALL CloseFosite(Sim)
+
+  CONTAINS
 
   SUBROUTINE InitProgram(Mesh,Physics,Fluxes,Timedisc,Datafile,Logfile)
     IMPLICIT NONE
@@ -109,44 +119,19 @@ CONTAINS
     !------------------------------------------------------------------------!
     INTENT(OUT)       :: Mesh,Physics,Fluxes,Timedisc,Datafile,Logfile
     !------------------------------------------------------------------------!
-    ! physics settings
-    CALL InitPhysics(Physics, &
-         problem = EULER3D_ROTSYM, &
-         gamma   = GAMMA, &                 ! ratio of specific heats        !
-         dpmax   = 1.0)                     ! for advanced time step control !
-
-    ! compute some derived simulation parameters
-    RHO0 = MASS / VOL0                 ! initial density within the spheroid !
-    ! "hydrostatic" pressure * ETA_P 
-    !     => with ETA_P approx 100 => free-fall (in case of self-gravity)
-    P0 = 4.0/3.0*PI*Physics%constants%GN*RHO0**2*RSPH**2 / ETA_P
-    ! free-fall time (at radius RSPH) with contributions from both
-    ! the selfgravitating spheroid and the central point mass
-    TAU = SQRT((RSPH**3)/Physics%constants%GN/(4./3.*PI*RSPH**3*RHO0 + CENTMASS))
- 
-    ! numerical scheme for flux calculation
-    CALL InitFluxes(Fluxes, &
-         scheme = MIDPOINT)                 ! quadrature rule                !
-
-    ! reconstruction method
-    CALL InitReconstruction(Fluxes%reconstruction, &
-         order     = LINEAR, &
-         variables = PRIMITIVE, &           ! vars. to use for reconstruction!
-         limiter   = MONOCENT, &            ! one of: minmod, monocent,...   !
-         theta     = 1.2)                   ! optional parameter for limiter !
-
     ! mesh settings and boundary conditions
     SELECT CASE(MGEO)
     CASE(SPHERICAL)
        x2 = RMAX*RSPH
-       x1 = 2.*x2 / (XRES+2)      ! x_min = 2*dx
+       x1 = 2.*x2 / (XRES+2)        ! x_min = 2*dx
        y1 = 0.0
        y2 = PI
        bc(WEST)  = NO_GRADIENTS
        bc(EAST)  = NO_GRADIENTS
        bc(SOUTH) = AXIS
        bc(NORTH) = AXIS
-       sgbc = SPHERMULTEXPAN
+       sgbc = SPHERMULTEXPAN        ! use spherical multipole expansion for BC
+                                    !   in the multigrid poisson solver
     CASE(CYLINDRICAL)
        x1 = -RMAX*RSPH
        x2 = RMAX*RSPH
@@ -156,7 +141,7 @@ CONTAINS
        bc(EAST)  = NO_GRADIENTS
        bc(SOUTH) = AXIS
        bc(NORTH) = NO_GRADIENTS
-       sgbc = CYLINMULTEXPAN
+       sgbc = CYLINMULTEXPAN        ! cylindrical multipole expansion
     CASE(OBLATE_SPHEROIDAL)
        x2 = RMAX*RSPH/GPAR
        x2 = LOG(x2+SQRT(x2**2-1.0)) ! = ACOSH(RMAX*RSPH/GPAR)
@@ -167,7 +152,7 @@ CONTAINS
        bc(EAST)  = NO_GRADIENTS
        bc(SOUTH) = AXIS
        bc(NORTH) = AXIS
-       sgbc = CYLINMULTEXPAN
+       sgbc = CYLINMULTEXPAN        ! cylindrical multipole expansion
     CASE(TANCYLINDRICAL)
        x1 = ATAN(-RMAX*RSPH/GPAR)
        x2 = ATAN(RMAX*RSPH/GPAR)
@@ -177,7 +162,7 @@ CONTAINS
        bc(EAST)  = NO_GRADIENTS
        bc(SOUTH) = AXIS
        bc(NORTH) = NO_GRADIENTS
-       sgbc = CYLINMULTEXPAN
+       sgbc = CYLINMULTEXPAN        ! cylindrical multipole expansion
     CASE(SINHSPHERICAL)
        x2 = RMAX*RSPH/GPAR
        x2 = LOG(x2+SQRT(x2**2+1.0)) ! = ASINH(RMAX*RSPH/GPAR)
@@ -188,12 +173,13 @@ CONTAINS
        bc(EAST)  = NO_GRADIENTS
        bc(SOUTH) = AXIS
        bc(NORTH) = AXIS
-       sgbc = SPHERMULTEXPAN
+       sgbc = SPHERMULTEXPAN        ! spherical multipole expansion
     CASE DEFAULT
        CALL Error(Physics,"InitProgram","geometry not supported for 3D Sedov explosion")
     END SELECT
     ! mesh settings
-    CALL InitMesh(Mesh,Fluxes, &
+    CALL InitMesh(Mesh,&
+         meshtype = MIDPOINT, &
          geometry = MGEO, &
              inum = XRES, &
              jnum = YRES, &
@@ -202,6 +188,28 @@ CONTAINS
              ymin = y1, &
              ymax = y2, &
            gparam = GPAR)
+
+     ! physics settings
+    CALL InitPhysics(Physics,Mesh, &
+         problem = EULER3D_ROTSYM, &
+         gamma   = GAMMA, &                 ! ratio of specific heats        !
+         dpmax   = 1.0)                     ! for advanced time step control !
+
+     ! compute some derived simulation parameters
+    RHO0 = MASS / VOL0                 ! initial density within the spheroid !
+    ! "hydrostatic" pressure * ETA_P 
+    !     => with ETA_P approx 100 => free-fall (in case of self-gravity)
+    P0 = 4.0/3.0*PI*Physics%constants%GN*RHO0**2*RSPH**2 / ETA_P
+    ! free-fall time (at radius RSPH) with contributions from both
+    ! the selfgravitating spheroid and the central point mass
+    TAU = SQRT((RSPH**3)/Physics%constants%GN/(4./3.*PI*RSPH**3*RHO0 + CENTMASS))
+ 
+    ! flux calculation and reconstruction method
+    CALL InitFluxes(Fluxes,Mesh,Physics, &
+         order     = LINEAR, &
+         variables = PRIMITIVE, &   ! vars. to use for reconstruction!
+         limiter   = MONOCENT, &    ! one of: minmod, monocent,...   !
+         theta     = 1.2)           ! optional parameter for limiter !
 
     ! boundary conditions
     CALL InitBoundary(Timedisc%boundary,Mesh,Physics, &
@@ -216,9 +224,21 @@ CONTAINS
             stype = POINTMASS, &        ! grav. accel. of a point mass   !
              mass = CENTMASS)           ! mass [kg]                      !
     END IF
+
     ! source term due to self-gravity
     CALL InitSources(Physics%sources,Mesh,Fluxes,Physics,Timedisc%Boundary, &
-            stype  = POISSON)
+            stype  = POISSON, &            ! poisson solver for self-gravity
+!             solver = MULTIGRID, &          ! multigrid solver
+!            maxmult = 5, &                  ! number of (spher.) multipol moments
+!       maxresidnorm = 1.0E-7, &             ! accuracy of multigrid solver (max error)
+         relaxtype = BLOCK_GAUSS_SEIDEL, & ! relaxation method
+!          relaxtype = RED_BLACK_GAUSS_SEIDEL, &
+!          relaxtype = GAUSS_SEIDEL , &
+!               npre = 1, &                  ! number of pre smoothings
+!              npost = 1, &                  ! and post smoothings
+!             minres = 3, &                  ! resolution of coarsest grid
+!          nmaxcycle = 250, &                ! limit for iterations
+        bndrytype  = sgbc)                 ! multipole expansion (see above)
 
     ! time discretization settings
     CALL InitTimedisc(Timedisc,Mesh,Physics,&
@@ -228,9 +248,6 @@ CONTAINS
          stoptime = TSIM * TAU, &
          dtlimit  = 1.0E-9, &
          maxiter  = 10000000)
-
-    ! set initial condition
-    CALL InitData(Mesh,Physics,Timedisc)
 
     ! initialize log input/output
 !!$    CALL InitFileIO(Logfile,Mesh,Physics,Timedisc,&
@@ -306,4 +323,4 @@ CONTAINS
 
   END SUBROUTINE InitData
 
-END MODULE Init
+END PROGRAM Init

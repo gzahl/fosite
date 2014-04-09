@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: mesh_common.f90                                                   #
 !#                                                                           #
-!# Copyright (C) 2006-2010                                                   #
+!# Copyright (C) 2006-2012                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -544,6 +544,7 @@ CONTAINS
     TYPE(Mesh_TYP), INTENT(IN) :: this
     INTEGER :: mt
     !------------------------------------------------------------------------!
+!CDIR IEXPAND
     mt=GetType_common(this%mtype)
   END FUNCTION GetMesh
 
@@ -554,6 +555,7 @@ CONTAINS
     TYPE(Mesh_TYP), INTENT(IN) :: this
     CHARACTER(LEN=32) :: mn
     !------------------------------------------------------------------------!
+!CDIR IEXPAND
     mn=GetName_common(this%mtype)
   END FUNCTION GetMeshName
 

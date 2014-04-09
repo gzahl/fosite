@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: init_noh2d.f90                                                    #
 !#                                                                           #
-!# Copyright (C) 2008-2010                                                   #
+!# Copyright (C) 2008-2012                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -37,7 +37,8 @@
 !     preprint: http://www.math.unm.edu/~bbw/sisc.pdf
 !     DOI: 10.1137/S1064827502402120 
 !----------------------------------------------------------------------------!
-MODULE Init
+PROGRAM Init
+  USE fosite
   USE physics_generic
   USE fluxes_generic
   USE mesh_generic
@@ -47,7 +48,6 @@ MODULE Init
   USE timedisc_generic
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
-  PRIVATE
   ! simulation parameters
   REAL, PARAMETER    :: TSIM    = 2.0      ! simulation stop time
   REAL, PARAMETER    :: GAMMA   = 5./3.    ! ratio of specific heats
@@ -73,13 +73,22 @@ MODULE Init
   CHARACTER(LEN=256), PARAMETER &          ! output data file name
                      :: OFNAME = 'noh2d' 
   !--------------------------------------------------------------------------!
-  PUBLIC :: &
-       ! methods
-       InitProgram
+  TYPE(fosite_TYP)   :: Sim
   !--------------------------------------------------------------------------!
 
+  CALL InitFosite(Sim)
 
-CONTAINS
+  CALL InitProgram(Sim%Mesh, Sim%Physics, Sim%Fluxes, Sim%Timedisc, &
+       Sim%Datafile, Sim%Logfile)
+
+  ! set initial condition
+  CALL InitData(Sim%Mesh, Sim%Physics, Sim%Timedisc)
+
+  CALL RunFosite(Sim)
+  
+  CALL CloseFosite(Sim)
+
+  CONTAINS
 
   SUBROUTINE InitProgram(Mesh,Physics,Fluxes,Timedisc,Datafile,Logfile)
     IMPLICIT NONE
@@ -97,24 +106,6 @@ CONTAINS
     !------------------------------------------------------------------------!
     INTENT(OUT)       :: Mesh,Physics,Fluxes,Timedisc,Datafile,Logfile
     !------------------------------------------------------------------------!
-    ! physics settings
-    CALL InitPhysics(Physics, &
-         problem = EULER2D, &
-         gamma   = GAMMA, &         ! ratio of specific heats        !
-         dpmax   = 1.0E+10)         ! for advanced time step control !
-
-    ! numerical scheme for flux calculation
-    CALL InitFluxes(Fluxes, &
-         scheme = MIDPOINT)         ! quadrature rule                !
-
-    ! reconstruction method
-    CALL InitReconstruction(Fluxes%reconstruction, &
-         order     = LINEAR, &
-         ! IMPORTANT: always use primitive reconstruction for NOH problem
-         variables = PRIMITIVE, &   ! vars. to use for reconstruction!
-         limiter   = MONOCENT, &
-         theta     = 1.2)           ! optional parameter for limiter !
-
     ! mesh settings and boundary conditions
     SELECT CASE(MGEO)
     CASE(CARTESIAN)
@@ -169,7 +160,8 @@ CONTAINS
     END SELECT
 
     ! mesh setttings
-    CALL InitMesh(Mesh,Fluxes, &
+    CALL InitMesh(Mesh,&
+         meshtype = MIDPOINT, &
          geometry = MGEO, &
              inum = XRES, &
              jnum = YRES, &
@@ -179,6 +171,20 @@ CONTAINS
              ymax = y2, &
            gparam = GPAR)
 
+    ! physics settings
+    CALL InitPhysics(Physics,Mesh, &
+         problem = EULER2D, &
+         gamma   = GAMMA, &         ! ratio of specific heats        !
+         dpmax   = 1.0E+10)         ! for advanced time step control !
+
+    ! flux calculation and reconstruction method
+    CALL InitFluxes(Fluxes,Mesh,Physics, &
+         order     = LINEAR, &
+         ! IMPORTANT: always use primitive reconstruction for NOH problem
+         variables = PRIMITIVE, &   ! vars. to use for reconstruction!
+         limiter   = MONOCENT, &    ! one of: minmod, monocent,...   !
+	 theta     = 1.2)           ! optional parameter for limiter !
+
     ! boundary conditions
     CALL InitBoundary(Timedisc%boundary,Mesh,Physics, &
          western  = bc(WEST), &
@@ -186,17 +192,15 @@ CONTAINS
          southern = bc(SOUTH), &
          northern = bc(NORTH))
  
-   ! time discretization settings
+    ! time discretization settings
     CALL InitTimedisc(Timedisc,Mesh,Physics,&
          method   = MODIFIED_EULER, &
          order    = 3, &
          cfl      = 0.4, &
          stoptime = TSIM, &
          dtlimit  = 1.0E-6, &
+         tol_rel  = 1.0E-2, &       ! limit relative error to 1%
          maxiter  = 100000)
-
-    ! set initial condition
-    CALL InitData(Mesh,Physics,Timedisc)
 
     ! initialize log input/output
 !!$    CALL InitFileIO(Logfile,Mesh,Physics,Timedisc,&
@@ -255,4 +259,4 @@ CONTAINS
     CALL Info(Mesh, " DATA-----> initial condition: 2D Noh problem")
   END SUBROUTINE InitData
 
-END MODULE Init
+END PROGRAM Init

@@ -1,6 +1,3 @@
-fileio_binary.o : \
-	fileio_gnuplot.o
-
 fileio_generic.o : \
 	fileio_gnuplot.o \
 	fileio_binary.o \
@@ -8,5 +5,8 @@ fileio_generic.o : \
 	fileio_vtk.o
 
 fileio_netcdf.o : \
+	fileio_gnuplot.o
+
+fileio_binary.o : \
 	fileio_gnuplot.o
 

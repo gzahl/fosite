@@ -1,25 +1,14 @@
-multipole_cylindrical.o : \
-	multipole_spherical.o
+sources_c_accel.o : \
+	sources_pointmass.o
 
-multipole_generic.o : \
-	multipole_spherical.o \
-	multipole_cylindrical.o
-
-poisson_generic.o : \
-	poisson_multigrid.o \
+sources_viscosity.o : \
 	sources_pointmass.o
 
 poisson_multigrid.o : \
 	multipole_generic.o
 
-sources_c_accel.o : \
-	sources_pointmass.o
-
-sources_cooling.o : \
-	sources_pointmass.o
-
-sources_diskthomson.o : \
-	sources_pointmass.o
+poisson_generic.o : \
+	poisson_multigrid.o
 
 sources_generic.o : \
 	sources_pointmass.o \
@@ -29,6 +18,16 @@ sources_generic.o : \
 	sources_cooling.o \
 	poisson_generic.o
 
-sources_viscosity.o : \
+multipole_generic.o : \
+	multipole_spherical.o \
+	multipole_cylindrical.o
+
+sources_cooling.o : \
+	sources_pointmass.o
+
+multipole_cylindrical.o : \
+	multipole_spherical.o
+
+sources_diskthomson.o : \
 	sources_pointmass.o
 

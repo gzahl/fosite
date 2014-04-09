@@ -75,14 +75,18 @@ MODULE timedisc_common
      REAL             :: tol_rel                       ! rel. error tolerance!
      INTEGER          :: maxiter                       ! maximal iterations  !
      INTEGER          :: n_adj                         ! num. of adjustments !
-     REAL, DIMENSION(:), POINTER     :: tol_abs        ! abs. error tolerance!
-     REAL, DIMENSION(:,:,:), POINTER :: pvar, cvar     ! prim/cons vars      !
-     REAL, DIMENSION(:,:,:), POINTER :: pold, cold     ! old prim/cons vars  !
-     REAL, DIMENSION(:,:,:), POINTER :: ptmp,ctmp      ! temporary cvars     !
-     REAL, DIMENSION(:,:,:), POINTER :: src,geo_src    ! source terms        !
-     REAL, DIMENSION(:,:,:), POINTER :: rhs,bxrhs,byrhs! ODE right hand side !
-     REAL, DIMENSION(:,:,:), POINTER :: xflux, yflux   ! num. flux func.     !
-     REAL, DIMENSION(:,:,:), POINTER :: amax           ! max. wave speeds    !
+     INTEGER          :: m                             ! cal steps in emb. RK!
+     REAL, DIMENSION(:), POINTER      :: tol_abs       ! abs. error tolerance!
+     REAL, DIMENSION(:,:,:), POINTER  :: pvar, cvar    ! prim/cons vars      !
+     REAL, DIMENSION(:,:,:), POINTER  :: pold, cold    ! old prim/cons vars  !
+     REAL, DIMENSION(:,:,:), POINTER  :: ptmp,ctmp     ! temporary cvars     !
+     REAL, DIMENSION(:,:,:,:), POINTER:: coeff         ! coefficents         !
+     REAL, DIMENSION(:), POINTER      :: A1,A2,a       ! needed by           !
+     REAL, DIMENSION(:,:), POINTER    :: b             ! embedded RK         !
+     REAL, DIMENSION(:,:,:), POINTER  :: src,geo_src   ! source terms        !
+     REAL, DIMENSION(:,:,:), POINTER  :: rhs,bxrhs,byrhs!ODE right hand side !
+     REAL, DIMENSION(:,:,:), POINTER  :: xflux, yflux  ! num. flux func.     !
+     REAL, DIMENSION(:,:,:), POINTER  :: amax          ! max. wave speeds    !
   END TYPE Timedisc_TYP
   !--------------------------------------------------------------------------!
   PUBLIC :: &
@@ -148,6 +152,7 @@ CONTAINS
     TYPE(Timedisc_TYP), INTENT(IN) :: this
     INTEGER :: os
     !------------------------------------------------------------------------!
+!CDIR IEXPAND
     os = GetType_common(this%odesolver)
   END FUNCTION GetODESolver
 
@@ -158,6 +163,7 @@ CONTAINS
     TYPE(Timedisc_TYP), INTENT(IN) :: this
     CHARACTER(LEN=32) :: on
     !------------------------------------------------------------------------!
+!CDIR IEXPAND
     on = GetName_common(this%odesolver)
   END FUNCTION GetODEsolverName
 

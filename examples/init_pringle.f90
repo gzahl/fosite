@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: init_pringle.f90                                                  #
 !#                                                                           #
-!# Copyright (C) 2008-2011                                                   #
+!# Copyright (C) 2008-2012                                                   #
 !# Bjoern Sperling  <sperling@astrophysik.uni-kiel.de>                       #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
@@ -44,7 +44,8 @@
 !* - compile with autodouble          *!
 !**************************************!
  
-MODULE Init
+PROGRAM Init
+  USE fosite
   USE physics_generic
   USE fluxes_generic
   USE mesh_generic
@@ -56,7 +57,6 @@ MODULE Init
   USE timedisc_generic
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
-  PRIVATE
   ! general constants
   REAL, PARAMETER :: GN      = 6.6742D-11  ! Newtons grav. constant [SI]
   ! simulation parameters
@@ -69,21 +69,26 @@ MODULE Init
   REAL, PARAMETER :: RE       = 1.0E+4     ! Reynolds number (at R=1)
   REAL, PARAMETER :: MA       = 1.0E+2     ! Mach number (at R=1)
   ! lower limit for nitial density
-  REAL, PARAMETER :: RHOMIN   = 1.0E-25    ! minimal initial density
+  REAL, PARAMETER :: RHOMIN   = 1.0E-40    ! minimal initial density
   ! viscosity prescription
 !!$  INTEGER, PARAMETER :: VISTYPE = BETA     
   INTEGER, PARAMETER :: VISTYPE = PRINGLE
   REAL, PARAMETER :: TAU0     = 0.01       ! time for initial condition [TAU]
   ! mesh settings
-  INTEGER, PARAMETER :: MGEO = POLAR       ! geometry
+  !**************************************************************************!
+  ! REMARK: This test is very sensitive to mesh settings. If there are
+  !         not enough mesh points at small radii instabilities grow
+  !         starting at the inner boundary.
+  !**************************************************************************!
+!!$  INTEGER, PARAMETER :: MGEO = POLAR       ! geometry
 !!$  INTEGER, PARAMETER :: MGEO = LOGPOLAR
 !!$  INTEGER, PARAMETER :: MGEO = TANPOLAR
-!!$  INTEGER, PARAMETER :: MGEO = SINHPOLAR
+  INTEGER, PARAMETER :: MGEO = SINHPOLAR
   INTEGER, PARAMETER :: XRES = 100         ! x-resolution
   INTEGER, PARAMETER :: YRES = 1           ! y-resolution
-  REAL, PARAMETER    :: RMIN = 0.1         ! min radius of comp. domain
+  REAL, PARAMETER    :: RMIN = 0.01        ! min radius of comp. domain
   REAL, PARAMETER    :: RMAX = 2.0         ! max radius of comp. domain
-  REAL, PARAMETER    :: GPAR = 0.1         ! geometry scaling parameter
+  REAL, PARAMETER    :: GPAR = 0.2         ! geometry scaling parameter
   ! output parameters
   INTEGER, PARAMETER :: ONUM = 100         ! number of output data sets
   CHARACTER(LEN=256), PARAMETER &          ! output data dir
@@ -95,13 +100,20 @@ MODULE Init
   REAL               :: TAU                ! viscous time scale
   REAL               :: OMEGA0             ! angular velocity at R0
   !--------------------------------------------------------------------------!
-
-  
-  PUBLIC :: &
-       ! methods
-       InitProgram
+  TYPE(fosite_TYP)   :: Sim
   !--------------------------------------------------------------------------!
 
+  CALL InitFosite(Sim)
+
+  CALL InitProgram(Sim%Mesh, Sim%Physics, Sim%Fluxes, Sim%Timedisc, &
+       Sim%Datafile, Sim%Logfile)
+
+  ! set initial condition
+  CALL InitData(Sim%Mesh, Sim%Physics, Sim%Timedisc)
+
+  CALL RunFosite(Sim)
+  
+  CALL CloseFosite(Sim)
 
 CONTAINS
 
@@ -116,71 +128,61 @@ CONTAINS
     TYPE(FILEIO_TYP)  :: Logfile
     !------------------------------------------------------------------------!
     ! Local variable declaration
-    REAL              :: x1,x2,y1,y2
+    REAL              :: x1,x2
     !------------------------------------------------------------------------!
     INTENT(OUT)       :: Mesh,Physics,Fluxes,Timedisc,Datafile,Logfile
     !------------------------------------------------------------------------!
+    ! mesh settings
+    SELECT CASE(MGEO)
+    CASE(POLAR)
+       x1 = RMIN
+       x2 = RMAX
+    CASE(LOGPOLAR)
+       x1 = LOG(RMIN/GPAR)
+       x2 = LOG(RMAX/GPAR)
+    CASE(TANPOLAR)
+       x1 = ATAN(RMIN/GPAR)
+       x2 = ATAN(RMAX/GPAR)
+    CASE(SINHPOLAR)
+       x1 = RMIN/GPAR
+       x1 = LOG(x1+SQRT(1.0+x1*x1))  ! = ASINH(RMIN/GPAR))
+       x2 = RMAX/GPAR
+       x2 = LOG(x2+SQRT(1.0+x2*x2))  ! = ASINH(RMAX/GPAR))
+    CASE DEFAULT
+       CALL Error(Physics,"InitProgram","mesh geometry not supported for Pringle disk")
+    END SELECT
+
+    CALL InitMesh(Mesh,&
+         meshtype = MIDPOINT, &
+         geometry = MGEO, &
+             inum = XRES, &
+             jnum = YRES, &
+             xmin = x1, &
+             xmax = x2, &
+             ymin = -PI, &
+             ymax = PI, &
+           gparam = GPAR)
+
     ! physics settings
-    CALL InitPhysics(Physics, &
+    CALL InitPhysics(Physics,Mesh, &
          problem = EULER2D_ISOTHERM, &
          gamma   = 1.4, &                   ! ratio of specific heats        !
          cs      = CSISO, &                 ! isothermal speed of sound      !
          rhomin  = 1.0E-50, &
          dpmax   = 1.0)                     ! for advanced time step control !
 
-    ! numerical scheme for flux calculation
-    CALL InitFluxes(Fluxes, &
-         scheme = MIDPOINT)                 ! quadrature rule                !
-
-    ! reconstruction method
-    CALL InitReconstruction(Fluxes%reconstruction, &
+    ! flux calculation and reconstruction method
+    CALL InitFluxes(Fluxes,Mesh,Physics, &
          order     = LINEAR, &
-         variables = PRIMITIVE, &           ! vars. to use for reconstruction!
-         limiter   = MINMOD, &
-         theta     = 1.2)                   ! optional parameter for limiter !
-
-    ! mesh settings
-    SELECT CASE(MGEO)
-    CASE(POLAR)
-       x1 = RMIN
-       x2 = RMAX
-       y1 = 0.0 
-       y2 = 2*PI
-    CASE(LOGPOLAR)
-       x1 = LOG(RMIN/GPAR)
-       x2 = LOG(RMAX/GPAR)
-       y1 = 0.0 
-       y2 = 2*PI       
-    CASE(TANPOLAR)
-       x1 = ATAN(RMIN/GPAR)
-       x2 = ATAN(RMAX/GPAR)
-       y1 = 0.0 
-       y2 = 2*PI       
-    CASE(SINHPOLAR)
-       x1 = RMIN/GPAR
-       x1 = LOG(x1+SQRT(1.0+x1*x1))  ! = ASINH(RMIN/GPAR))
-       x2 = RMAX/GPAR
-       x2 = LOG(x2+SQRT(1.0+x2*x2))  ! = ASINH(RMAX/GPAR))
-       y1 = 0.0 
-       y2 = 2*PI       
-    CASE DEFAULT
-       CALL Error(Physics,"InitProgram","mesh geometry not supported for Pringle disk")
-    END SELECT
-    CALL InitMesh(Mesh,Fluxes, &
-         geometry = MGEO, &
-             inum = XRES, &
-             jnum = YRES, &
-             xmin = x1, &
-             xmax = x2, &
-             ymin = y1, &
-             ymax = y2, &
-           gparam = GPAR)
+         variables = PRIMITIVE, &   ! vars. to use for reconstruction!
+!!$         limiter   = MINMOD, &    ! one of: minmod, monocent,...   !
+         limiter   = MONOCENT, &    ! one of: minmod, monocent,...   !
+         theta     = 1.5)           ! optional parameter for limiter !
 
     ! boundary conditions
     CALL InitBoundary(Timedisc%boundary,Mesh,Physics, &
-         western  = NO_GRADIENTS, &
-!!$         western  = CUSTOM, &
-         eastern  = NO_GRADIENTS, &
+         western  = CUSTOM, &
+         eastern  = CUSTOM, &
          southern = PERIODIC, &
          northern = PERIODIC)
 
@@ -209,17 +211,17 @@ CONTAINS
 
     ! time discretization settings
     CALL InitTimedisc(Timedisc,Mesh,Physics,&
-         method   = MODIFIED_EULER, &
+          method   = MODIFIED_EULER, &
+!          method   = RK_FEHLBERG, &    !!!  3rd order works 5th order not !!!
+!          method   = CASH_KARP, &
          order    = 3, &
          stoptime = TSIM * TAU, &
          cfl      = 0.4, &
          dtlimit  = 1E-10 * TAU, &
          maxiter  = 100000000, &
          tol_rel  = 0.01, &
-         tol_abs  = (/1.0E-03*Physics%rhomin,1.0E-03,1.0E-03/))
-
-    ! set initial condition
-    CALL InitData(Mesh,Physics,Timedisc)
+!         tol_abs  = (/1.0E-03*Physics%rhomin,1.0E-6,1.0E-6/))
+         tol_abs  = (/0.0,0.0,0.0/))
 
     ! initialize log input/output
 !!$    CALL InitFileIO(Logfile,Mesh,Physics,Timedisc,&
@@ -230,8 +232,8 @@ CONTAINS
     ! initialize data input/output
     CALL InitFileIO(Datafile,Mesh,Physics,Timedisc, &
 !!$         fileformat = NETCDF, &
-         fileformat = GNUPLOT, &
-         filecycles = 0, &
+!!$         fileformat = BINARY, &
+         fileformat = GNUPLOT, filecycles = 0, &
          filename   = TRIM(ODIR) // TRIM(OFNAME), &
          count      = ONUM)
   END SUBROUTINE InitProgram
@@ -325,9 +327,14 @@ CONTAINS
 
     ! custom boundary conditions if requested
     IF (GetType(Timedisc%boundary(WEST)).EQ.CUSTOM) THEN
-       Timedisc%boundary(WEST)%cbtype(:,Physics%DENSITY) = CUSTOM_EXTRAPOL
+       Timedisc%boundary(WEST)%cbtype(:,Physics%DENSITY) = CUSTOM_NOGRAD
        Timedisc%boundary(WEST)%cbtype(:,Physics%XVELOCITY) = CUSTOM_EXTRAPOL
-       Timedisc%boundary(WEST)%cbtype(:,Physics%YVELOCITY) = CUSTOM_NOGRAD
+       Timedisc%boundary(WEST)%cbtype(:,Physics%YVELOCITY) = CUSTOM_EXTRAPOL
+    END IF
+    IF (GetType(Timedisc%boundary(EAST)).EQ.CUSTOM) THEN
+       Timedisc%boundary(EAST)%cbtype(:,Physics%DENSITY) = CUSTOM_NOGRAD
+       Timedisc%boundary(EAST)%cbtype(:,Physics%XVELOCITY) = CUSTOM_EXTRAPOL
+       Timedisc%boundary(EAST)%cbtype(:,Physics%YVELOCITY) = CUSTOM_NOGRAD
     END IF
 
     CALL Info(Mesh, " DATA-----> initial condition: " // "pringle disk")
@@ -338,37 +345,38 @@ CONTAINS
     WRITE(value,"(ES9.3)") MA
     CALL Info(Mesh, "                               " // "Mach number:        " //TRIM(value))
 
-  CONTAINS
-
-    FUNCTION func_vr(t,r) RESULT(v)
-      IMPLICIT NONE
-      !--------------------------------------------------------------------!
-      REAL, INTENT(IN) :: t,r
-      REAL :: v
-      !--------------------------------------------------------------------!
-      INTEGER :: k
-      REAL :: ak,qk,y,y2,y2k,sum1,sum2
-      REAL, PARAMETER :: GAMMA_QUARTER = 3.62560990822191
-      !--------------------------------------------------------------------!
-      ak = 1./GAMMA_QUARTER ! 1./Gamma(0.25) with Gamma-function
-      qk = ak
-      y  = r/t
-      y2 = y*y
-      y2k = 1.0
-      sum1 = qk
-      sum2 = 4.*qk
-      DO k=1,100
-         ak = ak /(k*(k-0.75))
-         y2k = y2k*y2
-         qk = ak*y2k
-         sum1 = sum1 + qk
-         sum2 = sum2 + qk/(k+0.25)
-      END DO
-      ! sum/(y*sum2) = I_{-3/4}(2*r/t) / I_{1/4}(2*r/t) 
-      ! where I_n are modified Bessel functions of the first kind
-      v = 6./(RE*t)*(r-sum1/(y*sum2))
-    END FUNCTION func_vr
-
   END SUBROUTINE InitData
 
-END MODULE Init
+
+  FUNCTION func_vr(t,r) RESULT(v)
+    IMPLICIT NONE
+    !--------------------------------------------------------------------!
+    REAL, INTENT(IN) :: t,r
+    REAL :: v
+    !--------------------------------------------------------------------!
+    INTEGER :: k
+    REAL :: ak,qk,y,y2,y2k,sum1,sum2
+    REAL, PARAMETER :: GAMMA_QUARTER = 3.62560990822191
+    !--------------------------------------------------------------------!
+    ak = 1./GAMMA_QUARTER ! 1./Gamma(0.25) with Gamma-function
+    qk = ak
+    y  = r/t
+    y2 = y*y
+    y2k = 1.0
+    sum1 = qk
+    sum2 = 4.*qk
+    DO k=1,100
+       ak = ak /(k*(k-0.75))
+       y2k = y2k*y2
+       qk = ak*y2k
+       sum1 = sum1 + qk
+       sum2 = sum2 + qk/(k+0.25)
+    END DO
+    ! sum/(y*sum2) = I_{-3/4}(2*r/t) / I_{1/4}(2*r/t) 
+    ! where I_n are modified Bessel functions of the first kind
+    v = 6./(RE*t)*(r-sum1/(y*sum2))
+  END FUNCTION func_vr
+
+END PROGRAM Init
+
+

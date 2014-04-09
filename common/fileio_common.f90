@@ -103,7 +103,7 @@ MODULE fileio_common
      INTEGER                :: count               ! number of output steps  !
      INTEGER                :: cycles              ! number of output files  !
      INTEGER                :: dtwall              ! wall clock time diff.   !
-     INTEGER                :: ioffset             ! VTK: appended data offset!
+     INTEGER                :: ioffset             ! VTK appended data offset!
      REAL                   :: stoptime            ! end of data output      !
      REAL                   :: time                ! output time             !
      REAL, DIMENSION(:,:,:), POINTER :: &
@@ -126,7 +126,7 @@ MODULE fileio_common
      INTEGER(KIND=MPI_OFFSET_KIND) :: offset       ! skip header bytes       !
      INTEGER, DIMENSION(:), POINTER :: disp        ! array of displacements  !
      INTEGER, DIMENSION(MPI_STATUS_SIZE) :: status ! MPI i/o status record   !
-     LOGICAL                :: sepfiles            ! one or multiple files in parallel mode!
+     LOGICAL                :: sepfiles            ! one or multiple files   !
 #endif
      INTEGER                :: unit                ! i/o unit                !
   END TYPE FileIO_TYP

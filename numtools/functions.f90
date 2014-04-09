@@ -53,7 +53,12 @@ MODULE functions
        EllipticIntegral_E, &
        LegendrePolynomials, &
        LegendrePolynomial, &
-       LegendreFunction_QminHalf
+       LegendreFunction_QminHalf, &
+       Bessel_I0, &
+       Bessel_I1, &
+       Bessel_K0, &
+       Bessel_K0e, &
+       Bessel_K1
   !--------------------------------------------------------------------------!
 
 CONTAINS
@@ -326,6 +331,188 @@ CONTAINS
        q = SQRT(-1.0*ABS(x)) ! return NaN
     END IF
   END FUNCTION LegendreFunction_QminHalf
+
+
+
+! Compute the modified Bessel function of the first kind as polynomial
+! expansion, which has been proposed by Numerical Recipes in fortran, Second
+! Edition on page 229ff. Nontheless the implementation is different and only the
+! idea is used.
+  ELEMENTAL FUNCTION Bessel_I0(x) RESULT(I0)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    REAL                :: x
+    REAL                :: I0
+    !------------------------------------------------------------------------!
+    INTENT(IN)          :: x
+    !------------------------------------------------------------------------!
+    REAL, DIMENSION(7), PARAMETER &
+                        :: p = (/ 1.0d0, 3.5156229d0, 3.0899424d0, &
+                                  1.2067492d0, 0.2659732d0, 0.360768d-1, &
+                                  0.45813d-2 /)
+    REAL, DIMENSION(9), PARAMETER &
+                        :: q = (/ 0.39894228d0, 0.1328592d-1, 0.225319d-2, &
+                                  -0.157565d-2, 0.916281d-2, -0.2057706d-1, &
+                                  0.2635537d-1, -0.1647633d-1, 0.392377d-2 /)
+    REAL                :: t, absx
+    !------------------------------------------------------------------------!
+
+    IF(ABS(x).LT.3.75) THEN
+        t = (x/3.75)**2
+        I0 = p(1)+t*(p(2)+t*(p(3)+t*(p(4)+t*(p(5)+t*(p(6)+t*p(7))))))
+    ELSE
+        absx = ABS(x)
+        t = 3.75/absx
+        I0 = (EXP(absx)/sqrt(absx)) &
+             * (q(1)+t*(q(2)+t*(q(3)+t*(q(4) &
+                + t*(q(5)+t*(q(6)+t*(q(7)+t*(q(8)+t*q(9)))))))))
+    ENDIF
+
+    END FUNCTION Bessel_I0
+
+
+
+! Compute the modified Bessel function of the first kind as polynomial
+! expansion, which has been proposed by Numerical Recipes in fortran, Second
+! Edition on page 229ff. Nontheless the implementation is different and only the
+! idea is used.
+  ELEMENTAL FUNCTION Bessel_I1(x) RESULT(I1)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    REAL                :: x
+    REAL                :: I1
+    !------------------------------------------------------------------------!
+    INTENT(IN)          :: x
+    !------------------------------------------------------------------------!
+    REAL, DIMENSION(7), PARAMETER &
+                        :: p = (/ 0.5d0, 0.87890594d0, 0.51498869d0, &
+                                  0.15084934d0, 0.2658733d-1, 0.301532d-2, &
+                                  0.32411d-3 /)
+    REAL, DIMENSION(9), PARAMETER &
+                        :: q = (/ 0.39894228d0, -0.3988024d-1, -0.362018d-2, &
+                                  0.163801d-2, -0.1031555d-1, 0.2282967d-1, &
+                                  -0.2895312d-1, 0.1787654d-1, -0.420059d-2 /)
+    REAL                :: t, absx
+    !------------------------------------------------------------------------!
+
+    IF(ABS(x).LT.3.75) THEN
+        t = (x/3.75)**2
+        I1 = x*(p(1)+t*(p(2)+t*(p(3)+t*(p(4)+t*(p(5)+t*(p(6)+t*p(7)))))))
+    ELSE
+        absx = ABS(x)
+        t = 3.75/absx
+        I1 = (EXP(absx)/sqrt(absx)) &
+             * (q(1)+t*(q(2)+t*(q(3)+t*(q(4) &
+                + t*(q(5)+t*(q(6)+t*(q(7)+t*(q(8)+t*q(9)))))))))
+        IF(x.LT.0.) THEN
+            I1 = -I1
+        END IF
+
+    ENDIF
+
+    END FUNCTION Bessel_I1
+
+
+
+! Compute the modified Bessel function of the second kind as polynomial
+! expansion, which has been proposed by Numerical Recipes in fortran, Second
+! Edition on page 229ff. Nontheless the implementation is different and only
+! the idea is used.
+  ELEMENTAL FUNCTION Bessel_K0(x) RESULT(K0)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    REAL                :: x
+    REAL                :: K0
+    !------------------------------------------------------------------------!
+    INTENT(IN)          :: x
+    !------------------------------------------------------------------------!
+    REAL, DIMENSION(7), PARAMETER &
+                        :: p = (/ -0.57721566d0, 0.42278420d0, 0.23069756d0, &
+                                  0.3488590d-1, 0.262698d-2, 0.10750d-3, &
+                                  0.74d-5 /)
+    REAL, DIMENSION(7), PARAMETER &
+                        :: q = (/ 1.25331414d0, -0.7832358d-1, 0.2189568d-1, &
+                                  -0.1062446d-1, 0.587872d-2, -0.251540d-2, &
+                                  0.53208d-3 /)
+    REAL                :: t
+    !------------------------------------------------------------------------!
+
+    IF(x.LE.2.0) THEN
+            t = x*x / 4.0
+            K0 = (-LOG(x/2.0)*Bessel_I0(x)) &
+                 + (p(1)+t*(p(2)+t*(p(3)+t*(p(4)+t*(p(5)+t*(p(6)+t*p(7)))))))
+    ELSE
+            t = (2.0/x)
+            K0 = (EXP(-x)/SQRT(x)) &
+                 * (q(1)+t*(q(2)+t*(q(3)+t*(q(4)+t*(q(5)+t*(q(6)+t*q(7)))))))
+    ENDIF
+
+    END FUNCTION Bessel_K0
+
+! Compute the exponential scaled modified Bessel function of the second kind 
+! e.g. K0e = EXP(x) * K0(x) as polynomial expansion, using coefficients from
+! Abramowitz p.379 (http://people.math.sfu.ca/~cbm/aands/page_379.htm) for
+! x >= 2, and exp(x)*K0(x) directly for 0<x<2.
+  ELEMENTAL FUNCTION Bessel_K0e(x) RESULT(K0e)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    REAL                :: x
+    REAL                :: K0e
+    !------------------------------------------------------------------------!
+    INTENT(IN)          :: x
+    !------------------------------------------------------------------------!
+    REAL, DIMENSION(7), PARAMETER &
+                        :: q = (/ 1.25331414, -0.07832358, 0.02189568,&
+                                  -0.01062446, 0.00587872, -0.00251540,&
+                                  0.00053208 /)
+    REAL                :: t
+    !------------------------------------------------------------------------!
+
+    IF(x.LT.2.0) THEN
+            K0e = EXP(x) * Bessel_K0(x)
+    ELSE
+            t = (2.0/x)
+            K0e = (1.0/SQRT(x)) &
+                 * (q(1)+t*(q(2)+t*(q(3)+t*(q(4)+t*(q(5)+t*(q(6)+t*q(7)))))))
+    ENDIF
+
+    END FUNCTION Bessel_K0e
+
+! Compute the modified Bessel function of the second kind as polynomial
+! expansion, which has been proposed by Numerical Recipes in fortran, Second
+! Edition on page 229ff. Nontheless the implementation is different and only
+! the idea is used.
+  ELEMENTAL FUNCTION Bessel_K1(x) RESULT(K1)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    REAL                :: x
+    REAL                :: K1
+    !------------------------------------------------------------------------!
+    INTENT(IN)          :: x
+    !------------------------------------------------------------------------!
+    REAL, DIMENSION(7), PARAMETER &
+                        :: p = (/ 1.0d0, 0.15443144d0, -0.67278579d0, &
+                                  -0.18156897d0, -0.1919402d-1, -0.110404d-2, &
+                                  -0.4686d-4 /)
+    REAL, DIMENSION(7), PARAMETER &
+                        :: q = (/ 1.25331414d0, 0.23498619d0, -0.3655620d-1, &
+                                  0.1504268d-1, -0.780353d-2, 0.325614d-2, &
+                                  -0.68245d-3 /)
+    REAL                :: t
+    !------------------------------------------------------------------------!
+
+    IF(x.LE.2.0) THEN
+            t = x*x / 4.0
+            K1 = (LOG(x/2.0)*Bessel_I1(x)) &
+                 + (1.0/x) &
+                    * (p(1)+t*(p(2)+t*(p(3)+t*(p(4)+t*(p(5)+t*(p(6)+t*p(7)))))))
+    ELSE
+            t = (2.0/x)
+            K1 = (EXP(-x)/SQRT(x)) &
+                 * (q(1)+t*(q(2)+t*(q(3)+t*(q(4)+t*(q(5)+t*(q(6)+t*q(7)))))))
+    ENDIF
+
+    END FUNCTION Bessel_K1
 
 END MODULE functions
 

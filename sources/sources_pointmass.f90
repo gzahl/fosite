@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: sources_pointmass.f90                                             #
 !#                                                                           #
-!# Copyright (C) 2007-2011                                                   #
+!# Copyright (C) 2007-2012                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -27,8 +27,8 @@
 ! a point mass at the center of the coordinate system
 !----------------------------------------------------------------------------!
 MODULE sources_pointmass
+  USE sources_common
   USE common_types, ONLY : Common_TYP, InitCommon
-  USE sources_common, InitSources_common => InitSources
   USE boundary_common, ONLY : WEST,EAST,SOUTH,NORTH
   USE fluxes_generic, ONLY : Fluxes_TYP, GetBoundaryFlux
   USE physics_generic
@@ -79,39 +79,6 @@ MODULE sources_pointmass
   !--------------------------------------------------------------------------!
 
 CONTAINS
-
-  SUBROUTINE InitSources(this,stype,sname)
-    IMPLICIT NONE
-    !------------------------------------------------------------------------!
-    TYPE(Sources_TYP), POINTER :: this
-    INTEGER           :: stype
-    CHARACTER(LEN=32) :: sname
-    !------------------------------------------------------------------------!
-    TYPE(Sources_TYP), POINTER :: newsrc, tmpsrc
-    INTEGER           :: err
-    !------------------------------------------------------------------------!
-    INTENT(IN)        :: stype,sname
-    !------------------------------------------------------------------------!
-    ! allocate memory for new source term
-    ALLOCATE(newsrc,STAT=err)
-    IF (err.NE.0) CALL Error(this,"InitSources", "Unable allocate memory!")
-    
-    ! basic initialization
-    CALL InitSources_common(newsrc,stype,sname)
-
-    ! add new source term to beginning of
-    ! list of source terms
-    IF (.NOT.ASSOCIATED(this)) THEN
-       this => newsrc
-       NULLIFY(this%next)
-    ELSE
-       tmpsrc => this
-       this => newsrc
-       this%next => tmpsrc
-    END IF
-
-  END SUBROUTINE InitSources
-
 
   SUBROUTINE InitSources_pointmass(this,Mesh,Physics,stype,potential,mass,cvis)
     IMPLICIT NONE
@@ -272,6 +239,7 @@ CONTAINS
 #ifdef PARALLEL
        bflux(:)  = GetBoundaryFlux(Fluxes,Mesh,Physics,this%outbound,MPI_COMM_WORLD)
 #else
+!CDIR IEXPAND
        bflux(:)  = GetBoundaryFlux(Fluxes,Mesh,Physics,this%outbound)
 #endif
        ! store old mass
@@ -279,11 +247,13 @@ CONTAINS
        ! compute new mass
        this%mass = this%mass + (bflux(Physics%DENSITY) - this%mdot)
        ! multiply gravitational acceleration with newmass/oldmass
+!CDIR NODEP
        this%accel(:,:,:) = this%accel(:,:,:) * this%mass/oldmass
        ! store actual total mass flux
        this%mdot = bflux(Physics%DENSITY)
     END IF
     ! gravitational source terms
+!CDIR IEXPAND
     CALL ExternalSources(Physics,Mesh,this%accel,pvar,cvar,sterm)
   END SUBROUTINE ExternalSources_pointmass
 

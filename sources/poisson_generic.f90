@@ -3,8 +3,9 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: poisson_generic.f90                                               #
 !#                                                                           #
-!# Copyright (C) 2011                                                        #
+!# Copyright (C) 2011-2012                                                   #
 !# Björn Sperling   <sperling@astrophysik.uni-kiel.de>                       #
+!# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
 !# it under the terms of the GNU General Public License as published by      #
@@ -31,7 +32,7 @@ MODULE poisson_generic
   USE mesh_common, ONLY : Mesh_TYP
   USE physics_common, ONLY : Physics_TYP
   USE boundary_common, ONLY : Boundary_TYP
-  USE sources_pointmass
+  USE sources_common, ONLY : Sources_TYP, InitSources
   USE physics_generic
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
@@ -67,7 +68,7 @@ MODULE poisson_generic
   CONTAINS
 
   SUBROUTINE InitPoisson(this,Mesh,Physics,Boundary,stype,solver,maxresidnorm,maxmult,&
-       bndrytype,relaxtype,npre,npost,minres,nmaxcycle)
+       bndrytype,relaxtype,npre,npost,minres,nmaxcycle,green,sigma)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Sources_TYP), POINTER  :: this
@@ -76,19 +77,25 @@ MODULE poisson_generic
     TYPE(Boundary_TYP), DIMENSION(4) :: Boundary
     INTEGER           :: stype
     INTEGER, OPTIONAL :: solver,maxmult,bndrytype,relaxtype,npre,npost,minres,nmaxcycle
+    INTEGER, OPTIONAL :: green
     REAL, OPTIONAL    :: maxresidnorm
+    REAL, OPTIONAL    :: sigma
     !------------------------------------------------------------------------!
     INTEGER           :: solver_def,maxmult_def,bndrytype_def,relaxtype_def,npre_def,&
-                         npost_def,minres_def,nmaxcycle_def
-    REAL              :: maxresidnorm_def
+                         npost_def,minres_def,nmaxcycle_def,&
+                         green_def
+    REAL              :: maxresidnorm_def,&
+                         sigma_def
     !------------------------------------------------------------------------!
     INTENT(IN)        :: Mesh,Physics,Boundary,stype,solver,maxresidnorm,maxmult,&
-                         bndrytype,relaxtype,npre,npost,minres,nmaxcycle
+                         bndrytype,relaxtype,npre,npost,minres,nmaxcycle,green,&
+                         sigma
     !------------------------------------------------------------------------!
-    IF (.NOT.Initialized(Physics).OR..NOT.Initialized(Mesh)) &
-         CALL Error(this,"InitPoisson","physics and/or mesh module uninitialized")
     CALL InitSources(this,stype,poisson_name)
+ !   IF (.NOT.Initialized(Physics).OR..NOT.Initialized(Mesh)) &
+ !        CALL Error(this%poisson,"InitPoisson","physics and/or mesh module uninitialized")
 
+    ! deprecated, due to second solver existing?
     IF (PRESENT(solver)) THEN
           solver_def = solver
     ELSE
@@ -107,7 +114,7 @@ MODULE poisson_generic
        IF (PRESENT(maxresidnorm)) THEN
           maxresidnorm_def = maxresidnorm
        ELSE
-          maxresidnorm_def = 1.0E-5
+          maxresidnorm_def = 1.0E-7
        END IF
        ! type of multipol expansion (spherical, cylindrical)
        IF (PRESENT(bndrytype)) THEN
@@ -143,13 +150,13 @@ MODULE poisson_generic
        IF (PRESENT(nmaxcycle)) THEN
           nmaxcycle_def = nmaxcycle
        ELSE
-          nmaxcycle_def = 100
+          nmaxcycle_def = 250
        END IF  
        CALL InitPoisson_multigrid(this%poisson,Mesh,Physics,Boundary,solver_def, &
             maxmult_def,maxresidnorm_def,bndrytype_def,relaxtype_def, &
             npre_def,npost_def,minres_def,nmaxcycle_def)
      CASE DEFAULT
-       CALL Error(this,"InitPoisson","unknown Poisson type")
+       CALL Error(this%poisson,"InitPoisson","unknown Poisson type")
      END SELECT
 
      ! allocate common memory for all Poisson
@@ -200,13 +207,18 @@ MODULE poisson_generic
        CALL Error(this,"PoissonSource", "unknown poisson term")
     END SELECT
 
-    DO i = Mesh%IMIN,Mesh%IMAX
-      DO j = Mesh%JMIN,Mesh%JMAX
-        ! g(x) = - grad(phi(x)) 
-        this%accel(i,j,2) = 0.5*(this%phi(i,j-1)-this%phi(i,j+1))/Mesh%dly(i,j)
-        this%accel(i,j,1) = 0.5*(this%phi(i-1,j)-this%phi(i+1,j))/Mesh%dlx(i,j)
-      END DO
-    END DO
+    SELECT CASE(GetType(this))
+    CASE(MULTIGRID)
+        DO i = Mesh%IMIN,Mesh%IMAX
+          DO j = Mesh%JMIN,Mesh%JMAX
+            ! g(x) = - grad(phi(x)) 
+            this%accel(i,j,2) = 0.5*(this%phi(i,j-1)-this%phi(i,j+1))/Mesh%dly(i,j)
+            this%accel(i,j,1) = 0.5*(this%phi(i-1,j)-this%phi(i+1,j))/Mesh%dlx(i,j)
+          END DO
+        END DO
+    CASE DEFAULT
+        CALL Error(this, "PoissonSource", "unknown poisson term")
+    END SELECT
 
     !no acceleration in boundary cells 
     this%accel(Mesh%IGMIN:Mesh%IMIN-1,:,:) = 0.0

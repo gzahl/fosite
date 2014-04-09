@@ -74,6 +74,7 @@ CONTAINS
     INTENT(IN)         :: this,Mesh,Physics
     INTENT(INOUT)      :: pvar   
     !------------------------------------------------------------------------!
+!CDIR IEXPAND
     SELECT CASE(GetDirection(this))
     CASE(WEST)
 !CDIR NODEP

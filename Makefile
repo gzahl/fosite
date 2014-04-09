@@ -14,27 +14,30 @@ AFLAGS=rcv
 PREP=
 
 # some files
-TARGET=fosite
-SOURCES=$(wildcard *.f90)
+EXAMPLES=$(basename $(wildcard examples/*.f90))
+ifndef TARGET
+	TARGET=$(EXAMPLES)
+endif
+SOURCES=fosite.f90
 OBJECTS=$(SOURCES:.f90=.o)
 
 # some directories
 BASEDIR=$(shell pwd)
-SUBDIRS=numtools common physics boundary fluxes mesh sources io timedisc
+SUBDIRS=numtools common mesh physics boundary fluxes sources io timedisc
 INCDIRS=$(foreach dir,$(SUBDIRS),-I$(BASEDIR)/$(dir))
 LIBDIRS=$(foreach dir,$(SUBDIRS),-L$(BASEDIR)/$(dir))
 ALLSRCS=$(SOURCES) $(foreach dir,$(SUBDIRS), $(wildcard $(dir)/*.f90))
 ALLOBJS=$(ALLSRCS:.f90=.o)
 
 # compiler dependent variables
-FCFLAGS_ALL= -cpp    -DFORTRAN_STREAMS   $(INCDIRS)
-FCFLAGS_OPT= -O2 
-FCFLAGS_DBG=-fcheck=all
+FCFLAGS_ALL= -cpp -fdefault-real-8     -DFORTRAN_STREAMS    $(INCDIRS)
+FCFLAGS_OPT= -O3 -finline-functions
+FCFLAGS_DBG= -g -O2 -DDEBUG -fcheck=all
 FCFLAGS_PROF=-pg
 FCFLAGS_MPI= 
-LDFLAGS_ALL=     
-LDFLAGS_OPT= -O2
-LDFLAGS_DBG=-fcheck=all
+LDFLAGS_ALL=       
+LDFLAGS_OPT= -O3
+LDFLAGS_DBG= -g -fcheck=all
 LDFLAGS_PROF=-pg
 LDFLAGS_MPI= 
 
@@ -52,50 +55,58 @@ prof : LDFLAGS=$(LDFLAGS_ALL) $(LDFLAGS_OPT) $(LDFLAGS_PROF)
 parprof : FCFLAGS=$(FCFLAGS_ALL) $(FCFLAGS_OPT) $(FCFLAGS_MPI)
 parprof : LDFLAGS=$(LDFLAGS_ALL) $(LDFLAGS_OPT) $(LDFLAGS_MPI)
 parprof : PREP=
+baldr : FCFLAGS=$(FCFLAGS_ALL) $(FCFLAGS_OPT) -fPIC
+baldr : LDFLAGS=$(LDFLAGS_ALL) $(LDFLAGS_OPT)
 
 export FC FCFLAGS LDFLAGS AR AFLAGS AWK SED PREP
 # variable definitions end here
 
-
 # compile rules
-all : $(TARGET)
+all : $(addsuffix .out,$(TARGET))
 
-debug parallel prof parprof : all
+debug parallel prof parprof: all
 
 %.o : %.f90
-	$(PREP) $(FC) $(FCFLAGS) -c $<
+	$(PREP) $(FC) $(FCFLAGS) -o $@ -c $<
 
 subdirs : $(SUBDIRS)
 
-$(TARGET) : subdirs $(OBJECTS)
-	$(PREP) $(FC) $(ALLOBJS) -o $(TARGET) $(LDFLAGS)
+fosite.a : subdirs $(OBJECTS)
+	$(AR) $(AFLAGS) $@ $(ALLOBJS)
+
+%.out : fosite.a
+	$(PREP) $(FC) $(FCFLAGS) $(@:.out=.f90) -o $@ fosite.a $(LDFLAGS)
 
 $(SUBDIRS) :
 	$(MAKE) -C $@
 
+baldr : fosite.a
+	$(MAKE) -C $@
+
 common : numtools
-physics : common
+mesh : common
+physics : common mesh
 boundary : common physics
-fluxes : common physics
-mesh : common fluxes
+fluxes : common physics mesh
 sources : common physics boundary fluxes mesh
 timedisc : common physics boundary fluxes mesh sources io
-io: common physics fluxes mesh
+io: common physics fluxes mesh sources
 
-init.o : subdirs
-main.o : subdirs init.o
+fosite.o : subdirs 
 
 clean :
 	for dir in $(SUBDIRS); do \
 	  $(MAKE) clean -C $$dir; \
 	done
-	rm -f $(OBJECTS) $(TARGET) *.mod
+	$(MAKE) clean -C baldr
+	rm -f $(OBJECTS) $(TARGET) fosite.a fosite.so *.mod *.o $(addsuffix .out,$(EXAMPLES)) $(addsuffix .o,$(EXAMPLES))
 
-distclean :
+distclean : clean
 	for dir in $(SUBDIRS); do \
 	  $(MAKE) distclean -C $$dir; \
 	done
-	rm -f $(OBJECTS) $(TARGET) *.mod *.bak *.dat *.vts *.bin *.nc *.log *~
+	$(MAKE) distclean -C baldr
+	rm -f $(OBJECTS) $(TARGET) *.mod *.bak *.dat *.vts *.pvd *.bin *.nc *.log *~
 	rm -rf autom4te.cache epik*
 
 .SUFFIXES:

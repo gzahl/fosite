@@ -3,9 +3,10 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: fileio_generic.f90                                                #
 !#                                                                           #
-!# Copyright (C) 2008-2010                                                   #
+!# Copyright (C) 2008-2011                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !# Björn Sperling   <sperling@astrophysik.uni-kiel.de>                       #
+!# Manuel Jung      <mjung@astrophysik.uni-kiel.de>                          #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
 !# it under the terms of the GNU General Public License as published by      #
@@ -52,10 +53,11 @@ MODULE fileio_generic
        ! constants
        BINARY, GNUPLOT, NETCDF, VTK, &
 #ifdef HAVE_NETCDF
+       NF90_NOCLOBBER, NF90_SHARE, NF90_64BIT_OFFSET, &
+#ifdef HAVE_HDF5
        NF90_FORMAT_CLASSIC, NF90_FORMAT_64BIT, &
        NF90_FORMAT_NETCDF4, NF90_FORMAT_NETCDF4_CLASSIC, &
-#ifdef HAVE_HDF5
-       NF90_CLASSIC_MODEL, NF90_NETCDF4, &
+       NF90_CLASSIC_MODEL, NF90_NETCDF4, NF90_HDF5, &
 #endif
 #endif
        ! methods
@@ -156,7 +158,7 @@ CONTAINS
 #ifdef HAVE_HDF5
           ncfmt_def = NF90_NETCDF4
 #else
-          ncfmt_def = NF90_FORMAT_NETCDF4
+          ncfmt_def = NF90_NOCLOBBER
 #endif
 #endif
        END IF

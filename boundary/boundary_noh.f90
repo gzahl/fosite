@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: boundary_noh.f90                                                  #
 !#                                                                           #
-!# Copyright (C) 2006-2008                                                   #
+!# Copyright (C) 2006-2012                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -30,12 +30,9 @@
 !----------------------------------------------------------------------------!
 MODULE boundary_noh
   USE mesh_common, ONLY : Mesh_TYP
-  USE fluxes_common, ONLY : Fluxes_TYP
-  USE reconstruction_common, ONLY : Reconstruction_TYP, PrimRecon
   USE physics_common, ONLY : Physics_TYP
   USE boundary_nogradients
   USE boundary_fixed
-  USE physics_generic
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   PRIVATE
@@ -106,21 +103,21 @@ CONTAINS
    END SUBROUTINE InitBoundary_noh
 
 
-  PURE SUBROUTINE CenterBoundary_noh(this,Mesh,Physics,Fluxes,time,pvar)
+  PURE SUBROUTINE CenterBoundary_noh(this,Mesh,Physics,time,pvar)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Boundary_TYP) :: this
     TYPE(Mesh_TYP)     :: Mesh
     TYPE(Physics_TYP)  :: Physics
-    TYPE(Fluxes_TYP)   :: Fluxes
     REAL               :: time
     REAL :: pvar(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%VNUM)
      !------------------------------------------------------------------------!
     INTEGER       :: i,j
     !------------------------------------------------------------------------!
-    INTENT(IN)    :: this,Mesh,Physics,Fluxes,time
+    INTENT(IN)    :: this,Mesh,Physics,time
     INTENT(INOUT) :: pvar 
     !------------------------------------------------------------------------!
+!CDIR IEXPAND
     SELECT CASE(GetDirection(this))
     CASE(WEST)
        ! UNROLL=Mesh%GNUM would be sufficient, but the compiler does

@@ -164,6 +164,7 @@ CONTAINS
     TYPE(Boundary_TYP), INTENT(IN) :: this
     INTEGER :: bt
     !------------------------------------------------------------------------!
+!CDIR IEXPAND
     bt = GetType_common(this%condition)
   END FUNCTION GetCondition
 
@@ -174,6 +175,7 @@ CONTAINS
     TYPE(Boundary_TYP), INTENT(IN) :: this
     CHARACTER(LEN=32) :: bn
     !------------------------------------------------------------------------!
+!CDIR IEXPAND
     bn = GetName_common(this%condition)
   END FUNCTION GetConditionName
 
@@ -184,6 +186,7 @@ CONTAINS
     TYPE(Boundary_TYP), INTENT(IN) :: this
     INTEGER :: dir
     !------------------------------------------------------------------------!
+!CDIR IEXPAND
     dir = GetType_common(this%direction)
   END FUNCTION GetDirection
 
@@ -194,6 +197,7 @@ CONTAINS
     TYPE(Boundary_TYP), INTENT(IN) :: this
     CHARACTER(LEN=32) :: dn
     !------------------------------------------------------------------------!
+!CDIR IEXPAND
     dn = GetName_common(this%direction)
   END FUNCTION GetDirectionName
 

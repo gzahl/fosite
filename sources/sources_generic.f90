@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: sources_generic.f90                                               #
 !#                                                                           #
-!# Copyright (C) 2007-2011                                                   #
+!# Copyright (C) 2007-2012                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !# Björn Sperling   <sperling@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
@@ -172,6 +172,7 @@ CONTAINS
     TYPE(Sources_TYP), POINTER :: this
     !------------------------------------------------------------------------!
     IF (ASSOCIATED(this)) THEN
+!CDIR IEXPAND
        SELECT CASE(GetType(this))
        CASE(C_ACCEL,COOLING,POISSON)
           ! do nothing
@@ -200,6 +201,7 @@ CONTAINS
     INTENT(OUT)       :: sterm
     !------------------------------------------------------------------------!
     ! calculate geometrical sources depending on the integration rule
+!CDIR IEXPAND
     SELECT CASE(GetType(Fluxes))
     CASE(MIDPOINT)
        ! use center values for midpoint rule
@@ -224,7 +226,8 @@ CONTAINS
     !------------------------------------------------------------------------!
     TYPE(Sources_TYP), POINTER :: srcptr
     !------------------------------------------------------------------------!
-    INTENT(IN)        :: Mesh,Fluxes,Physics,time,pvar,cvar
+    INTENT(IN)        :: Mesh,Fluxes,time,pvar,cvar
+    INTENT(INOUT)     :: Physics
     INTENT(OUT)       :: sterm
     !------------------------------------------------------------------------!
     ! reset sterm
@@ -233,6 +236,7 @@ CONTAINS
     srcptr => this
     DO WHILE (ASSOCIATED(srcptr))
        ! call specific subroutine
+!CDIR IEXPAND
        SELECT CASE(GetType(srcptr))
        CASE(POINTMASS)
           CALL ExternalSources_pointmass(srcptr,Mesh,Physics,Fluxes,pvar,cvar,temp_sterm)
@@ -254,10 +258,11 @@ CONTAINS
        ! next source term
        srcptr => srcptr%next
     END DO
-    sterm(:,Mesh%JGMIN:Mesh%JMIN-1,:) = 0.0
-    sterm(:,Mesh%JMAX+1:Mesh%JGMAX,:) = 0.0
+    ! reset ghost cell data
     sterm(Mesh%IGMIN:Mesh%IMIN-1,:,:) = 0.0
     sterm(Mesh%IMAX+1:Mesh%IGMAX,:,:) = 0.0
+    sterm(:,Mesh%JGMIN:Mesh%JMIN-1,:) = 0.0
+    sterm(:,Mesh%JMAX+1:Mesh%JGMAX,:) = 0.0
   END SUBROUTINE ExternalSources
 
 
@@ -283,6 +288,7 @@ CONTAINS
     DO
        IF (.NOT.ASSOCIATED(srcptr)) EXIT
        ! call specific subroutine
+!CDIR IEXPAND
        SELECT CASE(GetType(srcptr))
        CASE(DISK_THOMSON,C_ACCEL,POISSON)
           ! do nothing
@@ -321,6 +327,7 @@ CONTAINS
        IF (.NOT.Initialized(srcptr)) &
             CALL Error(this,"CloseSources","not initialized")
        ! call specific deconstructor
+!CDIR IEXPAND
        SELECT CASE(GetType(srcptr))
        CASE(POINTMASS)
           CALL CloseSources_pointmass(srcptr)

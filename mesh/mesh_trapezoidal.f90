@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: mesh_trapezoidal.f90                                              #
 !#                                                                           #
-!# Copyright (C) 2007,2011                                                   #
+!# Copyright (C) 2007-2012                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -32,6 +32,7 @@ MODULE mesh_trapezoidal
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   PRIVATE
+  CHARACTER(LEN=32), PARAMETER :: mesh_name = "trapezoidal"
   ! precision for Newton-Raphson (see CalculateWeights)
   REAL, PARAMETER :: EPS  = 1.0D-04
   !--------------------------------------------------------------------------!
@@ -43,24 +44,28 @@ MODULE mesh_trapezoidal
 CONTAINS
 
 
-  SUBROUTINE InitMesh_trapezoidal(this,geometry,inum,jnum,xmin,xmax,ymin,ymax,gparam)
+  SUBROUTINE InitMesh_trapezoidal(this,meshtype,geometry,inum,jnum,xmin,xmax, &
+                                  ymin,ymax,gparam)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Mesh_TYP)    :: this
+    INTEGER           :: meshtype
     INTEGER           :: geometry
     INTEGER           :: inum,jnum
     REAL              :: xmin,xmax,ymin,ymax    
-    REAL              :: gparam
+    REAL, OPTIONAL    :: gparam
     !------------------------------------------------------------------------!
     INTEGER           :: err
     INTEGER           :: i,j
     !------------------------------------------------------------------------!
-    INTENT(IN)        :: inum,jnum,xmin,xmax,ymin,ymax
+    INTENT(IN)        :: meshtype,geometry,inum,jnum,xmin,xmax,ymin,ymax, &
+                         gparam
     INTENT(INOUT)     :: this
     !------------------------------------------------------------------------!
 
     ! basic mesh and geometry initialization
-    CALL InitMesh(this,geometry,inum,jnum,xmin,xmax,ymin,ymax,gparam)
+    CALL InitMesh(this,meshtype,mesh_name,geometry,inum,jnum,xmin,xmax,ymin, &
+                  ymax,gparam)
 
     CALL Warning(this,"InitMesh_trapezoidal", &
          "this module is experimental and may produce false results")
@@ -267,9 +272,12 @@ CONTAINS
     !------------------------------------------------------------------------!
     TYPE(Mesh_TYP)    :: this
     !------------------------------------------------------------------------!
-    DEALLOCATE(this%chx,this%chy,this%chz, &
-         this%sqrtg,this%weights)
-    CALL CloseMesh_midpoint(this)
+    DEALLOCATE(this%dAx,this%dAy,this%dAydx,this%dAxdy, &
+         this%cyxy,this%cxyx,this%czxz,this%czyz,this%sqrtg, &
+         this%chx,this%chy,this%chz,this%weights)
+    ! call basic mesh deconstructor
+    CALL CloseMesh(this)
+!    CALL CloseMesh_midpoint(this)
   END SUBROUTINE CloseMesh_trapezoidal
 
 

@@ -62,31 +62,35 @@ MODULE poisson_common
   END INTERFACE
   !--------------------------------------------------------------------------!
   TYPE Grid_TYP                     ! data type for multigrid poisson solver !
-     REAL, DIMENSION(:,:), POINTER   :: u,rho,a,da,b,db,c,invc,d,vol,bhx,bhy,tmp
-     REAL, DIMENSION(:,:,:), POINTER :: bccart,curv,tri
-     INTEGER                         :: ni,nj
-     INTEGER, DIMENSION(:,:), POINTER :: ij2k, k2ij
-     REAL                            :: hi,hj,invhi2,invhj2
+     REAL, DIMENSION(:,:), POINTER   :: u,rho         ! DELTA u = rho        !
+     REAL, DIMENSION(:,:), POINTER   :: a,da,b,db,c   !    some geometric    !
+     REAL, DIMENSION(:,:), POINTER   :: invc,d        !      values          !
+     REAL, DIMENSION(:,:), POINTER   :: vol,bhx,bhy   ! volume, scale factors!
+     REAL, DIMENSION(:,:), POINTER   :: tmp           ! temp
+     REAL, DIMENSION(:,:,:), POINTER :: bccart,curv   ! cart. and curv. coord.!
+     REAL, DIMENSION(:,:,:), POINTER :: tri           ! coefficients for block-iteration !
+     INTEGER                         :: ni,nj         ! resolution            !
+     INTEGER, DIMENSION(:,:), POINTER :: ij2k, k2ij   ! index field for bound.!
+     REAL                            :: hi,hj         ! width of cells; square!  
+     REAL                            :: invhi2,invhj2 !     of inverse        !
   END TYPE Grid_TYP
   TYPE Poisson_TYP
      TYPE(Common_TYP)                :: poissontype   ! type of source term   !
-     TYPE(Multipole_TYP)             :: multipole     ! for multipole expansion!
-     TYPE(Grid_TYP), POINTER         :: grid(:)       ! coarser grids for multigrid !
-     REAL                            :: MAXRESIDNORM  ! max error of residium (multigrid)!
+     TYPE(Multipole_TYP)             :: multipole     ! multipole expansion   !
+     TYPE(Grid_TYP), POINTER         :: grid(:)       ! coarse grids          !
+     REAL                            :: MAXRESIDNORM  ! max error of residuum !
      INTEGER                         :: RELAXTYPE     ! type of relaxation method !
      INTEGER                         :: NGRID         ! number of grids       !
-     INTEGER                         :: NPRE,NPOST    !pre and post smoothing NPRE+NPOST .GE. 1
-     INTEGER                         :: NMAXCYCLE
-     INTEGER                         :: MINRES
+     INTEGER                         :: NPRE,NPOST    ! pre and post smoothing!
+     INTEGER                         :: NMAXCYCLE     ! max of iterations     !
+     INTEGER                         :: MINRES        ! min resolution        !
      REAL, DIMENSION(:,:,:), POINTER :: accel         ! acceleration          !
      REAL, DIMENSION(:,:), POINTER   :: phi           ! potential             !
-     INTEGER, DIMENSION(4)           :: Boundary      ! boundary for poisson  !
-                                      ! problem (Dirichlet,Neumann,Periodic) !
-     LOGICAL                         :: DIRICHLET     ! at least ONE dirichlet!
-                                                      ! boundary cond. is set !
+     INTEGER, DIMENSION(4)           :: Boundary      ! boundary condition    !
+     LOGICAL                         :: DIRICHLET     ! true if min ONE bound.!
+                                                      !   is set as dirichlet !
 !FIXME
 INTEGER, DIMENSION(:),POINTER :: relaxcount !test!!!
-INTEGER                       :: safedmultigrid !test!!!
   END TYPE Poisson_TYP
   !--------------------------------------------------------------------------!
   PUBLIC :: &

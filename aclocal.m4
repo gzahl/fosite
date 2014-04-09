@@ -129,35 +129,52 @@ AC_DEFUN([AC_FC_NOUNDERSCORE],[
 #
 #   AC_FC_ISO_C_BINDING([ACTION-IF-FOUND [, ACTION-IF-NOT-FOUND]])
 #
-# Checks whether the Fortran compiler supports ISO_C_BINDING for
-# linking against C functions and sets the variable ac_cv_fc_bind to
-# either "yes" or "no". 
-#
-# REMARK: This is _not_ Fortran 90/95 but Fortran 2003 standard!
+# Looks for a compiler flag to enable the Fortran 2003 feature for linking
+# against C libraries. It sets the variable ac_cv_fc_cbind to the compiler
+# flag if necessary and adds the flag to FCFLAGS. Call ACTION-IF-SUCCESS 
+# (defaults to nothing) if successful (i.e. can compile code using the
+# specific compiler flag) and ACTION-IF-FAILURE (defaults to failing with an
+# error message) if not.
+#  
+# The known flags are:
+#       -f2003 cbind: NEC SX compiler
 #
 # --------------------------------------------------------------------------
 AC_DEFUN([AC_FC_ISO_C_BINDING],[
     AC_LANG_PUSH(Fortran)dnl
-    AC_CACHE_CHECK([whether the Fortran compiler supports ISO C binding],
-    	ac_cv_fc_bind,[
-	ac_cv_fc_bind=no
-	AC_COMPILE_IFELSE([AC_LANG_PROGRAM([],[
+    AC_CACHE_CHECK([for Fortran flag to enable ISO C binding],
+    	ac_cv_fc_cbind,[
+	ac_cv_fc_cbind=unknown
+	ac_fc_cbind_FCFLAGS_save="$FCFLAGS"
+	for ac_flag in none "-f2003 cbind"
+	do
+	    test "x$ac_flag" != xnone && \
+	    	FCFLAGS="$ac_fc_cbind_FCFLAGS_save $ac_flag"
+	    AC_COMPILE_IFELSE([AC_LANG_PROGRAM([],[
 use iso_c_binding
-call foo
-contains
-    subroutine foo() bind(c)
-    implicit none
-    print *,'dummy output'
-    end subroutine foo
+interface
+   function foo() bind(c)
+      use, intrinsic :: iso_c_binding
+      real(c_float) :: foo
+   end function foo
+end interface
+print *, foo()
 ])],[
-           ac_cv_fc_bind=yes
+                ac_cv_fc_cbind=$ac_flag; break])
+        done
+	rm -f conftest.err conftest.$ac_objext conftest.$ac_ext
+	FCFLAGS=$ac_fc_cbind_FCFLAGS_save
+    ])
+    AS_VAR_IF([ac_cv_fc_cbind],[unknown],[dnl
+        ac_cv_fc_cbind=""
+        m4_default([$2],[
+            AC_MSG_ERROR([Cannot compile Fortran programs using iso C binding])])
+    ],[dnl
+        m4_default([$1],[
+           AS_VAR_IF([ac_cv_fc_cbind],[none],[],[dnl	
+           FCFLAGS="$FCFLAGS $ac_cv_fc_cbind"])
         ])
     ])
-    rm -f conftest.err conftest.$ac_objext conftest.$ac_ext
-    AS_VAR_IF([ac_cv_fc_bind],[no],[dnl
-        m4_default([$2],[dnl
-           AC_MSG_ERROR([Fortran compiler does not support ISO C bindings])])
-    ],[$1])
     AC_LANG_POP(Fortran)dnl
 ])# AC_FC_ISO_C_BINDING
 
@@ -232,8 +249,8 @@ AC_DEFUN([AC_FC_CPPFLAG],[
 # The known flags are:
 #                -r8: Intel compiler (ifort, ifc) and g95 compiler
 #   -fdefault-real-8: GNU Fortran compiler (gfortran)
-#                -dW: NEC SX-8 compiler (sxf90)
 #      -Wf"-A idbl4": NEC SX-9 compiler with MPI (sxmpif90)
+#                -ew: NEC SX-9 compiler with iso_c_binding (sxf90)
 # --------------------------------------------------------------------------
 AC_DEFUN([AC_FC_AUTODOUBLE],[
     AC_LANG_PUSH(Fortran)dnl
@@ -241,7 +258,7 @@ AC_DEFUN([AC_FC_AUTODOUBLE],[
         ac_cv_fc_autodouble,[
 	ac_cv_fc_autodouble=unknown
 	ac_fc_autodouble_FCFLAGS_save="$FCFLAGS"
-	for ac_flag in -r8 -fdefault-real-8 -dW '-Wf"-A idbl4"'
+	for ac_flag in -r8 -fdefault-real-8 '-Wf"-A idbl4"' -ew
 	do
 	    test "x$ac_flag" != xnone && FCFLAGS="$ac_fc_autodouble_FCFLAGS_save $ac_flag"
 	    AC_COMPILE_IFELSE([AC_LANG_PROGRAM([],[
@@ -389,7 +406,7 @@ AC_DEFUN([AC_FC_ADVANCED_DEBUG],[
         ac_cv_fc_advanced_debug,[
 	ac_cv_fc_advanced_debug=no
 	ac_fc_advanced_debug_FCFLAGS_save="$FCFLAGS"
-	for ac_flag in "-fcheck=all" "-fbacktrace" "-ftrace=full" "-check all" "-eC"
+	for ac_flag in "-check all" "-fcheck=all" "-fbacktrace" "-ftrace=full" "-eC"
 	do
 	    FCFLAGS="$ac_fc_advanced_debug_FCFLAGS_save $ac_flag"
 	    AC_LINK_IFELSE(AC_LANG_PROGRAM,[

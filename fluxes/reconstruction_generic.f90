@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: reconstruction_generic.f90                                        #
 !#                                                                           #
-!# Copyright (C) 2007-2008                                                   #
+!# Copyright (C) 2007-2012                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -48,7 +48,6 @@ MODULE reconstruction_generic
        ! methods
        InitReconstruction, &
        CloseReconstruction, &
-       MallocReconstruction, &
        CalculateSlopes, &
        CalculateStates, &
        PrimRecon, &
@@ -64,22 +63,41 @@ MODULE reconstruction_generic
 
 CONTAINS
 
-  SUBROUTINE InitReconstruction(this,order,variables,limiter,theta)
+  SUBROUTINE InitReconstruction(this,Mesh,Physics,order,variables,limiter,theta)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Reconstruction_TYP) :: this
-    INTEGER                  :: order
-    LOGICAL                  :: variables
+    TYPE(Mesh_TYP)           :: Mesh
+    TYPE(Physics_TYP)        :: Physics
+    INTEGER, OPTIONAL        :: order
+    LOGICAL, OPTIONAL        :: variables
     INTEGER, OPTIONAL        :: limiter
     REAL, OPTIONAL           :: theta
     !------------------------------------------------------------------------!
     CHARACTER(LEN=32)        :: infostr
-    INTEGER                  :: limiter_default
+    INTEGER                  :: order_default,limiter_default
+    LOGICAL                  :: variables_default
     REAL                     :: theta_default
     !------------------------------------------------------------------------!
-    INTENT(IN)               :: order,limiter,variables,theta
+    INTENT(IN)               :: Mesh,Physics,order,limiter,variables,theta
     INTENT(INOUT)            :: this
     !------------------------------------------------------------------------!
+    ! check initialization of Mesh and Physics
+    IF (.NOT.Initialized(Mesh).OR..NOT.Initialized(Physics)) &
+         CALL Error(this,"InitFluxes","mesh and/or physics module uninitialized")
+
+    ! set general reconstruction defaults
+    IF (PRESENT(order)) THEN
+       order_default = order
+    ELSE
+       order_default = 2
+    END IF
+    IF (PRESENT(variables)) THEN
+       variables_default = variables
+    ELSE
+       variables_default = CONSERVATIVE
+    END IF
+   
     ! set defaults for the limiter
     IF (PRESENT(limiter)) THEN
        limiter_default = limiter
@@ -92,18 +110,14 @@ CONTAINS
        theta_default = 1.0
     END IF
 
-    SELECT CASE(order)
+    SELECT CASE(order_default)
     CASE(CONSTANT)
-       CALL InitReconstruction_constant(this,order,variables)
+       CALL InitReconstruction_constant(this,order_default,variables_default)
     CASE(LINEAR)
-       SELECT CASE(limiter)
-       CASE(MINMOD,MONOCENT,SWEBY,SUPERBEE,OSPRE,PP)
-          CALL InitReconstruction_linear(this,order,variables,limiter_default,theta_default)
-       CASE DEFAULT
-          CALL Error(this, "InitReconstruction", "Unknown limiter")
-       END SELECT
+       CALL InitReconstruction_linear(this,Mesh,Physics,order_default, &
+                                      variables_default,limiter_default,theta_default)
     CASE DEFAULT
-       CALL Error(this,"MallocReconstruction",  "Unknown reconstruction type.")
+       CALL Error(this,"InitReconstruction",  "unsupported reconstruction order")
     END SELECT
 
     ! print some information
@@ -120,32 +134,6 @@ CONTAINS
   END SUBROUTINE InitReconstruction
 
 
-  SUBROUTINE MallocReconstruction(this,Mesh,Physics)
-    IMPLICIT NONE
-    !------------------------------------------------------------------------!
-    TYPE(Reconstruction_TYP) :: this
-    TYPE(Mesh_TYP)           :: Mesh
-    TYPE(Physics_TYP)        :: Physics
-    !------------------------------------------------------------------------!
-    INTENT(IN)    :: Mesh,Physics
-    INTENT(INOUT) :: this
-    !------------------------------------------------------------------------!
-    IF (.NOT.Initialized(this)) &
-         CALL Error(this,"MallocReconstruction","fluxes module uninitialized")
-    IF (.NOT.Initialized(Physics).OR..NOT.Initialized(Mesh)) &
-         CALL Error(this,"MallocReconstruction","physics and/or mesh module uninitialized")
-    ! allocate memory for reconstruction modules
-    SELECT CASE(GetType(this))
-    CASE(CONSTANT)
-       ! do nothing
-    CASE(LINEAR)
-       CALL MallocReconstruction_linear(this,Mesh,Physics)
-    CASE DEFAULT
-       CALL Error(this,"MallocReconstruction",  "Unknown reconstruction type.")
-    END SELECT
-  END SUBROUTINE MallocReconstruction
-
-
   PURE SUBROUTINE CalculateSlopes(this,Mesh,Physics,rvar)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
@@ -157,39 +145,44 @@ CONTAINS
     INTENT(IN)    :: Mesh,Physics,rvar
     INTENT(INOUT) :: this
     !------------------------------------------------------------------------!
-    
+!CDIR IEXPAND
     SELECT CASE(GetType(this))
     CASE(CONSTANT)
        ! do nothing
     CASE(LINEAR)
+!CDIR IEXPAND
        CALL CalculateSlopes_linear(this,Mesh,Physics,rvar)
     END SELECT
 
   END SUBROUTINE CalculateSlopes
 
 
-  PURE SUBROUTINE CalculateStates(this,Mesh,Physics,npos,pos0,pos,rvar,rstates)
+  PURE SUBROUTINE CalculateStates(this,Mesh,Physics,npos,dx,dy,rvar,rstates)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Reconstruction_TYP) :: this
     TYPE(Mesh_TYP)           :: Mesh
     TYPE(Physics_TYP)        :: Physics
     INTEGER                  :: npos
-    REAL :: pos0(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,2)
-    REAL :: pos(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,npos,2)
-    REAL :: rvar(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum)
-    REAL :: rstates(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,npos,Physics%vnum)
+    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,npos) &
+                             :: dx,dy
+    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%VNUM) &
+                             :: rvar
+    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,npos,Physics%VNUM) &
+                             :: rstates
     !------------------------------------------------------------------------!
-    INTENT(IN)    :: Mesh,Physics,npos,pos0,pos,rvar
+    INTENT(IN)    :: Mesh,Physics,npos,dx,dy,rvar
     INTENT(INOUT) :: this
     INTENT(OUT)   :: rstates
     !------------------------------------------------------------------------!
-    
+!CDIR IEXPAND    
     SELECT CASE(GetType(this))
     CASE(CONSTANT)
+!CDIR IEXPAND
        CALL CalculateStates_constant(this,Mesh,Physics,npos,rvar,rstates)
     CASE(LINEAR)
-       CALL CalculateStates_linear(this,Mesh,Physics,npos,pos0,pos,rvar,rstates)
+!CDIR IEXPAND
+       CALL CalculateStates_linear(this,Mesh,Physics,npos,dx,dy,rvar,rstates)
     END SELECT
   END SUBROUTINE CalculateStates
 
@@ -203,6 +196,7 @@ CONTAINS
     !------------------------------------------------------------------------!
     IF (.NOT.Initialized(this)) &
          CALL Error(this,"CloseReconstruction","not initialized")
+!CDIR IEXPAND
     SELECT CASE(GetType(this))
     CASE(CONSTANT)
        ! do nothing

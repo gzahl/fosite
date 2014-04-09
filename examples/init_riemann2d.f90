@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: init_riemann2d.f90                                                #
 !#                                                                           #
-!# Copyright (C) 2006-2010                                                   #
+!# Copyright (C) 2006-2012                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -33,7 +33,8 @@
 ! [3] A. Kurganov, E. Tadmor: Solution of Two-Dimensional Riemann Problems for 
 !     Gas Dynamics without Riemann Problem Solvers, NMPDE 18 (2002), 561-588
 !----------------------------------------------------------------------------!
-MODULE Init
+PROGRAM Init
+  USE fosite
   USE physics_generic
   USE fluxes_generic
   USE mesh_generic
@@ -43,7 +44,6 @@ MODULE Init
   USE timedisc_generic
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
-  PRIVATE
   ! simulation parameter
   INTEGER, PARAMETER :: ICNUM = 1          ! initial condition (see ref. [3])
   REAL, PARAMETER    :: GAMMA = 1.4        ! ratio of specific heats
@@ -63,11 +63,20 @@ MODULE Init
   CHARACTER(LEN=256), PARAMETER &          ! output data file name
                      :: OFNAME = 'riemann2d' 
   !--------------------------------------------------------------------------!
-  PUBLIC :: &
-       ! methods
-       InitProgram
+  TYPE(fosite_TYP)   :: Sim
   !--------------------------------------------------------------------------!
 
+CALL InitFosite(Sim)
+
+CALL InitProgram(Sim%Mesh, Sim%Physics, Sim%Fluxes, Sim%Timedisc, &
+                 Sim%Datafile, Sim%Logfile)
+
+! set initial condition
+CALL InitData(Sim%Mesh, Sim%Physics, Sim%Timedisc)
+
+CALL RunFosite(Sim)
+
+CALL CloseFosite(Sim)
 
 CONTAINS
 
@@ -89,23 +98,6 @@ CONTAINS
     !------------------------------------------------------------------------!
     INTENT(OUT)       :: Mesh,Physics,Fluxes,Timedisc,Datafile,Logfile
     !------------------------------------------------------------------------!
-    ! physics settings
-    CALL InitPhysics(Physics, &
-         problem = EULER2D, &
-         gamma   = GAMMA, &         ! ratio of specific heats        !
-         dpmax   = 1.0)             ! for advanced time step control !
-
-    ! numerical scheme for flux calculation
-    CALL InitFluxes(Fluxes, &
-         scheme = MIDPOINT)         ! quadrature rule                !
-
-    ! reconstruction method
-    CALL InitReconstruction(Fluxes%reconstruction, &
-         order     = LINEAR, &
-         variables = CONSERVATIVE, &! vars. to use for reconstruction!
-         limiter   = MONOCENT, &    ! one of: minmod, monocent,...   !
-         theta     = 1.2)           ! optional parameter for limiter !
-
     ! mesh settings
     SELECT CASE(MGEO)
     CASE(CARTESIAN)
@@ -165,7 +157,8 @@ CONTAINS
             " geometry should be one of cartesian,polar,logpolar,tanpolar,sinhpolar")
     END SELECT
 
-    CALL InitMesh(Mesh,Fluxes, &
+    CALL InitMesh(Mesh,&
+         meshtype = MIDPOINT, &
          geometry = MGEO, &
              inum = XRES, &       ! resolution in x and            !
              jnum = YRES, &       !   y direction                  !             
@@ -174,6 +167,19 @@ CONTAINS
              ymin = y1, &
              ymax = y2, &
            gparam = sc)
+
+    ! physics settings
+    CALL InitPhysics(Physics,Mesh, &
+         problem = EULER2D, &
+         gamma   = GAMMA, &         ! ratio of specific heats        !
+         dpmax   = 1.0)             ! for advanced time step control !
+
+    ! flux calculation and reconstruction method
+    CALL InitFluxes(Fluxes,Mesh,Physics, &
+         order     = LINEAR, &
+         variables = CONSERVATIVE, &        ! vars. to use for reconstruction!
+         limiter   = MONOCENT, &    ! one of: minmod, monocent,...   !
+         theta     = 1.2)           ! optional parameter for limiter !
 
     ! runtime of the test problem
     SELECT CASE(ICNUM)
@@ -228,9 +234,6 @@ CONTAINS
          stoptime = test_stoptime, &
          dtlimit  = 1.0E-10, &
          maxiter  = 10000000)
-
-    ! set initial condition
-    CALL InitData(Mesh,Physics,Timedisc)
 
     ! boundary conditions (depends on the geometry, see above)
     CALL InitBoundary(Timedisc%boundary,Mesh,Physics, &
@@ -825,4 +828,4 @@ CONTAINS
 
   END SUBROUTINE InitData
 
-END MODULE Init
+END PROGRAM Init

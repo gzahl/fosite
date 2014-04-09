@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: boundary_farfield.f90                                             #
 !#                                                                           #
-!# Copyright (C) 2006-2010                                                   #
+!# Copyright (C) 2006-2012                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -28,9 +28,6 @@
 !----------------------------------------------------------------------------!
 MODULE boundary_farfield
   USE mesh_common, ONLY : Mesh_TYP
-  USE physics_common, ONLY : Physics_TYP
-  USE fluxes_common, ONLY : Fluxes_TYP
-  USE reconstruction_common, ONLY : Reconstruction_TYP, PrimRecon
   USE boundary_nogradients
   USE boundary_fixed
   USE physics_generic
@@ -67,6 +64,7 @@ CONTAINS
          CALL Error(this,"InitBoundary_farfield", "Physics module is not " // &
          "supported for this kind of boundary conditions.")
     ! allocate memory for boundary data and mask
+!CDIR IEXPAND
     SELECT CASE(GetDirection(this))
     CASE(WEST,EAST)
        ALLOCATE(this%data(Mesh%GNUM,Mesh%JMIN:Mesh%JMAX,Physics%VNUM), &
@@ -94,20 +92,20 @@ CONTAINS
   END SUBROUTINE InitBoundary_farfield
 
 
-  PURE SUBROUTINE CenterBoundary_farfield(this,Mesh,Physics,Fluxes,pvar)
+  PURE SUBROUTINE CenterBoundary_farfield(this,Mesh,Physics,pvar)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Boundary_TYP) :: this
     TYPE(Mesh_TYP)     :: Mesh
     TYPE(Physics_TYP)  :: Physics
-    TYPE(Fluxes_TYP)   :: Fluxes
     REAL :: pvar(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum)
     !------------------------------------------------------------------------!
     INTEGER            :: i,j
     !------------------------------------------------------------------------!
-    INTENT(IN)    :: Mesh,Physics,Fluxes
+    INTENT(IN)    :: Mesh,Physics
     INTENT(INOUT) :: this,pvar  
     !------------------------------------------------------------------------!
+!CDIR IEXPAND
     SELECT CASE(GetDirection(this))
     CASE(WEST)
        IF (this%first_call) THEN

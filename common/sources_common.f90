@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: sources_common.f90                                                #
 !#                                                                           #
-!# Copyright (C) 2006-2011                                                   #
+!# Copyright (C) 2006-2012                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -84,8 +84,6 @@ MODULE sources_common
                                       kinvis,bulkvis !    bulk viscosity     !
      REAL, DIMENSION(:,:), POINTER   :: btxx,btyy,&  ! components of the     !
           btzz,btxy,btxz,btyz                        !    stress tensor      !
-     REAL, DIMENSION(:,:,:), POINTER :: ftxx,ftyy,&
-          ftzz,ftxy,ftxz,ftyz
   END TYPE Sources_TYP
   !--------------------------------------------------------------------------!
   PUBLIC :: &
@@ -110,15 +108,33 @@ CONTAINS
   SUBROUTINE InitSources(this,stype,sname)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    TYPE(Sources_TYP) :: this
+    TYPE(Sources_TYP), POINTER :: this
     INTEGER           :: stype
     CHARACTER(LEN=32) :: sname
     !------------------------------------------------------------------------!
-    INTENT(IN)        :: stype,sname
-    INTENT(OUT)       :: this
+    TYPE(Sources_TYP), POINTER :: newsrc, tmpsrc
+    TYPE(Sources_TYP) :: errsrc      ! we need this only for error reporting !
+    INTEGER           :: err
     !------------------------------------------------------------------------!
-    CALL InitCommon(this%sourcetype,stype,sname)
-    NULLIFY(this%next)
+    INTENT(IN)        :: stype,sname
+    !------------------------------------------------------------------------!
+    ! allocate memory for new source term
+    ALLOCATE(newsrc,STAT=err)
+    IF (err.NE.0) CALL Error(errsrc,"InitSources", "Unable allocate memory!")
+    
+     ! basic initialization
+    CALL InitCommon(newsrc%sourcetype,stype,sname)
+
+    ! add new source term to beginning of
+    ! list of source terms
+    IF (.NOT.ASSOCIATED(this)) THEN
+       this => newsrc
+       NULLIFY(this%next)
+    ELSE
+       tmpsrc => this
+       this => newsrc
+       this%next => tmpsrc
+    END IF
   END SUBROUTINE InitSources
 
 
@@ -140,6 +156,7 @@ CONTAINS
     sp => list
     DO
        IF (ASSOCIATED(sp).EQV..FALSE.) EXIT
+!CDIR IEXPAND
        IF (GetType(sp).EQ.stype) RETURN
        sp => sp%next
     END DO
@@ -172,6 +189,7 @@ CONTAINS
     TYPE(Sources_TYP), INTENT(IN) :: this
     INTEGER :: st
     !------------------------------------------------------------------------!
+!CDIR IEXPAND
     st = GetType_common(this%sourcetype)
   END FUNCTION GetSourceType
 
@@ -182,6 +200,7 @@ CONTAINS
     TYPE(Sources_TYP), INTENT(IN) :: this
     CHARACTER(LEN=32) :: sn
     !------------------------------------------------------------------------!
+!CDIR IEXPAND
     sn = GetName_common(this%sourcetype)
   END FUNCTION GetSourceTypeName
 

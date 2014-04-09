@@ -72,8 +72,8 @@ MODULE fluxes_common
                                 :: rstates         !   prim or cons          !
      REAL, DIMENSION(:,:,:,:), POINTER &           ! physical fluxes         !
                                 :: pfluxes,qfluxes
-     REAL, DIMENSION(:,:,:), POINTER &             ! temporary storage       !
-                                :: temp1,temp2,temp3,temp4
+     REAL, DIMENSION(:,:,:), POINTER &             ! coordinate differences  !
+                                :: dx,dy           ! centers to recon. pos.  !
      REAL, DIMENSION(:,:,:), POINTER &             ! boundary fluxes         !
                                 :: bxflux,byflux,bxfold,byfold
   END TYPE Fluxes_TYP

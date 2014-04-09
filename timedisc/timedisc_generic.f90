@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: timedisc_generic.f90                                              #
 !#                                                                           #
-!# Copyright (C) 2007-2011                                                   #
+!# Copyright (C) 2007-2012                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !# Björn Sperling   <sperling@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
@@ -29,6 +29,8 @@
 !----------------------------------------------------------------------------!
 MODULE timedisc_generic
   USE timedisc_modeuler, CloseTimedisc_common => CloseTimedisc
+  USE timedisc_rkfehlberg
+  USE timedisc_cashkarp
   USE boundary_generic
   USE mesh_generic
   USE physics_common, ONLY : GetErrorMap
@@ -40,12 +42,14 @@ MODULE timedisc_generic
   !--------------------------------------------------------------------------!
   PRIVATE
   INTEGER, PARAMETER :: MODIFIED_EULER = 1
+  INTEGER, PARAMETER :: RK_FEHLBERG    = 2
+  INTEGER, PARAMETER :: CASH_KARP      = 3
   !--------------------------------------------------------------------------!
   PUBLIC :: &
        ! types
        Timedisc_TYP, &
        ! constants
-       MODIFIED_EULER, &
+       MODIFIED_EULER, RK_FEHLBERG, CASH_KARP, &
        ! methods 
        InitTimedisc, &
        CalcTimestep, &
@@ -150,13 +154,21 @@ CONTAINS
     CASE(MODIFIED_EULER)
        CALL InitTimedisc_modeuler(this,method,order,stoptime,cfl_def,&
             dtlimit_def,maxiter,tol_rel_def,tol_abs_def)
+    CASE(RK_FEHLBERG)
+       CALL InitTimedisc_rkfehlberg(this,Mesh,Physics,method,order,stoptime,cfl_def,&
+            dtlimit_def,maxiter,tol_rel_def,tol_abs_def)
+    CASE(CASH_KARP)
+       CALL InitTimedisc_cashkarp(this,Mesh,Physics,method,order,stoptime,cfl_def,&
+            dtlimit_def,maxiter,tol_rel_def,tol_abs_def)
     CASE DEFAULT
        CALL Error(this,"InitTimedisc", "Unknown ODE solver.")
     END SELECT
 
     ! check dumpfile
-    IF (PRESENT(dumpfile).AND..NOT.Initialized(Dumpfile)) THEN
-       CALL Warning(this,"InitTimedisc","dump file uninitialized, dumping disabled")
+    IF (PRESENT(dumpfile)) THEN
+       IF(.NOT.Initialized(Dumpfile)) &
+            CALL Warning(this,"InitTimedisc", &
+            "dump file uninitialized, dumping disabled")
     END IF
 
     ! initialize all arrays
@@ -229,7 +241,7 @@ CONTAINS
     dt_src = dt_cfl
     CALL CalcTimestep_sources(Physics%sources,Mesh,Physics,this%time, &
          this%pvar,this%cvar,dt_src)
-    this%dt = MIN(dt_cfl,dt_src)
+    this%dt = MIN(dt_cfl,dt_src,this%dtold)
 !!$PRINT '(ES14.6,A,ES14.6)', this%time," dt_all =",this%dt
 !!$PRINT *,"---------------------------------------------------"
   END SUBROUTINE CalcTimestep
@@ -268,9 +280,14 @@ CONTAINS
     this%dtmin= MIN(this%dtmin,dt)
     DO WHILE (time+dt.LE.this%time+this%dt)
        dtold = dt
+!CDIR IEXPAND
        SELECT CASE(GetType(this))
        CASE(MODIFIED_EULER)
           CALL SolveODE_modeuler(this,Mesh,Physics,Fluxes,time,dt,err)
+       CASE(RK_FEHLBERG)
+          CALL SolveODE_rkfehlberg(this,Mesh,Physics,Fluxes,time,dt,err)
+       CASE(CASH_KARP)
+          CALL SolveODE_cashkarp(this,Mesh,Physics,Fluxes,time,dt,err)
        END SELECT
 #ifdef PARALLEL
        CALL MPI_Allreduce(err,err_all,1,DEFAULT_MPI_REAL,MPI_MAX,&
@@ -297,7 +314,7 @@ CONTAINS
           ! count adjustments for information
           this%n_adj = this%n_adj + 1
           IF (dt.LT.this%dtmin) this%dtmin = dt
-!!$          PRINT '(A,4(A,ES12.6))'," Argggh!"," t=",time," err=",err,&
+!!$         PRINT '(A,4(A,ES12.6))'," Argggh!"," t=",time," err=",err,&
 !!$               " dtold=",dtold," dt=",dt
        END IF
        IF (dt.LT.this%dtlimit) THEN
@@ -413,16 +430,18 @@ CONTAINS
     !------------------------------------------------------------------------!
     IF (.NOT.Initialized(this)) &
         CALL Error(this,"CloseTimedisc","not initialized")
-    ! call boundary destructors
-    CALL CloseBoundary(this%Boundary,WEST)
-    CALL CloseBoundary(this%Boundary,EAST)
-    CALL CloseBoundary(this%Boundary,SOUTH)
-    CALL CloseBoundary(this%Boundary,NORTH)
+    ! call boundary destructor
+    CALL CloseBoundary(this%Boundary)
 
     ! call individual destructors
+!CDIR IEXPAND
     SELECT CASE(GetType(this))
     CASE(MODIFIED_EULER)
        CALL CloseTimedisc_modeuler(this)
+    CASE(RK_FEHLBERG)
+       CALL CloseTimedisc_rkfehlberg(this)
+    CASE(CASH_KARP)
+       CALL CloseTimedisc_cashkarp(this)
     END SELECT
 
     DEALLOCATE(this%pvar,this%cvar,this%pold,this%cold,this%ptmp,this%ctmp, &

@@ -103,14 +103,9 @@ CONTAINS
     x1 = x/gp
     y1 = y/gp
     rho = ATAN(SQRT(x1*x1+y1*y1))
-    IF (x1.GT.0.0) THEN
-       IF (y1.GE.0.0) THEN
-          phi = ATAN(y1/x1)  ! = ATAN(y/x)
-       ELSE
-          phi = ATAN(y1/x1) + 2*PI
-       END IF
-    ELSE
-       phi = ATAN(y1/x1) + PI
+    phi = ATAN2(y,x)
+    IF(phi.LT.0.0) THEN
+        phi = phi + 2.0*PI
     END IF
   END SUBROUTINE Cartesian2Tanpolar_coords
 
