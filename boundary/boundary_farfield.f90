@@ -53,7 +53,7 @@ CONTAINS
     TYPE(Physics_TYP)  :: Physics
     INTEGER            :: btype,dir
     !------------------------------------------------------------------------!
-    INTEGER            :: err
+    INTEGER            :: err = 0
     !------------------------------------------------------------------------!
     INTENT(IN)    :: Mesh,Physics,btype,dir
     INTENT(INOUT) :: this

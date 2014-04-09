@@ -94,7 +94,7 @@ CONTAINS
     INTEGER           :: potential_def
     INTEGER           :: err
     INTEGER           :: i,j
-    REAL              :: r,a
+    REAL              :: r,a=0.0
     REAL              :: invdt_x, invdt_y
     REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,2) :: accel
     !------------------------------------------------------------------------!

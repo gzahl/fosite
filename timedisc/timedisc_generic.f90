@@ -242,6 +242,7 @@ CONTAINS
     CALL CalcTimestep_sources(Physics%sources,Mesh,Physics,this%time, &
          this%pvar,this%cvar,dt_src)
     this%dt = MIN(dt_cfl,dt_src,this%dtold)
+!    this%dt = MIN(dt_cfl,dt_src)
 !!$PRINT '(ES14.6,A,ES14.6)', this%time," dt_all =",this%dt
 !!$PRINT *,"---------------------------------------------------"
   END SUBROUTINE CalcTimestep

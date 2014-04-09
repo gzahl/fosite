@@ -120,9 +120,9 @@ CONTAINS
     INTEGER :: i,n
     REAL    :: an,bn,cn,tmp
     !------------------------------------------------------------------------!
+    tmp = 0.0
     IF (ABS(k).LT.1.0) THEN
        i   = 1
-       tmp = 0.0
        an  = 1.0
        bn  = SQRT(1.0-k*k)
        cn  = k
@@ -286,13 +286,17 @@ CONTAINS
     !------------------------------------------------------------------------!
     INTENT(IN)     :: l,x
     !------------------------------------------------------------------------!
+    IF(l.LT.0) THEN
+        Pl = SQRT(1.0*l) ! return NaN
+    ELSE
 !CDIR UNROLL=20
-    DO i=0,l
+        DO i=0,l
 !CDIR IEXPAND
-       Pl = LegendrePolynomial_one(i,x,Plminus1,Plminus2)
-       Plminus2 = Plminus1
-       Plminus1 = Pl
-    END DO
+           Pl = LegendrePolynomial_one(i,x,Plminus1,Plminus2)
+           Plminus2 = Plminus1
+           Plminus1 = Pl
+        END DO
+    END IF
   END FUNCTION LegendrePolynomial_all
 
   ! Computation of the order 0 and -1/2 degree 

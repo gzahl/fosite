@@ -148,6 +148,7 @@ CONTAINS
           CALL CenterBoundary(this%boundary,Mesh,Fluxes,Physics,t,this%pvar,this%cvar)
        END DO
        maxerr = 0.0
+       dt = HUGE(dt)
     ELSE
        p(1)%var => this%pvar
        p(2)%var => this%ptmp  ! store intermediate result for error control
@@ -206,6 +207,7 @@ CONTAINS
                        :: cold,pvar,cvar,cnew,rhs
     !------------------------------------------------------------------------!
     INTEGER            :: i,j,k
+    REAL               :: dyflux
     !------------------------------------------------------------------------!
     INTENT(IN)         :: Mesh,eta,time,dt,cold,pvar,cvar
     INTENT(INOUT)      :: this,Physics,Fluxes
@@ -227,7 +229,6 @@ CONTAINS
 !CDIR NOVECTOR
     DO k=1,Physics%VNUM
 !CDIR OUTERUNROLL=8
-!CDIR NODEP
        DO j=Mesh%JMIN,Mesh%JMAX
 !CDIR NODEP
           DO i=Mesh%IMIN,Mesh%IMAX
@@ -235,31 +236,38 @@ CONTAINS
              rhs(i,j,k) = Mesh%dydV(i,j)*(this%xflux(i,j,k) - this%xflux(i-1,j,k)) &
                   + Mesh%dxdV(i,j)*(this%yflux(i,j,k) - this%yflux(i,j-1,k)) &
                   - this%geo_src(i,j,k) - this%src(i,j,k)
-             ! update cvar -> cnew
+             ! time step update
 !CDIR IEXPAND
              cnew(i,j,k) = UpdateTimestep_modeuler(eta,dt,cold(i,j,k),cvar(i,j,k),rhs(i,j,k))
           END DO
-          ! compute RHS for boundary fluxes
-          ! western and eastern
+          ! western and eastern boundary fluxes
+          ! update right hand side of boundary ODE
+          rhs(Mesh%IMIN-1,j,k) = Mesh%dy * this%xflux(Mesh%IMIN-1,j,k)
+          rhs(Mesh%IMAX+1,j,k) = -Mesh%dy * this%xflux(Mesh%IMAX,j,k)
+          ! time step update of boundary fluxes
 !CDIR IEXPAND
           Fluxes%bxflux(j,1,k) = UpdateTimestep_modeuler(eta,dt,Fluxes%bxfold(j,1,k), &
-               Fluxes%bxflux(j,1,k),Mesh%dy*this%xflux(Mesh%IMIN-1,j,k))
+               Fluxes%bxflux(j,1,k),rhs(Mesh%IMIN-1,j,k))
 !CDIR IEXPAND
           Fluxes%bxflux(j,2,k) = UpdateTimestep_modeuler(eta,dt,Fluxes%bxfold(j,2,k), &
-               Fluxes%bxflux(j,2,k),-Mesh%dy*this%xflux(Mesh%IMAX,j,k))
+               Fluxes%bxflux(j,2,k),rhs(Mesh%IMAX+1,j,k))
        END DO
 
-       ! compute RHS for boundary fluxes
-       ! southern and northern
+       ! southern and northern boundary fluxes
 !CDIR NODEP
        DO i=Mesh%IMIN,Mesh%IMAX
- !CDIR IEXPAND
+          ! update right hand side of boundary ODE
+          rhs(i,Mesh%JMIN-1,k) = Mesh%dx * this%yflux(i,Mesh%JMIN-1,k)
+          rhs(i,Mesh%JMAX+1,k) = -Mesh%dx * this%yflux(i,Mesh%JMAX,k)
+          ! time step update of boundary fluxes
+!CDIR IEXPAND
           Fluxes%byflux(i,1,k) = UpdateTimestep_modeuler(eta,dt,Fluxes%byfold(i,1,k), &
-               Fluxes%byflux(i,1,k),Mesh%dx*this%yflux(i,Mesh%JMIN-1,k))
+                                 Fluxes%byflux(i,1,k),rhs(i,Mesh%JMIN-1,k))
 !CDIR IEXPAND
           Fluxes%byflux(i,2,k) = UpdateTimestep_modeuler(eta,dt,Fluxes%byfold(i,2,k), &
-               Fluxes%byflux(i,2,k),-Mesh%dx*this%yflux(i,Mesh%JMAX,k))
+                                 Fluxes%byflux(i,2,k),rhs(i,Mesh%JMAX+1,k))
        END DO
+
      END DO
   END SUBROUTINE ComputeCVar_modeuler
 

@@ -120,8 +120,10 @@ CONTAINS
     END IF
 
     ! initialize boundary fluxes
-    this%bxflux = 0.
-    this%byflux = 0.
+    this%bxflux(:,:,:) = 0.
+    this%byflux(:,:,:) = 0.
+    this%bxfold(:,:,:) = 0.
+    this%byfold(:,:,:) = 0.
   END SUBROUTINE InitFluxes
   
 

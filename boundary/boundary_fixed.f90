@@ -54,7 +54,7 @@ CONTAINS
     INTEGER            :: btype,dir
     CHARACTER(LEN=*), OPTIONAL :: bcname
     !------------------------------------------------------------------------!
-    INTEGER            :: err
+    INTEGER            :: err = 0
     !------------------------------------------------------------------------!
     INTENT(IN)    :: Mesh,Physics,btype,dir,bcname
     INTENT(INOUT) :: this

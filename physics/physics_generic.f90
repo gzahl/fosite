@@ -253,6 +253,8 @@ CONTAINS
        bad_data = CheckData_euler3Drs(this,Mesh,pvar,pold,meshrange_def)
     CASE(EULER3D_ROTAMT)
        bad_data = CheckData_euler3Dra(this,Mesh,pvar,pold,meshrange_def)
+    CASE DEFAULT
+       bad_data = -1
     END SELECT
   END FUNCTION CheckData
 

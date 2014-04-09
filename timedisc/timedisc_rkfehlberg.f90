@@ -232,7 +232,9 @@ CONTAINS
       END IF
 !         PRINT '(7(ES14.6))',time,dt,maxerr,rel_err(:)
     ELSE
-       maxerr = 0.0
+      ! no adaptive step size control
+      maxerr = 0.0
+      dt = HUGE(dt)
     END IF
   END SUBROUTINE SolveODE_rkfehlberg
 

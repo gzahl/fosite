@@ -246,42 +246,42 @@ CONTAINS
     CASE(WEST) ! western boundary flux
 #ifdef PARALLEL
        IF (Mesh%mycoords(1).EQ.0) THEN
-          bflux_local(:) = SUM(this%bxflux(:,1,:),1)
+          bflux_local(:) = SUM(this%bxflux(Mesh%JMIN:Mesh%JMAX,1,:),1)
        ELSE
           bflux_local(:) = 0.0
        END IF
 #else
-       bflux(:) = SUM(this%bxflux(:,1,:),1)
+       bflux(:) = SUM(this%bxflux(Mesh%JMIN:Mesh%JMAX,1,:),1)
 #endif
     CASE(EAST) ! eastern boundary flux
 #ifdef PARALLEL
        IF (Mesh%mycoords(1).EQ.Mesh%dims(1)-1) THEN
-          bflux_local(:) = SUM(this%bxflux(:,2,:),1)
+          bflux_local(:) = SUM(this%bxflux(Mesh%JMIN:Mesh%JMAX,2,:),1)
        ELSE
           bflux_local(:) = 0.0
        END IF
 #else
-       bflux = SUM(this%bxflux(:,2,:),1)
+       bflux = SUM(this%bxflux(Mesh%JMIN:Mesh%JMAX,2,:),1)
 #endif
     CASE(SOUTH) ! southern boundary flux
 #ifdef PARALLEL
        IF (Mesh%mycoords(2).EQ.0) THEN
-          bflux_local(:) = SUM(this%byflux(:,1,:),1)
+          bflux_local(:) = SUM(this%byflux(Mesh%IMIN:Mesh%IMAX,1,:),1)
        ELSE
           bflux_local(:) = 0.0
        END IF
 #else
-       bflux(:) = SUM(this%byflux(:,1,:),1)       
+       bflux(:) = SUM(this%byflux(Mesh%IMIN:Mesh%IMAX,1,:),1)       
 #endif
     CASE (NORTH) ! northern boundary flux
 #ifdef PARALLEL
        IF (Mesh%mycoords(2).EQ.Mesh%dims(2)-1) THEN
-          bflux_local(:) = SUM(this%byflux(:,2,:),1)
+          bflux_local(:) = SUM(this%byflux(Mesh%IMIN:Mesh%IMAX,2,:),1)
        ELSE
           bflux_local(:) = 0.0
        END IF
 #else
-       bflux(:) = SUM(this%byflux(:,2,:),1)
+       bflux(:) = SUM(this%byflux(Mesh%IMIN:Mesh%IMAX,2,:),1)
 #endif
     CASE DEFAULT
        CALL Error(this,"GetBoundaryFlux","wrong direction")

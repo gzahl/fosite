@@ -56,7 +56,7 @@ CONTAINS
     INTEGER            :: btype,dir
     INTEGER, OPTIONAL  :: dim
     !------------------------------------------------------------------------!
-    INTEGER            :: err
+    INTEGER            :: err = 0
     !------------------------------------------------------------------------!
     INTENT(IN)    :: Mesh,Physics,btype,dir,dim
     INTENT(INOUT) :: this

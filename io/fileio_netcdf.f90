@@ -150,35 +150,28 @@ CONTAINS
     TYPE(FileIO_TYP) :: this
     INTEGER          :: action
     !------------------------------------------------------------------------!
-#ifdef PARALLEL
-    INTEGER          :: comm = MPI_COMM_WORLD
-#endif
-    !------------------------------------------------------------------------!
     INTENT(IN)       :: action
     INTENT(INOUT)    :: this
     !------------------------------------------------------------------------!
     SELECT CASE(action)
     CASE(READONLY,READEND)
 #ifdef PARALLEL
-!       this%error = nf90_open_par(GetFilename(this),NF90_NOWRITE,comm,MPI_INFO_NULL,this%ncid)
        this%error = nf90_open(GetFilename(this),NF90_NOWRITE,this%ncid,&
-                              comm=comm,info=MPI_INFO_NULL)
+                              comm=MPI_COMM_WORLD,info=MPI_INFO_NULL)
 #else
        this%error = nf90_open(GetFilename(this),NF90_NOWRITE,this%ncid)
 #endif
     CASE(REPLACE)
 #ifdef PARALLEL
-!       this%error = nf90_create_par(GetFilename(this),this%ncfmt,comm,MPI_INFO_NULL,this%ncid)
        this%error = nf90_create(GetFilename(this),this%ncfmt,this%ncid,&
-                                comm=comm,info=MPI_INFO_NULL)
+                                comm=MPI_COMM_WORLD,info=MPI_INFO_NULL)
 #else
        this%error = nf90_create(GetFilename(this),this%ncfmt,this%ncid)
 #endif
     CASE(APPEND)
 #ifdef PARALLEL
-!       this%error = nf90_open_par(GetFilename(this),NF90_WRITE,comm,MPI_INFO_NULL,this%ncid)
        this%error = nf90_open(GetFilename(this),NF90_WRITE,this%ncid,&
-                              comm=comm,info=MPI_INFO_NULL)
+                              comm=MPI_COMM_WORLD,info=MPI_INFO_NULL)
 #else
        this%error = nf90_open(GetFilename(this),NF90_WRITE,this%ncid)
 #endif
