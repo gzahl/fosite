@@ -5,8 +5,9 @@
 # fosite - 2D hydrodynamical simulation program                             #
 # configuration file: configure.ac                                          #
 #                                                                           #
-# Copyright (C) 2008 Tobias Illenseer <tillense@astrophysik.uni-kiel.de>,   #
-#                    Marc Junker <maj@astrophysik.uni-kiel.de>              #
+# Copyright (C) 2008-2010                                                   #
+# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
+# Marc Junker <maj@astrophysik.uni-kiel.de>                                 #
 #                                                                           #
 # This program is free software; you can redistribute it and/or modify      #
 # it under the terms of the GNU General Public License as published by      #
@@ -26,7 +27,7 @@
 #############################################################################
 
 AC_PREREQ(2.61)
-AC_INIT(fosite, 0.3.0, tillense@astrophysik.uni-kiel.de)
+AC_INIT(fosite, 0.3.1, tillense@astrophysik.uni-kiel.de)
 
 # set up configure switches.
 linkClibs="no"
@@ -764,7 +765,8 @@ AS_IF([test "x$with_netcdf" != "xno"],[
       for ac_incdir in "$NETCDFDIR/include" none /usr/include /usr/include/netcdf \
           /usr/local/include /usr/local/include/netcdf
       do
-          test "x$ac_incdir" != xnone && FCFLAGS="$ac_netcdf_FCFLAGS_save -I$ac_incdir"
+          AS_IF([test "x$ac_incdir" != "xnone"],[
+             FCFLAGS="$ac_netcdf_FCFLAGS_save -I$ac_incdir"])
           AC_COMPILE_IFELSE([AC_LANG_PROGRAM([],[use netcdf])],[
              ac_cv_netcdf_module=yes; break])
       done
@@ -778,36 +780,45 @@ AS_IF([test "x$with_netcdf" != "xno"],[
          for ac_incdir in "$NETCDFDIR/include" none /usr/include /usr/include/netcdf \
              /usr/local/include /usr/local/include/netcdf
          do
-             test "x$ac_incdir" != xnone && FCFLAGS="$ac_netcdf_FCFLAGS_save -I$ac_incdir"
-             AC_COMPILE_IFELSE([AC_LANG_PROGRAM([],[include 'netcdf.inc'])],[
+         AS_IF([test "x$ac_incdir" != "xnone"],[
+            FCFLAGS="$ac_netcdf_FCFLAGS_save -I$ac_incdir"])
+      # gfortran version 4.4 doesn't care !!!
+            AC_COMPILE_IFELSE([AC_LANG_PROGRAM([],[
+include 'netcdf.inc'
+])],[
                 ac_cv_netcdf_include=yes; break])
          done
          rm -f conftest.err conftest.$ac_objext conftest.$ac_ext
       ])
    ])
    # check for netcdf libraries with Fortran 90 bindings
-   AS_IF([test "x$ac_cv_netcdf_module" = "xyes"],[
-      AC_CACHE_CHECK([for nf90_create in -lnetcdf...],
-	 ac_cv_lib_netcdf_nf90_create,[
-	 ac_cv_lib_netcdf_nf90_create=no
-      	 ac_netcdf_LDFLAGS_nompi=$LDFLAGS
-	 ac_netcdf_LIBS_nompi=$LIBS
-	 for ac_netcdf_LIBS in none "-lnetcdf" "-lnetcdf -lnetcdff"
-	 do
-	    LIBS="$ac_netcdf_LIBS_nompi $ac_netcdf_LIBS"
-            AS_IF([test "x$LDFLAGS_MPI" != "x"],[
-              FCFLAGS="$LDFLAGS $LDFLAGS_MPI"
-              LIBS="$LIBS $MPILIBS"
-            ])
-     	    AC_LINK_IFELSE([AC_LANG_PROGRAM([],[
+   AC_CACHE_CHECK([for nf90_create in -lnetcdf...],
+      ac_cv_lib_netcdf_nf90_create,[
+      ac_cv_lib_netcdf_nf90_create=no
+      ac_netcdf_LDFLAGS_nompi=$LDFLAGS
+      ac_netcdf_LIBS_nompi=$LIBS
+      AS_IF([test "x$ac_cv_netcdf_module" = "xyes"],[
+         FCFLAGS="$FCFLAGS -DHAVE_NETCDF_MOD"])
+      for ac_netcdf_LIBS in none "-lnetcdf" "-lnetcdf -lnetcdff"
+      do
+         AS_IF([test "x$ac_netcdf_LIBS" != "xnone"],[
+            LIBS="$ac_netcdf_LIBS $ac_netcdf_LIBS_nompi"])
+         AS_IF([test "x$LDFLAGS_MPI" != "x"],[
+            FCFLAGS="$LDFLAGS $LDFLAGS_MPI"
+            LIBS="$LIBS $MPILIBS"
+         ])
+         AC_LINK_IFELSE([AC_LANG_PROGRAM([],[
+#ifdef HAVE_NETCDF_MOD
 use netcdf
+#else
+include 'netcdf.inc'
+#endif
 integer :: status,ncid
 status = nf90_create("test.nc",nf90_noclobber,ncid)
 ])],[
-	         ac_cv_lib_netcdf_nf90_create=yes ; break])
-         done
-	 rm -f conftest.err conftest.$ac_objext conftest.$ac_ext
-      ])
+	       ac_cv_lib_netcdf_nf90_create=yes; break])
+      done
+      rm -f conftest.err conftest.$ac_objext conftest.$ac_ext
    ])
    AS_IF([test "x$ac_cv_lib_netcdf_nf90_create" = "xno"],[
       FCFLAGS=$ac_netcdf_FCFLAGS_save
@@ -815,11 +826,11 @@ status = nf90_create("test.nc",nf90_noclobber,ncid)
       LIBS=$ac_netcdf_LIBS_save
       AC_MSG_WARN([NetCDF support disabled])],[
       LDFLAGS=$ac_netcdf_LDFLAGS_nompi
-      LIBS=$ac_netcdf_LIBS
+      LIBS="$ac_netcdf_LIBS $ac_netcdf_LIBS_nompi"
       DEFS_ALL="$DEFS_ALL -DHAVE_NETCDF"
-#      AS_IF([test "x$ac_cv_module_netcdf" = "xyes"],[
-#         DEFS_ALL="$DEFS_ALL -DHAVE_NETCDF_MOD"
-#      ])
+      AS_IF([test "x$ac_cv_module_netcdf" = "xyes"],[
+         DEFS_ALL="$DEFS_ALL -DHAVE_NETCDF_MOD"
+      ])
    ])
 ])
 

@@ -1,5 +1,5 @@
 # fortran 90/95 compiler
-FC=gfortran
+FC=mpif90
 
 # some files
 TARGET=fosite
@@ -23,16 +23,16 @@ AFLAGS=rcv
 PREP=
 
 # compiler dependent variables
-FCFLAGS_ALL= -x f95-cpp-input -fdefault-real-8  -DFORTRAN_STREAMS $(INCDIRS)
+FCFLAGS_ALL=-mtune=amdfam10 -funroll-loops -falign-functions -falign-jumps -falign-labels -falign-loops -cpp -fdefault-real-8  -DFORTRAN_STREAMS $(INCDIRS)
 FCFLAGS_OPT= -O3 -finline-functions
-FCFLAGS_DBG= -g -O2 -eC
-FCFLAGS_PROF=-pg
+FCFLAGS_DBG=-mtune=amdfam10 -funroll-loops -falign-functions -falign-jumps -falign-labels -falign-loops -g -O2 -eC
+FCFLAGS_PROF=
 FCFLAGS_MPI= -DPARALLEL
-LDFLAGS_ALL= 
+LDFLAGS_ALL=-mtune=amdfam10 -funroll-loops -falign-functions -falign-jumps -falign-labels -falign-loops 
 LDFLAGS_OPT=
-LDFLAGS_DBG= -g -eC
-LDFLAGS_PROF=-pg
-LDFLAGS_MPI= 
+LDFLAGS_DBG=-mtune=amdfam10 -funroll-loops -falign-functions -falign-jumps -falign-labels -falign-loops -g -eC
+LDFLAGS_PROF=
+LDFLAGS_MPI=  
 
 # default compiler flags for target "all"
 FCFLAGS=$(FCFLAGS_ALL) $(FCFLAGS_OPT)
@@ -47,7 +47,7 @@ prof : FCFLAGS=$(FCFLAGS_ALL) $(FCFLAGS_OPT) $(FCFLAGS_PROF)
 prof : LDFLAGS=$(LDFLAGS_ALL) $(LDFLAGS_OPT) $(LDFLAGS_PROF)
 parprof : FCFLAGS=$(FCFLAGS_ALL) $(FCFLAGS_OPT) $(FCFLAGS_MPI)
 parprof : LDFLAGS=$(LDFLAGS_ALL) $(LDFLAGS_OPT) $(LDFLAGS_MPI)
-parprof : PREP=
+parprof : PREP=scalasca -instrument
 
 export FC FCFLAGS LDFLAGS AR AFLAGS PREP
 # variable definitions end here
