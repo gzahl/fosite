@@ -3,7 +3,8 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: timedisc_common.f90                                               #
 !#                                                                           #
-!# Copyright (C) 2007 Tobias Illenseer <tillense@ita.uni-heidelberg.de>      #
+!# Copyright (C) 2006-2008                                                   #
+!# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
 !# it under the terms of the GNU General Public License as published by      #
@@ -26,7 +27,10 @@
 ! basic module for time dicretization
 !----------------------------------------------------------------------------!
 MODULE timedisc_common
-  USE common_types, GetType_common => GetType, GetName_common => GetName
+  USE common_types, GetType_common => GetType, GetName_common => GetName, &
+       GetRank_common => GetRank, GetNumProcs_common => GetNumProcs, &
+       Info_common => Info, Warning_common => Warning, Error_common => Error
+  USE boundary_common, ONLY : Boundary_TYP
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   PRIVATE
@@ -36,9 +40,25 @@ MODULE timedisc_common
   INTERFACE GetName
      MODULE PROCEDURE GetODESolverName, GetName_common
   END INTERFACE
+  INTERFACE GetRank
+     MODULE PROCEDURE GetTimediscRank, GetRank_common
+  END INTERFACE
+  INTERFACE GetNumProcs
+     MODULE PROCEDURE GetTimediscNumProcs, GetNumProcs_common
+  END INTERFACE
+  INTERFACE Info
+     MODULE PROCEDURE TimediscInfo, Info_common
+  END INTERFACE
+  INTERFACE Warning
+     MODULE PROCEDURE TimediscWarning, Warning_common
+  END INTERFACE
+  INTERFACE Error
+     MODULE PROCEDURE TimediscError, Error_common
+  END INTERFACE
   !--------------------------------------------------------------------------!
   TYPE Timedisc_TYP
      TYPE(Common_TYP) :: odesolver                     ! Runge-Kutta, etc.   !
+     TYPE(Boundary_TYP), DIMENSION(4) :: Boundary  ! one for each boundary   !
      REAL             :: order                         ! time order          !
      REAL             :: cfl                           ! Courant number      !
      REAL             :: dt                            ! actual time step    !
@@ -50,8 +70,10 @@ MODULE timedisc_common
      INTEGER          :: n_adj                         ! num. of adjustments !
      REAL, DIMENSION(:,:,:), POINTER :: pvar, cvar     ! prim/cons vars      !
      REAL, DIMENSION(:,:,:), POINTER :: pold, cold     ! old prim/cons vars  !
-     REAL, DIMENSION(:,:,:), POINTER :: src, geo_src   ! source terms        !
+     REAL, DIMENSION(:,:,:), POINTER :: pnew, cnew     ! new prim/cons vars  !
+     REAL, DIMENSION(:,:,:), POINTER :: src,geo_src    ! source terms        !
      REAL, DIMENSION(:,:,:), POINTER :: xflux, yflux   ! num. flux func.     !
+     REAL, DIMENSION(:,:,:), POINTER :: dxflux,dyflux  ! flux differences    !
      REAL, DIMENSION(:,:,:), POINTER :: amax           ! max. wave speeds    !
      REAL, POINTER    :: eta(:,:)                      ! parameter for rk    !
   END TYPE Timedisc_TYP
@@ -65,21 +87,26 @@ MODULE timedisc_common
        GetType, &
        GetName, &
        GetOrder, &
-       GetCFL
+       GetCFL, &
+       GetRank, &
+       GetNumProcs, &
+       Info, &
+       Warning, &
+       Error
   !--------------------------------------------------------------------------!
 
 CONTAINS
 
-  PURE SUBROUTINE InitTimedisc(this,os,on,order,cfl,stoptime,dtlimit,maxiter)
+  SUBROUTINE InitTimedisc(this,os,on,order,stoptime,cfl,dtlimit,maxiter)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Timedisc_TYP) :: this
     INTEGER            :: os
     CHARACTER(LEN=32)  :: on
     INTEGER            :: order,maxiter
-    REAL               :: cfl,stoptime,dtlimit
+    REAL               :: stoptime,cfl,dtlimit
     !------------------------------------------------------------------------!
-    INTENT(IN)         :: os,on,order,cfl,stoptime,dtlimit,maxiter
+    INTENT(IN)         :: os,on,order,stoptime,cfl,dtlimit,maxiter
     INTENT(INOUT)      :: this
     !------------------------------------------------------------------------!
     CALL InitCommon(this%odesolver,os,on)
@@ -136,5 +163,58 @@ CONTAINS
     cfl = this%CFL
   END FUNCTION GetCFL
 
+  PURE FUNCTION GetTimediscRank(this) RESULT(r)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Timedisc_TYP), INTENT(IN) :: this
+    INTEGER :: r
+    !------------------------------------------------------------------------!
+    r = GetRank_common(this%odesolver)
+  END FUNCTION GetTimediscRank
+
+
+  PURE FUNCTION GetTimediscNumProcs(this) RESULT(p)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Timedisc_TYP), INTENT(IN) :: this
+    INTEGER :: p
+    !------------------------------------------------------------------------!
+    p = GetNumProcs_common(this%odesolver)
+  END FUNCTION GetTimediscNumProcs
+
+
+  SUBROUTINE TimediscInfo(this,msg)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Timedisc_TYP), INTENT(IN) :: this
+    CHARACTER(LEN=*),  INTENT(IN) :: msg
+    !------------------------------------------------------------------------!
+    CALL Info_common(this%odesolver,msg)
+  END SUBROUTINE TimediscInfo
+
+
+  SUBROUTINE TimediscWarning(this,modproc,msg)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Timedisc_TYP), INTENT(IN) :: this
+    CHARACTER(LEN=*),  INTENT(IN) :: modproc,msg
+    !------------------------------------------------------------------------!
+    CALL Warning_common(this%odesolver,modproc,msg)
+  END SUBROUTINE TimediscWarning
+
+
+  SUBROUTINE TimediscError(this,modproc,msg,rank)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Timedisc_TYP), INTENT(IN):: this
+    CHARACTER(LEN=*),  INTENT(IN) :: modproc,msg
+    INTEGER, OPTIONAL, INTENT(IN) :: rank
+    !------------------------------------------------------------------------!
+    IF (PRESENT(rank)) THEN
+       CALL Error_common(this%odesolver,modproc,msg,rank)
+    ELSE
+       CALL Error_common(this%odesolver,modproc,msg)
+    END IF
+  END SUBROUTINE TimediscError
 
 END MODULE timedisc_common

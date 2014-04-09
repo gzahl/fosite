@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: geometry_spherical.f90                                            #
 !#                                                                           #
-!# Copyright (C) 2007 Tobias Illenseer <tillense@ita.uni-heidelberg.de>      #
+!# Copyright (C) 2007 Tobias Illenseer <tillense@astrophysik.uni-kiel.de>    #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
 !# it under the terms of the GNU General Public License as published by      #
@@ -26,7 +26,7 @@
 ! define properties of a 2.5D spherical mesh
 !----------------------------------------------------------------------------!
 MODULE geometry_spherical
-  USE geometry_common
+  USE geometry_cartesian
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   INTERFACE Convert2Cartesian_spherical

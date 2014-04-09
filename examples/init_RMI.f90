@@ -3,7 +3,8 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: init_RMI.f90                                                      #
 !#                                                                           #
-!# Copyright (C) 2006 Tobias Illenseer <tillense@ita.uni-heidelberg.de>      #
+!# Copyright (C) 2006-2008                                                   #
+!# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
 !# it under the terms of the GNU General Public License as published by      #
@@ -31,8 +32,7 @@ MODULE Init
   USE mesh_generic
   USE reconstruction_generic
   USE boundary_generic
-  USE output_generic
-  USE logio_generic
+  USE fileio_generic
   USE timedisc_generic
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
@@ -46,19 +46,19 @@ MODULE Init
 
 CONTAINS
 
-  SUBROUTINE InitProgram(Mesh,Physics,Fluxes,Timedisc,Output,Logio)
+  SUBROUTINE InitProgram(Mesh,Physics,Fluxes,Timedisc,Datafile,Logfile)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Mesh_TYP)    :: Mesh
     TYPE(Physics_TYP) :: Physics
     TYPE(Fluxes_TYP)  :: Fluxes
     TYPE(Timedisc_TYP):: Timedisc
-    TYPE(Output_TYP)  :: Output
-    TYPE(Logio_TYP)   :: Logio
+    TYPE(FILEIO_TYP)  :: Datafile
+    TYPE(FILEIO_TYP)  :: Logfile
     !------------------------------------------------------------------------!
     ! Local variable declaration
     !------------------------------------------------------------------------!
-    INTENT(OUT)       :: Mesh,Physics,Fluxes,Timedisc,Output,Logio
+    INTENT(OUT)       :: Mesh,Physics,Fluxes,Timedisc,Datafile,Logfile
     !------------------------------------------------------------------------!
 
     ! physics settings
@@ -76,7 +76,7 @@ CONTAINS
          order     = LINEAR, &
          variables = CONSERVATIVE, &! vars. to use for reconstruction!
          limiter   = MONOCENT, &    ! one of: minmod, monocent,...   !
-         theta     = 1.3)           ! optional parameter for limiter !
+         theta     = 1.2)           ! optional parameter for limiter !
 
     ! mesh settings
     CALL InitMesh(Mesh,Fluxes, &
@@ -89,11 +89,12 @@ CONTAINS
              ymax = 40.0)
 
     ! boundary conditions
-    CALL InitBoundary(Mesh%boundary,Mesh,Physics,NO_GRADIENTS,WEST)
-    CALL InitBoundary(Mesh%boundary,Mesh,Physics,NO_GRADIENTS,EAST)
-    CALL InitBoundary(Mesh%boundary,Mesh,Physics,PERIODIC,SOUTH)
-    CALL InitBoundary(Mesh%boundary,Mesh,Physics,PERIODIC,NORTH)
-
+    CALL InitBoundary(Timedisc%boundary,Mesh,Physics, &
+         western  = NO_GRADIENTS, &
+         eastern  = NO_GRADIENTS, &
+         southern = PERIODIC, &
+         northern = PERIODIC)
+    
     ! time discretization settings
     CALL InitTimedisc(Timedisc,Mesh,Physics,&
          method   = MODIFIED_EULER, &
@@ -104,63 +105,70 @@ CONTAINS
          maxiter  = 1000000)
 
     ! set initial condition
-    CALL InitData(Mesh,Physics,Timedisc%pvar,Timedisc%cvar)
+    CALL InitData(Mesh,Physics,Timedisc)
 
     ! initialize log input/output
-    CALL InitLogio(Logio,Mesh,Physics,Timedisc, &
-         logformat = NOLOG, &
-         filename  = "RMI.log", &
-         logdt     = 300)
+    CALL InitFileIO(Logfile,Mesh,Physics,Timedisc,&
+         fileformat = BINARY, &
+#ifdef PARALLEL
+         filename   = "/tmp/RMIlog", &
+#else
+         filename   = "RMIlog", &
+#endif
+         filecycles = 1)
 
-    ! set parameters for data output
-    CALL InitOutput(Output,Mesh,Physics,Timedisc,&
-         filetype  = GNUPLOT, &
-         filename  = "RMI.dat", &
-         mode      = OVERWRITE, &
-         starttime = 0.0, &
-         stoptime  = Timedisc%stoptime, &
-         count     = 200)
+    ! initialize data input/output
+    CALL InitFileIO(Datafile,Mesh,Physics,Timedisc, &
+         fileformat = BINARY, &
+#ifdef PARALLEL
+         filename   = "/tmp/RMI", &
+#else
+         filename   = "RMI", &
+#endif
+         stoptime   = Timedisc%stoptime, &
+         count      = 20)
 
   END SUBROUTINE InitProgram
 
 
-  SUBROUTINE InitData(Mesh,Physics,pvar,cvar)
+  SUBROUTINE InitData(Mesh,Physics,Timedisc)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Mesh_TYP)    :: Mesh
     TYPE(Physics_TYP) :: Physics
-    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum)&
-                      :: pvar,cvar
+    TYPE(Timedisc_TYP):: Timedisc
     !------------------------------------------------------------------------!
     ! Local variable declaration
     REAL              :: xlength,ylength
     !------------------------------------------------------------------------!
     INTENT(IN)        :: Mesh,Physics
-    INTENT(OUT)       :: cvar,pvar
+    INTENT(INOUT)     :: Timedisc
     !------------------------------------------------------------------------!
 
     ! Richtmyer-Meshkov instability
     xlength = Mesh%xmax-Mesh%xmin
     ylength = Mesh%ymax-Mesh%ymin
 
-    pvar(:,:,:) = 0.
-    pvar(:,:,1) = 1.
-    pvar(:,:,4) = 1.
-
+    ! density and pressure
     WHERE ( Mesh%bcenter(:,:,1) >= 0.3*xlength + &
          (1./30.)*xlength*COS(2*PI*3./ylength*Mesh%bcenter(:,:,2)) )
-       pvar(:,:,1) = 0.25
-    END WHERE
-
-    WHERE ( (Mesh%bcenter(:,:,1) <= 0.1*xlength).AND. &
+       Timedisc%pvar(:,:,Physics%DENSITY)  = 0.25
+       Timedisc%pvar(:,:,Physics%PRESSURE) = 1.
+    ELSEWHERE ( (Mesh%bcenter(:,:,1) <= 0.1*xlength).AND. &
          (Mesh%bcenter(:,:,1) >= (1./30.)*xlength)  )
-       pvar(:,:,4) = 4.9
-       pvar(:,:,1) = 4.22
+       Timedisc%pvar(:,:,Physics%DENSITY)  = 4.22
+       Timedisc%pvar(:,:,Physics%PRESSURE) = 4.9
+    ELSEWHERE
+       Timedisc%pvar(:,:,Physics%DENSITY)  = 1.
+       Timedisc%pvar(:,:,Physics%PRESSURE) = 1.
     END WHERE
 
-    CALL Convert2Conservative(Physics,Mesh,pvar,cvar)
-    PRINT "(A,A)", " DATA-> initial condition:     ", &
-         "Richtmyer-Meshkov instability"
+    ! velocities vanish
+    Timedisc%pvar(:,:,Physics%XVELOCITY) = 0.
+    Timedisc%pvar(:,:,Physics%YVELOCITY) = 0.
+
+    CALL Convert2Conservative(Physics,Mesh,Timedisc%pvar,Timedisc%cvar)
+    CALL Info(Mesh, " DATA-----> initial condition: Richtmyer-Meshkov instability")
 
   END SUBROUTINE InitData
 

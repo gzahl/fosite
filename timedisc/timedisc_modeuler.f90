@@ -3,7 +3,8 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: timedisc_modeuler.f90                                             #
 !#                                                                           #
-!# Copyright (C) 2007 Tobias Illenseer <tillense@ita.uni-heidelberg.de>      #
+!# Copyright (C) 2007-2008                                                   #
+!# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
 !# it under the terms of the GNU General Public License as published by      #
@@ -41,39 +42,42 @@ MODULE timedisc_modeuler
   PUBLIC :: &
        ! types
        Timedisc_TYP, &
-       ! constants
        ! methods 
        InitTimedisc_modeuler, &
+       CloseTimedisc_modeuler, &
        SolveODE_modeuler, &
        SetBoundaries_modeuler, &
        GetType, &
        GetName, &
        GetOrder, &
        GetCFL, &
-       CloseTimedisc_modeuler
+       GetRank, &
+       GetNumProcs, &
+       Info, &
+       Warning, &
+       Error
   !--------------------------------------------------------------------------!
 
 CONTAINS
 
-  SUBROUTINE InitTimedisc_modeuler(this,os,order,cfl,stoptime,dtlimit,maxiter)
+  SUBROUTINE InitTimedisc_modeuler(this,os,order,stoptime,cfl,dtlimit,maxiter)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Timedisc_TYP) :: this
     INTEGER            :: os, order,maxiter
-    REAL               :: cfl,stoptime,dtlimit
+    REAL               :: stoptime,cfl,dtlimit
     !------------------------------------------------------------------------!
     INTEGER            :: err
     !------------------------------------------------------------------------!
-    INTENT(IN)         :: os,order,cfl,stoptime,dtlimit,maxiter
+    INTENT(IN)         :: os,order,stoptime,cfl,dtlimit,maxiter
     INTENT(INOUT)      :: this
     !------------------------------------------------------------------------!
-    CALL InitTimedisc(this,os,ODEsolver_name,order,cfl,stoptime,dtlimit,maxiter)
+    CALL InitTimedisc(this,os,ODEsolver_name,order,stoptime,cfl,dtlimit,maxiter)
 
     ! allocate memory parameter matrix
     ALLOCATE(this%eta(3,3),STAT=err) 
     IF (err.NE.0) THEN
-       PRINT *, "ERROR in InitTimedisc_modeuler: Unable to allocate memory!"
-       STOP
+       CALL Error(this,"InitTimedisc_modeuler", "Unable to allocate memory.")
     END IF
 
     ! initialize parameter matrix
@@ -96,18 +100,19 @@ CONTAINS
     TYPE(Mesh_TYP)     :: Mesh
     TYPE(Physics_TYP)  :: Physics
     TYPE(Fluxes_TYP)   :: Fluxes
-    !------------------------------------------------------------------------!    
-    INTENT(IN)         :: Mesh,Fluxes
-    INTENT(INOUT)      :: this,Physics
+    !------------------------------------------------------------------------!
+    INTEGER            :: i
+    INTENT(IN)         :: Mesh,Physics,Fluxes
+    INTENT(INOUT)      :: this
     !------------------------------------------------------------------------!
 
     IF (PrimRecon(Fluxes%reconstruction)) THEN
        ! set center boundaries for primitive vars
        CALL Convert2Primitive(Physics,Mesh,this%cvar,this%pvar)
-       CALL CenterBoundary(Mesh%boundary,Mesh,Physics,this%pvar)
+       CALL CenterBoundary(this%boundary,Mesh,Physics,this%time,this%pvar)
     ELSE
        ! set center boundaries for conservative vars
-       CALL CenterBoundary(Mesh%boundary,Mesh,Physics,this%cvar)
+       CALL CenterBoundary(this%boundary,Mesh,Physics,this%time,this%cvar)
        CALL Convert2Primitive(Physics,Mesh,this%cvar,this%pvar)
     END IF
   END SUBROUTINE SetBoundaries_modeuler
@@ -121,6 +126,7 @@ CONTAINS
     TYPE(Physics_TYP)  :: Physics
     TYPE(Fluxes_TYP)   :: Fluxes
     !------------------------------------------------------------------------!
+    INTEGER, SAVE      :: count=0
     INTEGER            :: n,i,j,k
     !------------------------------------------------------------------------!    
     INTENT(IN)         :: Mesh
@@ -138,23 +144,52 @@ CONTAINS
                this%pvar,this%cvar,this%geo_src)
        END IF
        
-       ! get source terms due to external forces if present
+        ! get source terms due to external forces if present
        IF (ASSOCIATED(Physics%sources)) THEN
           CALL ExternalSources(Physics%sources,Mesh,Fluxes,Physics, &
                this%pvar,this%cvar,this%src)
        END IF
-       
+
+       ! flux ballance in x-direction
+       IF (Mesh%INUM.GT.1) THEN
+          DO k=1,Physics%VNUM
+!CDIR NODEP
+             DO j=Mesh%JMIN,Mesh%JMAX
+!CDIR NOUNROLL
+                DO i=Mesh%IMIN,Mesh%IMAX
+                   this%dxflux(i,j,k) = this%xflux(i,j,k) - this%xflux(i-1,j,k)
+                END DO
+             END DO
+          END DO
+       ELSE
+          this%dxflux(:,:,:) = 0.
+       END IF
+
+       ! flux ballance in y-direction
+       IF (Mesh%JNUM.GT.1) THEN
+          DO k=1,Physics%VNUM
+!CDIR NOUNROLL
+             DO j=Mesh%JMIN,Mesh%JMAX
+!CDIR NODEP
+                DO i=Mesh%IMIN,Mesh%IMAX
+                   this%dyflux(i,j,k) = this%yflux(i,j,k) - this%yflux(i,j-1,k)
+                END DO
+             END DO
+          END DO
+       ELSE
+          this%dyflux(:,:,:) = 0.
+       END IF
+
        ! time step update
-       FORALL (i=Mesh%IMIN:Mesh%IMAX, j=Mesh%JMIN:Mesh%JMAX, k=1:Physics%vnum)
-          this%cvar(i,j,k) = this%eta(GetOrder(this),n)*this%cold(i,j,k) &
-               + (1.0-this%eta(GetOrder(this),n)) * (this%cvar(i,j,k) &
-               - this%dt * ( &
-               (this%xflux(i,j,k) - this%xflux(i-1,j,k)) * Mesh%dydV(i,j) &
-               + (this%yflux(i,j,k) - this%yflux(i,j-1,k)) * Mesh%dxdV(i,j) &
-               - this%geo_src(i,j,k) - this%src(i,j,k)) &
-               )
-       END FORALL
-       
+       DO k=1,Physics%VNUM
+          this%cnew(:,:,k) = this%cvar(:,:,k) - this%dt * &
+              (Mesh%dydV(:,:)*this%dxflux(:,:,k) + Mesh%dxdV(:,:)*this%dyflux(:,:,k) &
+            - this%geo_src(:,:,k) - this%src(:,:,k))
+       END DO
+
+       this%cvar(:,:,:) = this%eta(GetOrder(this),n)*this%cold(:,:,:) &
+            + (1.0-this%eta(GetOrder(this),n)) * this%cnew(:,:,:)
+
        ! set boundary values
        CALL SetBoundaries_modeuler(this,Mesh,Physics,Fluxes)
     END DO

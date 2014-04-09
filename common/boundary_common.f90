@@ -3,7 +3,8 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: boundary_common.f90                                               #
 !#                                                                           #
-!# Copyright (C) 2007 Tobias Illenseer <tillense@ita.uni-heidelberg.de>      #
+!# Copyright (C) 2006-2008                                                   #
+!# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
 !# it under the terms of the GNU General Public License as published by      #
@@ -26,8 +27,14 @@
 ! basic boundary module
 !----------------------------------------------------------------------------!
 MODULE boundary_common
-  USE common_types, GetType_common => GetType, GetName_common => GetName
+  USE common_types, &
+       GetType_common => GetType, GetName_common => GetName, &
+       GetRank_common => GetRank, GetNumProcs_common => GetNumProcs, &
+       Info_common => Info, Warning_common => Warning, Error_common => Error
   IMPLICIT NONE
+#ifdef PARALLEL
+    include 'mpif.h'
+#endif
   !--------------------------------------------------------------------------!
   PRIVATE
   INTERFACE GetType
@@ -36,15 +43,37 @@ MODULE boundary_common
   INTERFACE GetName
      MODULE PROCEDURE GetConditionName, GetName_common
   END INTERFACE
+  INTERFACE GetRank
+     MODULE PROCEDURE GetBoundaryRank, GetRank_common
+  END INTERFACE
+  INTERFACE GetNumProcs
+     MODULE PROCEDURE GetBoundaryNumProcs, GetNumProcs_common
+  END INTERFACE
+  INTERFACE Info
+     MODULE PROCEDURE BoundaryInfo_rank0, BoundaryInfo_rankX, Info_common
+  END INTERFACE
+  INTERFACE Warning
+     MODULE PROCEDURE BoundaryWarning, Warning_common
+  END INTERFACE
+  INTERFACE Error
+     MODULE PROCEDURE BoundaryError_rank0, BoundaryError_rankX, Error_common
+  END INTERFACE
   !--------------------------------------------------------------------------!
   TYPE Boundary_TYP
      TYPE(Common_TYP)  :: condition         ! outflow, reflect, periodic, .. !
      TYPE(Common_TYP)  :: direction         ! west, east, south, north       !
+     INTEGER           :: IMID, JMID        ! indices of cells in the middle !
+     INTEGER           :: nohdim            ! dimension of Noh problem       !
      REAL, DIMENSION(:,:,:), POINTER &
                        :: data              ! boundary data for fixed bc     !
+     REAL, DIMENSION(:,:), POINTER &        ! inverse distance to center     !
+                       :: invr              !   used for Noh boundary        !
      LOGICAL, DIMENSION(:), POINTER  &      ! masks for reflecting or fixed  !
                        :: reflX,reflY,fixed !   boundaries                   !
-     INTEGER           :: IMID, JMID        ! indices of cells in the middle !
+#ifdef PARALLEL
+     REAL, DIMENSION(:,:,:), POINTER &      ! send and receive buffer for    !
+          :: sendbuf,recvbuf                ! boundary data                  !
+#endif
   END TYPE Boundary_TYP
   !--------------------------------------------------------------------------!
   INTEGER, PARAMETER :: WEST  = 1
@@ -52,19 +81,27 @@ MODULE boundary_common
   INTEGER, PARAMETER :: SOUTH = 3
   INTEGER, PARAMETER :: NORTH = 4
   CHARACTER(LEN=32), DIMENSION(4), PARAMETER :: direction_name = (/ &
-       'west ', 'east ', 'south', 'north' /) 
+       ' west', ' east', 'south', 'north' /) 
   !--------------------------------------------------------------------------!
   PUBLIC :: &
        ! types
        Boundary_TYP, &
        ! constants
+#ifdef PARALLEL
+       DEFAULT_MPI_REAL, &
+#endif
        WEST, EAST, SOUTH, NORTH, &
        ! methods
        InitBoundary, &
        GetType, &
        GetName, &
        GetDirection, &
-       GetDirectionName
+       GetDirectionName, &
+       GetRank, &
+       GetNumProcs, &
+       Info, &
+       Warning, &
+       Error
   !--------------------------------------------------------------------------!
 
 CONTAINS
@@ -74,7 +111,7 @@ CONTAINS
     !------------------------------------------------------------------------!
     TYPE(Boundary_TYP) :: this
     INTEGER            :: bctype,direction
-    CHARACTER(LEN=32)  :: bcname
+    CHARACTER(LEN=*)   :: bcname
     !------------------------------------------------------------------------!
     INTENT(IN)    :: bctype,bcname,direction
     INTENT(INOUT) :: this
@@ -86,8 +123,7 @@ CONTAINS
     CASE(WEST,EAST,NORTH,SOUTH)
        ! ok
     CASE DEFAULT
-       PRINT *, "ERROR in InitBoundary: unknown direction"
-       STOP
+       CALL Error(this,"InitBoundary_common", "Unknown direction")
     END SELECT
     ! set direction
     CALL InitCommon(this%direction,direction,direction_name(direction))
@@ -132,5 +168,77 @@ CONTAINS
     !------------------------------------------------------------------------!
     dn=GetName_common(this%direction)
   END FUNCTION GetDirectionName
+
+
+  PURE FUNCTION GetBoundaryRank(this) RESULT(r)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Boundary_TYP), INTENT(IN) :: this
+    INTEGER :: r
+    !------------------------------------------------------------------------!
+    r = GetRank_common(this%condition)
+  END FUNCTION GetBoundaryRank
+
+
+  PURE FUNCTION GetBoundaryNumProcs(this) RESULT(p)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Boundary_TYP), INTENT(IN) :: this
+    INTEGER :: p
+    !------------------------------------------------------------------------!
+    p = GetNumProcs_common(this%condition)
+  END FUNCTION GetBoundaryNumProcs
+
+
+  SUBROUTINE BoundaryInfo_rank0(this,msg)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Boundary_TYP), INTENT(IN) :: this
+    CHARACTER(LEN=*),  INTENT(IN) :: msg
+    !------------------------------------------------------------------------!
+    CALL Info_common(this%condition,msg)
+  END SUBROUTINE BoundaryInfo_rank0
+
+
+  SUBROUTINE BoundaryInfo_rankX(this,msg,rank)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Boundary_TYP), INTENT(IN) :: this
+    CHARACTER(LEN=*),  INTENT(IN)  :: msg
+    INTEGER, INTENT(IN)            :: rank
+    !------------------------------------------------------------------------!
+    CALL Info_common(this%condition,msg,rank)
+  END SUBROUTINE BoundaryInfo_rankX
+
+
+  SUBROUTINE BoundaryWarning(this,modproc,msg)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Boundary_TYP), INTENT(IN) :: this
+    CHARACTER(LEN=*),  INTENT(IN)  :: modproc,msg
+    !------------------------------------------------------------------------!
+    CALL Warning_common(this%condition,modproc,msg)
+  END SUBROUTINE BoundaryWarning
+
+
+  SUBROUTINE BoundaryError_rank0(this,modproc,msg)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Boundary_TYP), INTENT(IN) :: this
+    CHARACTER(LEN=*),  INTENT(IN)  :: modproc,msg
+    !------------------------------------------------------------------------!
+    CALL Error_common(this%condition,modproc,msg)
+  END SUBROUTINE BoundaryError_rank0
+
+
+  SUBROUTINE BoundaryError_rankX(this,modproc,msg,rank)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Boundary_TYP), INTENT(IN) :: this
+    CHARACTER(LEN=*),  INTENT(IN)  :: modproc,msg
+    INTEGER, INTENT(IN)            :: rank
+    !------------------------------------------------------------------------!
+    CALL Error_common(this%condition,modproc,msg,rank)
+  END SUBROUTINE BoundaryError_rankX
 
 END MODULE boundary_common

@@ -3,7 +3,8 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: boundary_periodic.f90                                             #
 !#                                                                           #
-!# Copyright (C) 2007 Tobias Illenseer <tillense@ita.uni-heidelberg.de>      #
+!# Copyright (C) 2006-2008                                                   #
+!# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
 !# it under the terms of the GNU General Public License as published by      #
@@ -26,9 +27,9 @@
 ! module for periodic boundary conditions
 !----------------------------------------------------------------------------!
 MODULE boundary_periodic
-  USE boundary_common
   USE mesh_common, ONLY : Mesh_TYP
   USE physics_common, ONLY : Physics_TYP
+  USE boundary_nogradients
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   PRIVATE
@@ -41,21 +42,15 @@ MODULE boundary_periodic
        WEST, EAST, SOUTH, NORTH, &
        ! methods
        InitBoundary_periodic, &
-       GetType, &
-       GetName, &
-       GetDirection, &
-       GetDirectionName, &
-       CenterBoundary_periodic, &
-       FaceBoundary_periodic
+       CenterBoundary_periodic
   !--------------------------------------------------------------------------!
 
 CONTAINS
 
-  SUBROUTINE InitBoundary_periodic(this,Physics,btype,dir)
+  SUBROUTINE InitBoundary_periodic(this,btype,dir)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Boundary_TYP) :: this
-    TYPE(Physics_TYP)  :: Physics
     INTEGER            :: btype,dir
     !------------------------------------------------------------------------!
     INTENT(IN)    :: btype,dir
@@ -91,39 +86,5 @@ CONTAINS
        rvar(:,Mesh%JMAX+2,:) = rvar(:,Mesh%JMIN+1,:)
     END SELECT
   END SUBROUTINE CenterBoundary_periodic
-
-
-  PURE SUBROUTINE FaceBoundary_periodic(this,Mesh,Physics,we,ea,so,no,rstates)
-    IMPLICIT NONE
-    !------------------------------------------------------------------------!
-    TYPE(Boundary_TYP) :: this
-    TYPE(Mesh_TYP)     :: Mesh
-    TYPE(Physics_TYP)  :: Physics
-    INTEGER            :: we,ea,so,no
-    REAL :: rstates(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,4,Physics%vnum)
-    !------------------------------------------------------------------------!
-    INTENT(IN)    :: this,Mesh,Physics,we,ea,so,no
-    INTENT(INOUT) :: rstates
-    !------------------------------------------------------------------------!
-    !************************************************************************!
-    ! Be careful! There is a problem with trapezoidal rule, because          !
-    ! SetFaceBoundary is called twice with different pairs of boundary values!
-    ! (1st call:sw/se,sw/nw; 2nd call:nw/ne,se/ne).                          !
-    !************************************************************************!
-    SELECT CASE(GetDirection(this))
-    CASE(WEST)
-       rstates(Mesh%IMIN-1,:,ea,:) = rstates(Mesh%IMAX,:,ea,:)
-       rstates(Mesh%IMIN-1,:,we,:) = rstates(Mesh%IMAX,:,we,:)
-    CASE(EAST)
-       rstates(Mesh%IMAX+1,:,we,:) = rstates(Mesh%IMIN,:,we,:)
-       rstates(Mesh%IMAX+1,:,ea,:) = rstates(Mesh%IMIN,:,ea,:)
-    CASE(SOUTH)
-       rstates(:,Mesh%JMIN-1,no,:) = rstates(:,Mesh%JMAX,no,:)
-       rstates(:,Mesh%JMIN-1,so,:) = rstates(:,Mesh%JMAX,so,:)
-    CASE(NORTH)
-       rstates(:,Mesh%JMAX+1,so,:) = rstates(:,Mesh%JMIN,so,:)
-       rstates(:,Mesh%JMAX+1,no,:) = rstates(:,Mesh%JMIN,no,:)
-    END SELECT
-  END SUBROUTINE FaceBoundary_periodic
 
 END MODULE boundary_periodic

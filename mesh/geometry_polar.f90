@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: geometry_polar.f90                                                #
 !#                                                                           #
-!# Copyright (C) 2007 Tobias Illenseer <tillense@ita.uni-heidelberg.de>      #
+!# Copyright (C) 2007 Tobias Illenseer <tillense@astrophysik.uni-kiel.de>    #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
 !# it under the terms of the GNU General Public License as published by      #
@@ -26,7 +26,7 @@
 ! define properties of a 2D polar mesh
 !----------------------------------------------------------------------------!
 MODULE geometry_polar
-  USE geometry_common
+  USE geometry_cartesian
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   INTERFACE Convert2Cartesian_polar
@@ -47,7 +47,7 @@ MODULE geometry_polar
 
 CONTAINS
 
-  PURE SUBROUTINE InitGeometry_polar(this,gt)
+  SUBROUTINE InitGeometry_polar(this,gt)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Geometry_TYP), INTENT(INOUT) :: this

@@ -8,7 +8,7 @@ OBJECTS=$(SOURCES:.f90=.o)
 .PHONY: clean distclean
 
 %.o : %.f90
-	$(FC) $(FFLAGS) -c $<
+	$(FC) $(FCFLAGS) -c $<
 
 $(TARGET) : $(OBJECTS)
 	$(AR) $(AFLAGS) $@ $(OBJECTS)
@@ -20,4 +20,6 @@ distclean :
 	rm -f $(OBJECTS) $(TARGET) *.mod *.bak *~
 
 sources_diskthomson.o : sources_pointmass.o
-sources_generic.o : sources_pointmass.o sources_diskthomson.o
+sources_viscosity.o : sources_pointmass.o
+sources_generic.o : sources_pointmass.o sources_diskthomson.o \
+	sources_viscosity.o

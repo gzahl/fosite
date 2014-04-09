@@ -3,7 +3,8 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: init_riemann1d.f90                                                #
 !#                                                                           #
-!# Copyright (C) 2006 Tobias Illenseer <tillense@ita.uni-heidelberg.de>      #
+!# Copyright (C) 2006-2008                                                   #
+!# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
 !# it under the terms of the GNU General Public License as published by      #
@@ -31,8 +32,7 @@ MODULE Init
   USE mesh_generic
   USE reconstruction_generic
   USE boundary_generic
-  USE output_generic
-  USE logio_generic
+  USE fileio_generic
   USE timedisc_generic
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
@@ -47,21 +47,22 @@ MODULE Init
 
 CONTAINS
 
-  SUBROUTINE InitProgram(Mesh,Physics,Fluxes,Timedisc,Output,Logio)
+  SUBROUTINE InitProgram(Mesh,Physics,Fluxes,Timedisc,Datafile,Logfile)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Mesh_TYP)    :: Mesh
     TYPE(Physics_TYP) :: Physics
     TYPE(Fluxes_TYP)  :: Fluxes
     TYPE(Timedisc_TYP):: Timedisc
-    TYPE(Output_TYP)  :: Output
-    TYPE(Logio_TYP)   :: Logio
+    TYPE(FileIO_TYP)  :: Datafile
+    TYPE(FileIO_TYP)  :: Logfile
     !------------------------------------------------------------------------!
     ! Local variable declaration
     CHARACTER(LEN=256):: ofname,lfname
+    INTEGER           :: ierror
     REAL              :: test_stoptime, test_gamma
     !------------------------------------------------------------------------!
-    INTENT(OUT)       :: Mesh,Physics,Fluxes,Timedisc,Output,Logio
+    INTENT(OUT)       :: Mesh,Physics,Fluxes,Timedisc,Datafile,Logfile
     !------------------------------------------------------------------------!
 
     ! 1D test problems (for initial conditions see InitData)
@@ -74,33 +75,32 @@ CONTAINS
 
     SELECT CASE(testnum)
     CASE(1) ! Toro test 1
-       ofname  = "toro1.dat"
-       lfname  = "toro1.log"
+       ofname  = "toro1"
+       lfname  = "toro1log"
        test_gamma    = 1.4
        test_stoptime = 0.2
     CASE(2) ! Toro test 2
-       ofname  = "toro2.dat"
-       lfname  = "toro2.log"
+       ofname  = "toro2"
+       lfname  = "toro2log"
        test_gamma    = 1.4
        test_stoptime = 0.15
     CASE(3) ! Toro test 3
-       ofname  = "toro3.dat"
-       lfname  = "toro3.log"
+       ofname  = "toro3"
+       lfname  = "toro3log"
        test_gamma    = 1.4
        test_stoptime = 0.012
     CASE(4) ! Sod problem
-       ofname  = "sod.dat"
-       lfname  = "sod.log"
+       ofname  = "sod"
+       lfname  = "sodlog"
        test_gamma    = 1.4
        test_stoptime = 0.25
     CASE(5) ! Noh problem
-       ofname  = "noh.dat"
-       lfname  = "noh.log"
+       ofname  = "noh"
+       lfname  = "nohlog"
        test_gamma    = 5./3.
        test_stoptime = 1.0
     CASE DEFAULT
-       PRINT *, "ERROR in InitProgram: Test problem number should be 1,2,3,4 or 5"
-       STOP
+       CALL Error(Mesh,"InitProgram", "Test problem number should be 1,2,3,4 or 5")
     END SELECT
 
     ! physics settings
@@ -118,23 +118,17 @@ CONTAINS
          order     = LINEAR, &
          variables = CONSERVATIVE,& ! vars. to use for reconstruction!
          limiter   = MONOCENT, &    ! one of: minmod, monocent,...   !
-         theta     = 1.3)           ! optional parameter for limiter !
+         theta     = 1.2)           ! optional parameter for limiter !
 
     ! mesh settings
     CALL InitMesh(Mesh,Fluxes, &
          geometry = CARTESIAN, &
-             inum = 100, &          ! resolution in x and            !
+             inum = 200,&           ! resolution in x and            !
              jnum = 1, &            !   y direction                  !             
              xmin = 0.0, &
              xmax = 1.0, &
-             ymin = -0.1, &
-             ymax = 0.1)
-
-    ! boundary conditions
-    CALL InitBoundary(Mesh%boundary,Mesh,Physics,NO_GRADIENTS,WEST)
-    CALL InitBoundary(Mesh%boundary,Mesh,Physics,NO_GRADIENTS,EAST)
-    CALL InitBoundary(Mesh%boundary,Mesh,Physics,PERIODIC,SOUTH)
-    CALL InitBoundary(Mesh%boundary,Mesh,Physics,PERIODIC,NORTH)
+             ymin = 0.0, &
+             ymax = 1.0)
 
     ! time discretization settings
     CALL InitTimedisc(Timedisc,Mesh,Physics,&
@@ -146,49 +140,57 @@ CONTAINS
          maxiter  = 10000)
 
     ! set initial condition
-    CALL InitData(Mesh,Physics,Timedisc%pvar,Timedisc%cvar)
+    CALL InitData(Mesh,Physics,Timedisc)
+
+    ! boundary conditions
+    CALL InitBoundary(Timedisc%boundary,Mesh,Physics, &
+         western  = NO_GRADIENTS, &
+         eastern  = NO_GRADIENTS, &
+         southern = NO_GRADIENTS, &
+         northern = NO_GRADIENTS)
 
     ! initialize log input/output
-    CALL InitLogio(Logio,Mesh,Physics,Timedisc, &
-         logformat = NOLOG, &
-         filename  = lfname, &
-         logdt     = 300)
+    CALL InitFileIO(Logfile,Mesh,Physics,Timedisc, &
+         fileformat = BINARY, &
+#ifdef PARALLEL
+         filename   = "/tmp/" // TRIM(lfname), &
+#else
+         filename   = TRIM(lfname), &
+#endif
+         filecycles = 1)
 
-    ! set parameters for data output
-    CALL InitOutput(Output,Mesh,Physics,Timedisc,&
-         filetype  = GNUPLOT, &
-         filename  = ofname, &
-         mode      = OVERWRITE, &
-         starttime = 0.0, &
-         stoptime  = Timedisc%stoptime, &
-         count     = 1)
-
+    ! initialize data input/output
+    CALL InitFileIO(Datafile,Mesh,Physics,Timedisc, &
+         fileformat = GNUPLOT, &
+#ifdef PARALLEL
+         filename   = "/tmp/" // TRIM(ofname), &
+#else
+         filename   = TRIM(ofname), &
+#endif
+         filecycles = 0, &
+         count      = 1)
   END SUBROUTINE InitProgram
 
 
-  SUBROUTINE InitData(Mesh,Physics,pvar,cvar)
+  SUBROUTINE InitData(Mesh,Physics,Timedisc)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Physics_TYP) :: Physics
     TYPE(Mesh_TYP)    :: Mesh
-    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum)&
-                      :: pvar,cvar
+    TYPE(Timedisc_TYP):: Timedisc
     !------------------------------------------------------------------------!
     ! Local variable declaration
-    INTEGER           :: i,j
-    REAL              :: rho_l, rho_r, u_l, u_r, p_l, p_r
+    REAL              :: x0, rho_l, rho_r, u_l, u_r, p_l, p_r
     CHARACTER(LEN=64) :: teststr
     !------------------------------------------------------------------------!
     INTENT(IN)        :: Mesh,Physics
-    INTENT(OUT)       :: pvar,cvar
+    INTENT(INOUT)     :: Timedisc
     !------------------------------------------------------------------------!
-
-    pvar(:,:,:) = 0.
 
     SELECT CASE(testnum)
     CASE(1)
        teststr = "1D Riemannn problem: Toro test no. 1"
-       j = 3 / 10 * Mesh%INUM
+       x0    = 0.3
        rho_l = 1.0
        rho_r = 0.125
        u_l   = 0.75
@@ -197,7 +199,7 @@ CONTAINS
        p_r   = 0.1
     CASE(2)
        teststr = "1D Riemannn problem: Toro test no. 2"
-       j = Mesh%INUM / 2
+       x0    = 0.5
        rho_l = 1.0
        rho_r = 1.0
        u_l   = -2.0
@@ -206,7 +208,7 @@ CONTAINS
        p_r   = 0.4       
     CASE(3)
        teststr = "1D Riemannn problem: Toro test no. 3"
-       j = Mesh%INUM / 2
+       x0    = 0.5
        rho_l = 1.0
        rho_r = 1.0
        u_l   = 0.0
@@ -215,7 +217,7 @@ CONTAINS
        p_r   = 0.01
     CASE(4)
        teststr = "1D Riemannn problem: Sod problem"
-       j = Mesh%INUM / 2
+       x0    = 0.5
        rho_l = 1.0
        rho_r = 0.125
        u_l   = 0.0
@@ -224,7 +226,7 @@ CONTAINS
        p_r   = 0.1
     CASE(5)
        teststr = "1D Riemannn problem: Noh problem"
-       j = Mesh%INUM / 2
+       x0    = 0.5
        rho_l = 1.0
        rho_r = 1.0
        u_l   = 1.0
@@ -232,19 +234,37 @@ CONTAINS
        p_l   = 1.0E-05
        p_r   = 1.0E-05
     CASE DEFAULT
-       PRINT *, "ERROR in InitData: Test problem should be 1,2,3,4, or 5"
-       STOP
+       CALL Error(Mesh,"InitData", "Test problem should be 1,2,3,4, or 5")
     END SELECT
+    
+    IF (Mesh%INUM.GT.Mesh%JNUM) THEN
+       WHERE (Mesh%bcenter(:,:,1).LT.x0)
+          Timedisc%pvar(:,:,Physics%DENSITY)   = rho_l
+          Timedisc%pvar(:,:,Physics%XVELOCITY) = u_l
+          Timedisc%pvar(:,:,Physics%YVELOCITY) = 0.
+          Timedisc%pvar(:,:,Physics%PRESSURE)  = p_l
+       ELSEWHERE
+          Timedisc%pvar(:,:,Physics%DENSITY)   = rho_r
+          Timedisc%pvar(:,:,Physics%XVELOCITY) = u_r
+          Timedisc%pvar(:,:,Physics%YVELOCITY) = 0.
+          Timedisc%pvar(:,:,Physics%PRESSURE)  = p_r
+       END WHERE
+    ELSE
+        WHERE (Mesh%bcenter(:,:,2).LT.x0)
+          Timedisc%pvar(:,:,Physics%DENSITY)   = rho_l
+          Timedisc%pvar(:,:,Physics%XVELOCITY) = 0.
+          Timedisc%pvar(:,:,Physics%YVELOCITY) = u_l
+          Timedisc%pvar(:,:,Physics%PRESSURE)  = p_l
+       ELSEWHERE
+          Timedisc%pvar(:,:,Physics%DENSITY)   = rho_r
+          Timedisc%pvar(:,:,Physics%XVELOCITY) = 0. 
+          Timedisc%pvar(:,:,Physics%YVELOCITY) = u_r
+          Timedisc%pvar(:,:,Physics%PRESSURE)  = p_r
+       END WHERE
+    END IF
 
-    pvar(Mesh%IMIN-1:j,:,1)   = rho_l
-    pvar(j+1:Mesh%IMAX+1,:,1) = rho_r
-    pvar(Mesh%IMIN-1:j,:,2)   = u_l
-    pvar(j+1:Mesh%IMAX+1,:,2) = u_r
-    pvar(Mesh%IMIN-1:j,:,4)   = p_l
-    pvar(j+1:Mesh%IMAX+1,:,4) = p_r
-
-    CALL Convert2Conservative(Physics,Mesh,pvar,cvar)
-    PRINT "(A,A)", " DATA-----> initial condition: ", teststr
+    CALL Convert2Conservative(Physics,Mesh,Timedisc%pvar,Timedisc%cvar)
+    CALL Info(Mesh, " DATA-----> initial condition: " // TRIM(teststr))
 
   END SUBROUTINE InitData
 

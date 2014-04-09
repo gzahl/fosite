@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: mesh_midpoint.f90                                                 #
 !#                                                                           #
-!# Copyright (C) 2007 Tobias Illenseer <tillense@ita.uni-heidelberg.de>      #
+!# Copyright (C) 2007 Tobias Illenseer <tillense@astrophysik.uni-kiel.de>    #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
 !# it under the terms of the GNU General Public License as published by      #
@@ -26,35 +26,68 @@
 ! mesh module for midpoint quadrature rule
 !----------------------------------------------------------------------------!
 MODULE mesh_midpoint
+  USE mesh_common, InitMesh_common => InitMesh
   USE geometry_generic
-  USE mesh_common, ONLY : Mesh_TYP
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   PRIVATE
   REAL, PARAMETER :: TINY = 1.0E-30              ! to avoid division by 0    !
+  ! dummy settings, only one kind of mesh is currently available
+  INTEGER, PARAMETER :: REGULAR2D    = 1
+  CHARACTER(LEN=32), PARAMETER :: mesh_name = "regular 2D"
   !--------------------------------------------------------------------------!
   PUBLIC :: &
        ! types
        Mesh_TYP, &
+#ifdef PARALLEL
+       DEFAULT_MPI_REAL, &
+#endif
        ! methods
+       InitMesh, &
        InitMesh_midpoint, &
+       GetRank, &
+       Info, &
+       Warning, &
+       Error, &
        CloseMesh_midpoint
   !--------------------------------------------------------------------------!
 
 CONTAINS
 
-  SUBROUTINE InitMesh_midpoint(this,inum,jnum,xmin,xmax,ymin,ymax)
+  SUBROUTINE InitMesh(this,geometry,inum,jnum,xmin,xmax,ymin,ymax,gparam)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Mesh_TYP)    :: this
+    INTEGER           :: geometry
+    INTEGER           :: inum,jnum
+    REAL              :: xmin,xmax,ymin,ymax
+    REAL              :: gparam
+    !------------------------------------------------------------------------!
+    ! basic mesh initialization
+    CALL InitMesh_common(this,REGULAR2D,mesh_name,inum,jnum,xmin,xmax,ymin,ymax)
+
+    ! initialize geometry
+    CALL InitGeometry(this%geometry,geometry,gparam)
+  END SUBROUTINE InitMesh
+
+
+  SUBROUTINE InitMesh_midpoint(this,geometry,inum,jnum,xmin,xmax,ymin,ymax,gparam)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Mesh_TYP)    :: this
+    INTEGER           :: geometry
     INTEGER           :: inum,jnum
     REAL              :: xmin,xmax,ymin,ymax    
+    REAL              :: gparam
     !------------------------------------------------------------------------!
-    INTEGER           :: err,i,j
+    INTEGER           :: err
     !------------------------------------------------------------------------!
     INTENT(IN)        :: inum,jnum,xmin,xmax,ymin,ymax
     INTENT(INOUT)     :: this
     !------------------------------------------------------------------------!
+    
+    ! basic mesh and geometry initialization
+    CALL InitMesh(this,geometry,inum,jnum,xmin,xmax,ymin,ymax,gparam)
 
     ! allocate memory for pointers that are specific for midpoint fluxes
     ALLOCATE(this%dAx(this%IGMIN:this%IGMAX,this%JGMIN:this%JGMAX,1), &
@@ -67,8 +100,7 @@ CONTAINS
          this%czyz(this%IGMIN:this%IGMAX,this%JGMIN:this%JGMAX,1), &
          STAT=err)
     IF (err.NE.0) THEN
-       PRINT *, "ERROR in InitMesh_midpoint: Unable to allocate memory!"
-       STOP
+       CALL Error(this,"InitMesh_midpoint", "Unable to allocate memory.")
     END IF
 
     ! get geometrical scale factors
@@ -113,6 +145,8 @@ CONTAINS
 
     DEALLOCATE(this%dAx,this%dAy,this%dAydx,this%dAxdy, &
          this%cyxy,this%cxyx,this%czxz,this%czyz)
+    ! call basic mesh deconstructor
+    CALL CloseMesh(this)
   END SUBROUTINE CloseMesh_midpoint
 
 

@@ -3,7 +3,8 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: fluxes_trapezoidal.f90                                            #
 !#                                                                           #
-!# Copyright (C) 2007 Tobias Illenseer <tillense@ita.uni-heidelberg.de>      #
+!# Copyright (C) 2007-2008                                                   #
+!# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
 !# it under the terms of the GNU General Public License as published by      #
@@ -26,11 +27,10 @@
 ! numerical fluxes module for trapezoidal quadrature rule
 !----------------------------------------------------------------------------!
 MODULE fluxes_trapezoidal
-  USE fluxes_midpoint
-  USE reconstruction_generic
-  USE boundary_generic
-  USE physics_generic
   USE mesh_common, ONLY : Mesh_TYP
+  USE fluxes_midpoint
+  USE physics_generic
+  USE reconstruction_generic
   IMPLICIT NONE
   PRIVATE
   !--------------------------------------------------------------------------!
@@ -82,49 +82,58 @@ CONTAINS
     IF (PrimRecon(this%Reconstruction)) THEN
        CALL CalculateStates(this%Reconstruction,Mesh,Physics,4,Mesh%bcenter,&
             Mesh%cpos,pvar,this%rstates)
-!       CALL FaceBoundary(Mesh%boundary,Mesh,Physics,1,2,1,3,this%prim)
-!       CALL FaceBoundary(Mesh%boundary,Mesh,Physics,3,4,2,4,this%prim)
        CALL Convert2Conservative(Physics,Mesh,this%rstates,this%cons)
     ELSE
        CALL CalculateStates(this%Reconstruction,Mesh,Physics,4,Mesh%bcenter,&
             Mesh%cpos,cvar,this%rstates)
-!       CALL FaceBoundary(Mesh%boundary,Mesh,Physics,1,2,1,3,this%cons)
-!       CALL FaceBoundary(Mesh%boundary,Mesh,Physics,3,4,2,4,this%cons)
        CALL Convert2Primitive(Physics,Mesh,this%rstates,this%prim)
     END IF
 
-    ! physical fluxes in x-direction
-    CALL CalculateFluxesX(Physics,Mesh,1,4,this%prim,this%cons,this%pfluxes)
-    ! physical fluxes in y-direction
-    CALL CalculateFluxesY(Physics,Mesh,1,4,this%prim,this%cons,this%qfluxes)
-
-    ! numercial fluxes
-    FORALL (i=Mesh%IMIN-1:Mesh%IMAX, j=Mesh%JMIN-1:Mesh%JMAX, k=1:Physics%vnum)
-       ! x-direction (nonsense for j=JMIN-1)
-       xflux(i,j,k) = 0.5/(Physics%amax(i,j) - Physics%amin(i,j)) * ( &
-            Mesh%dAxdy(i+1,j,1) * ( &
+    ! west and east
+    IF (Mesh%INUM.GT.1) THEN
+       ! physical fluxes
+       CALL CalculateFluxesX(Physics,Mesh,1,4,this%prim,this%cons,this%pfluxes)
+       ! numerical fluxes
+       FORALL (i=Mesh%IMIN-1:Mesh%IMAX,j=Mesh%JGMIN:Mesh%JGMAX,k=1:Physics%vnum)
+          ! x-direction
+          xflux(i,j,k) = 0.5/(Physics%amax(i,j) - Physics%amin(i,j)) * ( &
+               Mesh%dAxdy(i+1,j,1) * ( &
                  Physics%amax(i,j)*this%pfluxes(i,j,2,k) - &
                  Physics%amin(i,j)*this%pfluxes(i+1,j,1,k) + &
                  Physics%amin(i,j)*Physics%amax(i,j)* &
-            (this%cons(i+1,j,1,k) - this%cons(i,j,2,k))) + &
-            Mesh%dAxdy(i+1,j,2) * ( &
+               (this%cons(i+1,j,1,k) - this%cons(i,j,2,k))) + &
+               Mesh%dAxdy(i+1,j,2) * ( &
                  Physics%amax(i,j)*this%pfluxes(i,j,4,k) - &
                  Physics%amin(i,j)*this%pfluxes(i+1,j,3,k) + &
                  Physics%amin(i,j)*Physics%amax(i,j)* &
-            (this%cons(i+1,j,3,k) - this%cons(i,j,4,k))))
-       ! y-direction (nonsense for i=IMIN-1)
-       yflux(i,j,k) = 0.5 / (Physics%bmax(i,j) - Physics%bmin(i,j)) * ( &
-            Mesh%dAydx(i,j+1,1) * ( &
-                 Physics%bmax(i,j)*this%qfluxes(i,j,3,k) - &
-                 Physics%bmin(i,j)*this%qfluxes(i,j+1,1,k) + &
-                 Physics%bmin(i,j)*Physics%bmax(i,j)* &
-            (this%cons(i,j+1,1,k)-this%cons(i,j,3,k))) + &
-            Mesh%dAydx(i,j+1,2) * ( &
-                 Physics%bmax(i,j)*this%qfluxes(i,j,4,k) - &
-                 Physics%bmin(i,j)*this%qfluxes(i,j+1,2,k) + &
-                 Physics%bmin(i,j)*Physics%bmax(i,j)* &
-            (this%cons(i,j+1,2,k)-this%cons(i,j,4,k))))
-    END FORALL
+               (this%cons(i+1,j,3,k) - this%cons(i,j,4,k))))
+       END FORALL
+    ELSE
+       xflux(:,:,:) = 0.0
+    END IF
+
+    ! south and north
+    IF (Mesh%JNUM.GT.1) THEN
+       ! physical fluxes
+       CALL CalculateFluxesY(Physics,Mesh,1,4,this%prim,this%cons,this%qfluxes)
+       ! numerical fluxes
+       FORALL (i=Mesh%IGMIN:Mesh%IGMAX,j=Mesh%JMIN-1:Mesh%JMAX,k=1:Physics%vnum)
+          ! y-direction
+          yflux(i,j,k) = 0.5 / (Physics%bmax(i,j) - Physics%bmin(i,j)) * ( &
+             Mesh%dAydx(i,j+1,1) * ( &
+               Physics%bmax(i,j)*this%qfluxes(i,j,3,k) - &
+               Physics%bmin(i,j)*this%qfluxes(i,j+1,1,k) + &
+               Physics%bmin(i,j)*Physics%bmax(i,j)* &
+             (this%cons(i,j+1,1,k)-this%cons(i,j,3,k))) + &
+             Mesh%dAydx(i,j+1,2) * ( &
+               Physics%bmax(i,j)*this%qfluxes(i,j,4,k) - &
+               Physics%bmin(i,j)*this%qfluxes(i,j+1,2,k) + &
+               Physics%bmin(i,j)*Physics%bmax(i,j)* &
+             (this%cons(i,j+1,2,k)-this%cons(i,j,4,k))))
+       END FORALL
+    ELSE
+       yflux(:,:,:) = 0.0
+    END IF
   END SUBROUTINE CalculateFluxes_trapezoidal
 
 

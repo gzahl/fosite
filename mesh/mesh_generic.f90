@@ -3,7 +3,8 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: mesh_generic.f90                                                  #
 !#                                                                           #
-!# Copyright (C) 2006 Tobias Illenseer <tillense@ita.uni-heidelberg.de>      #
+!# Copyright (C) 2006-2008                                                   #
+!# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
 !# it under the terms of the GNU General Public License as published by      #
@@ -26,8 +27,7 @@
 ! generic mesh module
 !----------------------------------------------------------------------------!
 MODULE mesh_generic
-  USE mesh_common, InitMesh_common => InitMesh, CloseMesh_common => CloseMesh
-  USE mesh_midpoint
+  USE mesh_midpoint, InitMesh_basic => InitMesh
   USE mesh_trapezoidal
   USE geometry_generic
   USE fluxes_generic
@@ -39,12 +39,19 @@ MODULE mesh_generic
        ! types
        Mesh_TYP, &
        ! constants
-       CARTESIAN, POLAR, CYLINDRICAL, SPHERICAL, OBLATE_SPHEROIDAL, &
+#ifdef PARALLEL
+       DEFAULT_MPI_REAL, &
+#endif
+       CARTESIAN, POLAR, LOGPOLAR, CYLINDRICAL, SPHERICAL, OBLATE_SPHEROIDAL, &
        ! methods
        InitMesh, &
        Convert2Cartesian, &
        Convert2Curvilinear, &
        GetType, &
+       GetRank, &
+       Info, &
+       Warning, &
+       Error, &
        CloseMesh
   !--------------------------------------------------------------------------!
 
@@ -56,62 +63,46 @@ CONTAINS
     TYPE(Mesh_TYP)    :: this
     TYPE(Fluxes_TYP)  :: Fluxes
     INTEGER           :: geometry
-    INTEGER           :: nvar
     INTEGER           :: inum,jnum
     REAL              :: xmin,xmax,ymin,ymax
     REAL, OPTIONAL    :: gparam
     !------------------------------------------------------------------------!
-    INTEGER           :: i,j,dec
-    CHARACTER(LEN=32) :: fmt
+    CHARACTER(LEN=32) :: xres,yres
+    REAL              :: gparam_default
     !------------------------------------------------------------------------!
     INTENT(IN)        :: geometry,inum,jnum,xmin,xmax,ymin,ymax,gparam
     INTENT(INOUT)     :: this
     !------------------------------------------------------------------------!
 
-    ! basic mesh initialization
-    CALL InitMesh_common(this,inum,jnum,xmin,xmax,ymin,ymax)
-
-    ! initialize geometry
+    ! default geometry parameter
     IF (PRESENT(gparam)) THEN
-       CALL InitGeometry(this%geometry,geometry,gparam)
+       gparam_default = gparam
     ELSE
-       CALL InitGeometry(this%geometry,geometry)
+       gparam_default = 1.0
     END IF
 
     SELECT CASE(GetType(Fluxes))
     CASE(MIDPOINT)
-       CALL InitMesh_midpoint(this,inum,jnum,xmin,xmax,ymin,ymax)
+       CALL InitMesh_midpoint(this,geometry,inum,jnum,xmin,xmax,ymin,ymax, &
+            gparam_default)
     CASE(TRAPEZOIDAL)
-       CALL InitMesh_trapezoidal(this,inum,jnum,xmin,xmax,ymin,ymax)
+       CALL InitMesh_trapezoidal(this,geometry,inum,jnum,xmin,xmax,ymin,ymax, &
+            gparam_default)
     CASE DEFAULT
-       PRINT *, "ERROR in InitMesh: unknown flux type"
-       STOP
+       CALL Error(this,"InitMesh", "Unknown flux type.")
     END SELECT
 
-    ! count number of decimals for resolution;
-    ! this is just for better looking output
-    dec = this%INUM
-    i=0
-    DO WHILE (dec.GT.0)
-       dec = dec / 10 
-       i=i+1
-    END DO
-    dec = this%JNUM
-    j=0
-    DO WHILE (dec.GT.0)
-       dec = dec / 10
-       j=j+1
-    END DO
-    ! output format string
-    WRITE (fmt, '(A,I1,A,I1,A)') "(A,I", i, ",A,I", j, ")"
+    ! compute cartesian coordinates for bary center values
+    CALL Convert2Cartesian(this%geometry,this%bcenter,this%bccart)
 
     ! print some information
-    PRINT fmt, " MESH-----> resolution:        ", &
-         this%INUM, " x ", this%JNUM
-    PRINT "(A,ES8.1,A,ES8.1)", "            computat. domain:  x=", &
-         this%xmin, " ..", this%xmax
-    PRINT "(A,ES8.1,A,ES8.1)", "                               y=", &
-         this%ymin, " ..", this%ymax
+    WRITE (xres, '(I0)') this%INUM    ! this is just for better looking output
+    WRITE (yres, '(I0)') this%JNUM
+    CALL Info(this, " MESH-----> resolution:        " // TRIM(xres) // " x " // TRIM(yres))
+    WRITE (xres, '(ES8.1,A,ES8.1)') this%xmin, " ..", this%xmax
+    WRITE (yres, '(ES8.1,A,ES8.1)') this%ymin, " ..", this%ymax    
+    CALL Info(this, "            computat. domain:  x=" // TRIM(xres) // ACHAR(10)  &
+                 // "                               y="  // TRIM(yres))
   END SUBROUTINE InitMesh
 
 
@@ -130,11 +121,8 @@ CONTAINS
     CASE(TRAPEZOIDAL)
        CALL CloseMesh_trapezoidal(this)
     CASE DEFAULT
-       PRINT *, "ERROR in CloseMesh: unknown flux type"
-       STOP
+       CALL Error(this,"InitMesh", "Unknown flux type.")
     END SELECT
-    ! call basic mesh deconstructor
-    CALL CloseMesh_common(this)
   END SUBROUTINE CloseMesh
 
 

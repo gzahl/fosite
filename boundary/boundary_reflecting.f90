@@ -3,7 +3,8 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: boundary_reflecting.f90                                           #
 !#                                                                           #
-!# Copyright (C) 2007 Tobias Illenseer <tillense@ita.uni-heidelberg.de>      #
+!# Copyright (C) 2006-2008                                                   #
+!# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
 !# it under the terms of the GNU General Public License as published by      #
@@ -26,8 +27,8 @@
 ! boundary module for refelcting boundaries
 !----------------------------------------------------------------------------!
 MODULE boundary_reflecting
-  USE boundary_common
   USE mesh_common, ONLY : Mesh_TYP
+  USE boundary_nogradients
   USE physics_generic
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
@@ -42,13 +43,18 @@ MODULE boundary_reflecting
        ! methods
        InitBoundary, &
        InitBoundary_reflecting, &
+       CenterBoundary_reflecting, &
+       FaceBoundary_reflecting, &
+       CloseBoundary_reflecting, &
        GetType, &
        GetName, &
        GetDirection, &
        GetDirectionName, &
-       CenterBoundary_reflecting, &
-       FaceBoundary_reflecting, &
-       CloseBoundary_reflecting
+       GetRank, &
+       GetNumProcs, &
+       Info, &
+       Warning, &
+       Error
   !--------------------------------------------------------------------------!
 
 CONTAINS
@@ -71,12 +77,11 @@ CONTAINS
          this%reflY(Physics%vnum), &
          STAT=err)
     IF (err.NE.0) THEN
-       PRINT *, "ERROR in InitBoundary_reflecting: Can't allocate memory!"
-       STOP
+       CALL Error(this, "InitBoundary_reflecting", "Unable to allocate memory.")
     END IF
     ! this tells us which vars get the opposite sign/vanish at cell faces;
     ! e.g. vertical velocities (depends on the underlying physics)
-    CALL GetReflectionMasks(Physics,this%reflX,this%reflY)
+    CALL ReflectionMasks(Physics,this%reflX,this%reflY)
   END SUBROUTINE InitBoundary_reflecting
 
 

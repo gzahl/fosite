@@ -3,7 +3,8 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: reconstruction_linear.f90                                         #
 !#                                                                           #
-!# Copyright (C) 2007 Tobias Illenseer <tillense@ita.uni-heidelberg.de>      #
+!# Copyright (C) 2007-2008                                                   #
+!# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
 !# it under the terms of the GNU General Public License as published by      #
@@ -26,8 +27,8 @@
 ! module for linear (first order) reconstruction
 !----------------------------------------------------------------------------!
 MODULE reconstruction_linear
-  USE reconstruction_common
-  USE common_types, GetType_common => GetType, GetName_common => GetName
+  USE reconstruction_constant
+  USE common_types, ONLY : Common_TYP, InitCommon
   USE mesh_common, ONLY : Mesh_TYP
   USE physics_common, ONLY : Physics_TYP
   IMPLICIT NONE
@@ -88,7 +89,6 @@ CONTAINS
     INTENT(IN)    :: Mesh,Physics
     INTENT(INOUT) :: this
     !------------------------------------------------------------------------!
-
     ! allocate memory for all arrays used in reconstruction_linear
     ALLOCATE(this%xslopes(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum), &
          this%yslopes(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum), &
@@ -98,9 +98,11 @@ CONTAINS
          this%temp4(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum), &
          STAT = err)
     IF (err.NE.0) THEN
-       PRINT *, "ERROR in MallocReconstruction: Can't allocate memory!"
-       STOP
+       CALL Error(this, "MallocReconstruction_linear",  "Unable to allocate memory.")
     END IF
+    ! zero the slopes
+    this%xslopes(:,:,:) = 0.0
+    this%yslopes(:,:,:) = 0.0
   END SUBROUTINE MallocReconstruction_linear
 
 
@@ -110,7 +112,7 @@ CONTAINS
     TYPE(Reconstruction_TYP), INTENT(IN) :: this
     INTEGER :: lt
     !------------------------------------------------------------------------!
-    lt = GetType_common(this%limiter)
+    lt = GetType(this%limiter)
   END FUNCTION GetLimiter
 
 
@@ -120,7 +122,7 @@ CONTAINS
     TYPE(Reconstruction_TYP), INTENT(IN) :: this
     CHARACTER(LEN=32) :: ln
     !------------------------------------------------------------------------!
-    ln = GetName_common(this%limiter)
+    ln = GetName(this%limiter)
   END FUNCTION GetLimiterName
 
 
@@ -138,44 +140,152 @@ CONTAINS
     INTENT(INOUT)     :: this
     !------------------------------------------------------------------------!
 
-    FORALL (i=Mesh%IMIN-1:Mesh%IMAX+1, j=Mesh%JMIN-1:Mesh%JMAX+1, k=1:Physics%vnum)
+    ! choose limiter & check for 1D case ... not beautiful but currently best
+    SELECT CASE(GetLimiter(this))
+    CASE(MINMOD)
        ! calculate slopes in x-direction
-       this%xslopes(i,j,k) = Mesh%invdx * LimitSlopes(rvar(i,j,k) - rvar(i-1,j,k), &
-            rvar(i+1,j,k) - rvar(i,j,k))
+       IF (Mesh%INUM.GT.1) THEN
+          DO k=1,Physics%VNUM
+!CDIR NOUNROLL
+             DO j=Mesh%JGMIN,Mesh%JGMAX
+!CDIR NODEP
+                DO i=Mesh%IMIN-1,Mesh%IMAX+1
+                   this%xslopes(i,j,k) = Mesh%invdx * minmod2_limiter(&
+                      rvar(i,j,k) - rvar(i-1,j,k), rvar(i+1,j,k) - rvar(i,j,k))
+                END DO
+             END DO
+          END DO
+       END IF
        ! calculate slopes in y-direction
-       this%yslopes(i,j,k) = Mesh%invdy * LimitSlopes(rvar(i,j,k) - rvar(i,j-1,k), &
-            rvar(i,j+1,k) - rvar(i,j,k))
-    END FORALL
-
-    ! set slopes in secondary ghost cells to 0
-    this%xslopes(Mesh%IGMIN,:,:) = 0.
-    this%xslopes(Mesh%IGMAX,:,:) = 0.
-    this%yslopes(:,Mesh%JGMIN,:) = 0.
-    this%yslopes(:,Mesh%JGMAX,:) = 0.
+       IF (Mesh%JNUM.GT.1) THEN
+          DO k=1,Physics%VNUM
+!CDIR NOUNROLL
+             DO j=Mesh%JMIN-1,Mesh%JMAX+1
+!CDIR NODEP
+                DO i=Mesh%IGMIN,Mesh%IGMAX
+                   this%yslopes(i,j,k) = Mesh%invdy * minmod2_limiter(&
+                      rvar(i,j,k) - rvar(i,j-1,k), rvar(i,j+1,k) - rvar(i,j,k))
+                END DO
+             END DO
+          END DO
+       END IF
+    CASE(MONOCENT)
+       ! calculate slopes in x-direction
+       IF (Mesh%INUM.GT.1) THEN
+          DO k=1,Physics%VNUM
+!CDIR NOUNROLL
+             DO j=Mesh%JGMIN,Mesh%JGMAX
+!CDIR NODEP
+                DO i=Mesh%IMIN-1,Mesh%IMAX+1
+                   this%xslopes(i,j,k) = Mesh%invdx * minmod3_limiter(&
+                      this%limiter_param*(rvar(i,j,k) - rvar(i-1,j,k)),&
+                      this%limiter_param*(rvar(i+1,j,k) - rvar(i,j,k)),&
+                      0.5*(rvar(i+1,j,k) - rvar(i-1,j,k)))
+                END DO
+             END DO
+          END DO
+       END IF
+       ! calculate slopes in y-direction
+       IF (Mesh%JNUM.GT.1) THEN
+          DO k=1,Physics%VNUM
+!CDIR NOUNROLL
+             DO j=Mesh%JMIN-1,Mesh%JMAX+1
+!CDIR NODEP
+                DO i=Mesh%IGMIN,Mesh%IGMAX
+                   this%yslopes(i,j,k) = Mesh%invdy * minmod3_limiter(&
+                      this%limiter_param*(rvar(i,j,k)- rvar(i,j-1,k)),&
+                      this%limiter_param*(rvar(i,j+1,k) - rvar(i,j,k)),&
+                      0.5*(rvar(i,j+1,k) - rvar(i,j-1,k)))
+                END DO
+             END DO
+          END DO
+       END IF
+    CASE(SWEBY)
+       ! calculate slopes in x-direction
+       IF (Mesh%INUM.GT.1) THEN
+          DO k=1,Physics%VNUM
+!CDIR NOUNROLL
+             DO j=Mesh%JGMIN,Mesh%JGMAX
+!CDIR NODEP
+                DO i=Mesh%IMIN-1,Mesh%IMAX+1
+                   this%xslopes(i,j,k) = Mesh%invdx * sweby_limiter(&
+                      rvar(i,j,k) - rvar(i-1,j,k), rvar(i+1,j,k) - rvar(i,j,k),&
+                      this%limiter_param)
+                END DO
+             END DO
+          END DO
+       END IF
+       ! calculate slopes in y-direction
+       IF (Mesh%JNUM.GT.1) THEN
+          DO k=1,Physics%VNUM
+!CDIR NOUNROLL
+             DO j=Mesh%JMIN-1,Mesh%JMAX+1
+!CDIR NODEP
+                DO i=Mesh%IGMIN,Mesh%IGMAX
+                   this%yslopes(i,j,k) = Mesh%invdy * sweby_limiter(&
+                      rvar(i,j,k) - rvar(i,j-1,k), rvar(i,j+1,k) - rvar(i,j,k),&
+                      this%limiter_param)
+                END DO
+             END DO
+          END DO
+       END IF
+    CASE(SUPERBEE)
+       ! calculate slopes in x-direction
+       IF (Mesh%INUM.GT.1) THEN
+          DO k=1,Physics%VNUM
+!CDIR NOUNROLL
+             DO j=Mesh%JGMIN,Mesh%JGMAX
+!CDIR NODEP
+                DO i=Mesh%IMIN-1,Mesh%IMAX+1
+                   this%xslopes(i,j,k) = Mesh%invdx * sweby_limiter(&
+                      rvar(i,j,k) - rvar(i-1,j,k), rvar(i+1,j,k) - rvar(i,j,k), 2.0)
+                END DO
+             END DO
+          END DO
+       END IF
+       ! calculate slopes in y-direction
+       IF (Mesh%JNUM.GT.1) THEN
+          DO k=1,Physics%VNUM
+!CDIR NOUNROLL
+             DO j=Mesh%JMIN-1,Mesh%JMAX+1
+!CDIR NODEP
+                DO i=Mesh%IGMIN,Mesh%IGMAX
+                   this%yslopes(i,j,k) = Mesh%invdy * sweby_limiter(&
+                      rvar(i,j,k) - rvar(i,j-1,k), rvar(i,j+1,k) - rvar(i,j,k), 2.0)
+                END DO
+             END DO
+          END DO
+       END IF
+    CASE(OSPRE)
+       ! calculate slopes in x-direction
+       IF (Mesh%INUM.GT.1) THEN
+          DO k=1,Physics%VNUM
+!CDIR NOUNROLL
+             DO j=Mesh%JGMIN,Mesh%JGMAX
+!CDIR NODEP
+                DO i=Mesh%IMIN-1,Mesh%IMAX+1
+                   this%xslopes(i,j,k) = Mesh%invdx * ospre_limiter(&
+                      rvar(i,j,k) - rvar(i-1,j,k), rvar(i+1,j,k) - rvar(i,j,k))
+                END DO
+             END DO
+          END DO
+       END IF
+       ! calculate slopes in y-direction
+       IF (Mesh%JNUM.GT.1) THEN
+          DO k=1,Physics%VNUM
+!CDIR NOUNROLL
+             DO j=Mesh%JMIN-1,Mesh%JMAX+1
+!CDIR NODEP
+                DO i=Mesh%IGMIN,Mesh%IGMAX
+                   this%yslopes(i,j,k) = Mesh%invdy * ospre_limiter(&
+                      rvar(i,j,k) - rvar(i,j-1,k), rvar(i,j+1,k) - rvar(i,j,k))
+                END DO
+             END DO
+          END DO
+       END IF
+    END SELECT
     
     CONTAINS
-      
-      ELEMENTAL FUNCTION LimitSlopes(slope1,slope2) RESULT(limslope)
-        IMPLICIT NONE
-        !--------------------------------------------------------------------!
-        REAL :: slope1, slope2, limslope
-        !--------------------------------------------------------------------!
-        INTENT(IN)  :: slope1, slope2
-        !--------------------------------------------------------------------!
-        SELECT CASE(GetLimiter(this))
-        CASE(MINMOD)         
-           limslope = minmod2_limiter(slope1, slope2)
-        CASE(MONOCENT)         
-           limslope = minmod3_limiter(this%limiter_param*slope1, &
-                this%limiter_param*slope2, 0.5*(slope1+slope2))
-        CASE(SWEBY)         
-           limslope = sweby_limiter(slope1, slope2,this%limiter_param)
-        CASE(SUPERBEE)         
-           limslope = sweby_limiter(slope1, slope2,2.0)
-        CASE(OSPRE)         
-           limslope = ospre_limiter(slope1, slope2)
-        END SELECT
-      END FUNCTION LimitSlopes
       
       ELEMENTAL FUNCTION minmod2_limiter(arg1,arg2) RESULT(limarg)
         IMPLICIT NONE
@@ -272,7 +382,7 @@ CONTAINS
     !------------------------------------------------------------------------!
     TYPE(Reconstruction_TYP)  :: this
     !------------------------------------------------------------------------!
-    INTENT(IN)                :: this
+    INTENT(INOUT)             :: this
     !------------------------------------------------------------------------!
     DEALLOCATE(this%xslopes,this%yslopes,&
          this%temp1,this%temp2,this%temp3,this%temp4)

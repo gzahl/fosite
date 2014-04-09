@@ -1,0 +1,265 @@
+!-------------------------------------------------------------------------!
+! basic type used in all other types
+!-------------------------------------------------------------------------!
+TYPE Common_TYP
+   PRIVATE
+   INTEGER          :: type                    ! identifier for object    !
+   CHARACTER(LEN=32):: name                    ! information string       !
+   INTEGER          :: error                   ! error code               !
+   LOGICAL          :: init = .FALSE.          ! init status              !
+   INTEGER, POINTER :: myrank                  ! rank of parallel process !
+   INTEGER, POINTER :: ppnum                   ! number of par. processes !
+   LOGICAL, POINTER :: parinit                 ! init status of par. procs!
+
+
+!-------------------------------------------------------------------------!
+! boundary conditions
+!-------------------------------------------------------------------------!
+TYPE Boundary_TYP   ! for boundary conditions
+   TYPE(Common_TYP) :: condition               ! outflow,reflect,...      !
+   TYPE(Common_TYP) :: direction               ! west, east, south, north !
+   REAL, DIMENSION(:,:,:), POINTER &           ! boundary data for fixed  !
+                    :: data                    !   boundary condition     !
+   LOGICAL, DIMENSION(:), POINTER  &           ! masks for reflecting or  !
+                    :: reflX,reflY,fixed       !   fixed boundaries       !
+   INTEGER          :: IMID, JMID              ! indices in the middle    !
+#ifdef PARALLEL
+   REAL, DIMENSION(:,:,:), POINTER &           ! send and receive buffer  !
+                    :: sendbuf,recvbuf         !   for boundary data      !
+#endif
+
+
+!-------------------------------------------------------------------------!
+! physical constants in accordance with the system of units
+!-------------------------------------------------------------------------!
+TYPE Constants_TYP
+   TYPE(Common_TYP) :: units                   ! SI, natural, etc.        !
+   ! some physical constants
+   DOUBLE PRECISION :: C                       ! light speed              !
+   DOUBLE PRECISION :: GN                      ! Newtons grav. constant   !
+   DOUBLE PRECISION :: KB                      ! Boltzmann constant       !
+   DOUBLE PRECISION :: KE                      ! electr. scat. opacity    !
+   DOUBLE PRECISION :: NA                      ! Avogadro constant        !
+   DOUBLE PRECISION :: RG                      ! gas constant             !
+   ! factors for convertion from SI to other units
+   DOUBLE PRECISION :: cf_time                 ! time scale               !
+   DOUBLE PRECISION :: cf_mass                 ! mass scale               !
+   DOUBLE PRECISION :: cf_momentum             ! momentum scale           !
+   DOUBLE PRECISION :: cf_energy               ! energy scale             !
+   DOUBLE PRECISION :: cf_power                ! power scale              !
+   DOUBLE PRECISION :: cf_temperature          ! temperature scale        !
+   DOUBLE PRECISION :: cf_density              ! density scale            !
+
+
+!-------------------------------------------------------------------------!
+! reconstruction of cell face data
+!-------------------------------------------------------------------------!
+TYPE Reconstruction_TYP
+   TYPE(Common_TYP) :: order                   ! constant, linear, ...    !
+   TYPE(Common_TYP) :: limiter                 ! limiter function         !
+   LOGICAL          :: primcons                ! true if primitive        !
+   REAL             :: limiter_param           ! limiter parameter        !
+   REAL, DIMENSION(:,:,:), POINTER &
+                    :: xslopes,yslopes         ! limited slopes           !
+   REAL, DIMENSION(:,:,:), POINTER &
+                    :: temp1,temp2,temp3,temp4 ! temporary storage        !
+
+
+!-------------------------------------------------------------------------!
+! numerical fluxes
+!-------------------------------------------------------------------------!
+TYPE Fluxes_TYP
+   TYPE(Common_TYP) :: quadrule                ! midpoint,trapezoidal..   !
+   TYPE(Reconstruction_TYP) :: Reconstruction  ! store recon. settings    !
+   REAL, DIMENSION(:,:,:,:), POINTER &         ! primitive and conservat. !
+                    :: prim,cons               !    states                !
+   REAL, DIMENSION(:,:,:,:), POINTER &         ! reconstructed states:
+                    :: rstates                 !    prim or cons          !
+   REAL, DIMENSION(:,:,:,:), POINTER &
+                    :: pfluxes,qfluxes         ! physical fluxes          !
+   REAL, DIMENSION(:,:,:), POINTER &
+                    :: temp1,temp2,temp3,temp4 ! temporary storage        !
+
+
+!-------------------------------------------------------------------------!
+! geometry of the mesh
+!-------------------------------------------------------------------------!
+TYPE Geometry_TYP
+   TYPE(Common_TYP) :: coordsys                ! cartesian, polar, etc.   !
+   REAL             :: scalefactor             ! geometric scale factor   !           
+
+
+!-------------------------------------------------------------------------!
+! mesh properties
+!-------------------------------------------------------------------------!
+TYPE Mesh_TYP
+   TYPE(Common_TYP) :: mtype                   ! mesh type                !
+   TYPE(Geometry_TYP) :: Geometry              ! geometrical properties   !
+   INTEGER          :: GNUM                    ! num. ghost cells         !
+   INTEGER          :: INUM,JNUM               ! resolution               !
+   INTEGER          :: IMIN,IMAX               ! min. & max. index in x-  !
+   INTEGER          :: JMIN,JMAX               ! and y-direction          !
+   INTEGER          :: IGMIN,IGMAX             ! same with ghost cells    !
+   INTEGER          :: JGMIN,JGMAX             !                          !
+   REAL             :: xmin, xmax              ! comput. domain in x-     !
+   REAL             :: ymin, ymax              ! and y-direction          !
+   REAL             :: dx,dy                   ! width of cells in x-&    !
+   REAL             :: invdx, invdy            ! y-direction; inverse     !
+   REAL, POINTER    :: center(:,:,:)           ! cell geometr. centers    !
+   REAL, POINTER    :: bcenter(:,:,:)          ! cell bary centers        !
+   REAL, POINTER    :: bccart(:,:,:)           ! cartesian bary centers   !
+   REAL, POINTER    :: fpos(:,:,:,:)           ! face centered positions  !
+   REAL, POINTER    :: cpos(:,:,:,:)           ! corner positions         !
+   REAL, POINTER    :: fhx(:,:,:)              ! face centered scale      !
+   REAL, POINTER    :: fhy(:,:,:)              !  factors                 !
+   REAL, POINTER    :: fhz(:,:,:)              !                          !
+   REAL, POINTER    :: chx(:,:,:)              ! corner scale factors     !
+   REAL, POINTER    :: chy(:,:,:)              !                          !
+   REAL, POINTER    :: chz(:,:,:)              !                          !
+   REAL, POINTER    :: bhx(:,:)                ! bary center scale        !
+   REAL, POINTER    :: bhy(:,:)                !  factors                 !
+   REAL, POINTER    :: bhz(:,:)                !                          !
+   REAL, POINTER    :: cyxy(:,:,:)             ! commutator coefficients  !
+   REAL, POINTER    :: cxyx(:,:,:)             ! for geometrical sources  !
+   REAL, POINTER    :: czxz(:,:,:)
+   REAL, POINTER    :: czyz(:,:,:)
+   REAL, POINTER    :: sqrtg(:,:)              ! sqrt(det(g_ij))          !
+   REAL, POINTER    :: weights(:,:,:,:)        ! interpolation weights    !
+   REAL, POINTER    :: dlx(:,:)                ! line elements            !
+   REAL, POINTER    :: dly(:,:)                !   at cell centers        !
+   REAL, POINTER    :: dAx(:,:,:)              ! surface elements         !
+   REAL, POINTER    :: dAy(:,:,:)              !   on cell faces          !
+   REAL, POINTER    :: dAxdy(:,:,:)            ! surface elements divided !
+   REAL, POINTER    :: dAydx(:,:,:)            !   by dx or dy            !
+   REAL, POINTER    :: volume(:,:)             ! cell volumes             !
+   REAL, POINTER    :: dxdV(:,:)               ! inverse volume elements  !
+   REAL, POINTER    :: dydV(:,:)               ! multiplied with dx or dy !
+#ifdef PARALLEL
+   INTEGER          :: MAXINUM,MAXJNUN         ! max. of local INUM,JNUM  !
+   INTEGER          :: comm_cart               ! cartesian communicator   !
+   INTEGER, DIMENSION(4)     :: neighbor       ! ranks of neighbor proc.  !
+   INTEGER, DIMENSION(NDIMS) :: dims           ! dimensions of cart comm  !
+   INTEGER, DIMENSION(NDIMS) :: mycoords       ! par. proc coordinates    !
+#endif
+
+
+!-------------------------------------------------------------------------!
+! physical (advection) problem under consideration
+!-------------------------------------------------------------------------!
+TYPE Physics_TYP
+   TYPE(Common_TYP)  :: advproblem             ! advection problem        !
+   TYPE(Constants_TYP) :: constants            ! physical constants       !
+   TYPE(Sources_TYP), POINTER :: sources       ! list of source terms     !
+   REAL              :: gamma                  ! ratio of spec. heats     !
+   REAL              :: mu                     ! mean molecular weight    !
+   REAL              :: rhomin                 ! density minimum          !
+   REAL              :: pmin                   ! pressure minimum         !
+   REAL              :: dpmax                  ! for time step control    !
+   INTEGER           :: VNUM                   ! number of variables      !
+   INTEGER           :: DENSITY                ! array indices for        !
+   INTEGER           :: PRESSURE, ENERGY       !    primitive and         !
+   INTEGER           :: XVELOCITY, XMOMENTUM   !    conservative          !
+   INTEGER           :: YVELOCITY, YMOMENTUM   !    variables             !
+   INTEGER           :: ZVELOCITY, ZMOMENTUM   !                          !
+   REAL, DIMENSION(:,:,:), POINTER &
+                     :: csound                 ! sound speed              !
+   REAL, DIMENSION(:,:), POINTER &
+                     :: amin, amax, bmin, bmax ! wave speeds              !
+   REAL, DIMENSION(:,:,:), POINTER &
+                     :: tmin, tmax             ! temporary storage        !
+   REAL, DIMENSION(:,:,:,:), POINTER :: fcent  ! centrifugal force        !
+
+
+!-------------------------------------------------------------------------!
+! various source terms, e.g. gravitation, viscosity
+!-------------------------------------------------------------------------!
+TYPE Sources_TYP
+   TYPE(Common_TYP)  :: sourcetype              ! type of source term     !
+   TYPE(Sources_TYP), POINTER :: next => null() ! next source in list     !
+   TYPE(Common_TYP)  :: potential               ! newton or wiita         !
+   TYPE(Common_TYP)  :: viscosity               ! molecular,alpha,beta    !
+     REAL            :: mass                    ! mass of point source    !
+     REAL            :: mdot                    ! disk accretion rate     !
+     REAL            :: dynconst,bulkconst      ! viscosity const.        !
+     REAL            :: cvis                    ! viscous Courant no.     !
+     REAL, DIMENSION(:,:,:), POINTER &          ! acceleration due to     !
+                     :: accel                   !   source terms          !
+     REAL, DIMENSION(:,:), POINTER &
+                     :: dynvis, bulkvis         ! dynamic & bulk          !
+     REAL, DIMENSION(:,:), POINTER &
+                     :: omega                   ! angular velocity        !
+     REAL, DIMENSION(:,:), POINTER &            ! components of the       !       
+              :: btxx,btyy,btzz,btxy,btxz,btyz  !   stress tensor         ! 
+     REAL, DIMENSION(:,:,:), POINTER &
+              :: ftxx,ftyy,ftzz,ftxy,ftxz,ftyz
+
+
+!-------------------------------------------------------------------------!
+! method for time marching
+!-------------------------------------------------------------------------!
+TYPE Timedisc_TYP
+   TYPE(Common_TYP) :: odesolver                ! Runge-Kutta, etc.       !
+   TYPE(Boundary_TYP), DIMENSION(4) :: Boundary ! one for each boundary   !
+   REAL             :: order                    ! time order              !
+   REAL             :: cfl                      ! Courant number          !
+   REAL             :: dt                       ! actual time step        !
+   REAL             :: dtmin                    ! min dt of act. calc     !
+   REAL             :: time                     ! actual time             !
+   REAL             :: stoptime                 ! end of simulation       !
+   REAL             :: dtlimit                  ! lower limit for dt      !
+   INTEGER          :: maxiter                  ! maximal iterations      !
+   INTEGER          :: n_adj                    ! num. of adjustments     !
+   REAL, DIMENSION(:,:,:), POINTER &            ! primitive & conservat.  !
+                    :: pvar, cvar               !   cell center values    !
+   REAL, DIMENSION(:,:,:), POINTER &            ! same, but from the time !
+                    :: pold, cold               !   step before           !
+   REAL, DIMENSION(:,:,:), POINTER &            ! inertial and physical   !
+                    :: src, geo_src             !   source terms          !
+   REAL, DIMENSION(:,:,:), POINTER &
+                    :: xflux, yflux             ! numerical fluxes        !
+   REAL, DIMENSION(:,:,:), POINTER &
+                    :: amax                     ! maxima of wave speeds   !
+   REAL, POINTER    :: eta(:,:)                 ! parameter for RK-scheme !
+
+
+!-------------------------------------------------------------------------!
+! properties of I/O data files
+!-------------------------------------------------------------------------!
+TYPE FileIO_TYP
+   TYPE(Common_TYP) :: format                   ! i/o file format         !
+   TYPE(Header_TYP) :: header                   ! file header             !
+   CHARACTER(LEN=256)     :: linebuf            ! buffer for character i/o!
+   CHARACTER(LEN=FNAMLEN) :: filename           ! file name w/o extension !
+   CHARACTER(LEN=FEXTLEN) :: extension          ! file name extension     !
+   CHARACTER(LEN=64):: fmtstr                   ! format string           !
+   CHARACTER(LEN=64):: linefmt                  ! output line format str. !
+   INTEGER          :: cols                     ! no. of output columns   !
+   INTEGER          :: linelen                  ! length of a line        !
+   INTEGER          :: error                    ! i/o error code          !
+   INTEGER          :: step                     ! counter for output steps!
+   INTEGER          :: count                    ! number of output steps  !
+   INTEGER          :: cycles                   ! number of output files  !
+   INTEGER          :: dtwall                   ! wall clock time diff.   !
+   REAL             :: stoptime                 ! end of data output      !
+   REAL             :: time                     ! output time             !
+   REAL, DIMENSION(:,:,:), POINTER &
+                    :: binout                   ! binary data output buf. !
+#ifdef PARALLEL
+   CHARACTER, DIMENSION(:,:), POINTER &
+                    :: outbuf                   ! output buffer           !
+   INTEGER          :: bufsize                  ! size of output buffer   !
+   INTEGER          :: handle                   ! MPI file handle         !
+   INTEGER          :: blocknum                 ! no. of blocks in data f.!
+   INTEGER          :: basictype                ! data type for points    !
+   INTEGER          :: filetype                 ! data type for i/o       !
+   INTEGER(KIND=MPI_ADDRESS_KIND) &
+                    :: realext,intext           ! data type extent        !
+   INTEGER(KIND=MPI_OFFSET_KIND)&
+                    :: offset                   ! skip header bytes       !
+   INTEGER, DIMENSION(:), POINTER &
+                    :: disp                     ! array of displacements  !
+   INTEGER, DIMENSION(MPI_STATUS_SIZE) &
+                    :: status                   ! MPI i/o status record   !
+#else
+   INTEGER          :: unit                     ! i/o unit                !
+#endif

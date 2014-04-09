@@ -3,7 +3,8 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: fluxes_generic.f90                                                #
 !#                                                                           #
-!# Copyright (C) 2007 Tobias Illenseer <tillense@ita.uni-heidelberg.de>      #
+!# Copyright (C) 2007-2008                                                   #
+!# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
 !# it under the terms of the GNU General Public License as published by      #
@@ -26,11 +27,11 @@
 ! generic module for numerical flux functions
 !----------------------------------------------------------------------------!
 MODULE fluxes_generic
-  USE reconstruction_generic
-  USE fluxes_midpoint, InitFluxes_all => InitFluxes
-  USE fluxes_trapezoidal
   USE mesh_common, ONLY : Mesh_TYP
   USE physics_common, ONLY : Physics_TYP
+  USE fluxes_midpoint, InitFluxes_all => InitFluxes
+  USE fluxes_trapezoidal
+  USE reconstruction_generic
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   PRIVATE
@@ -47,6 +48,10 @@ MODULE fluxes_generic
        MallocFluxes, &
        GetType, &
        GetName, &
+       GetRank, &
+       Info, &
+       Warning, &
+       Error, &
        PrimRecon, &
        CalculateFluxes, &
        CloseFluxes
@@ -71,12 +76,11 @@ CONTAINS
     CASE(TRAPEZOIDAL)
        CALL InitFluxes_trapezoidal(this,scheme)
     CASE DEFAULT
-       PRINT *, "ERROR in InitFluxes: unknown flux type"
-       STOP
+       CALL Error(this, "InitFluxes", "Unknown flux type.")
     END SELECT
 
     ! print some information
-    PRINT "(A,A)", " FLUXES---> quadrature rule    ", TRIM(GetName(this))
+    CALL Info(this, " FLUXES---> quadrature rule    " // TRIM(GetName(this)))
   END SUBROUTINE InitFluxes
   
 
@@ -90,7 +94,7 @@ CONTAINS
     INTEGER           :: err
     !------------------------------------------------------------------------!
     INTENT(IN)        :: Mesh,Physics
-    INTENT(OUT)       :: this
+    INTENT(INOUT)     :: this
     !------------------------------------------------------------------------!
     ! allocate memory for reconstruction object
     CALL MallocReconstruction(this%Reconstruction,Mesh,Physics)
@@ -102,8 +106,7 @@ CONTAINS
          this%qfluxes(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,4,Physics%vnum), &
          STAT = err)
     IF (err.NE.0) THEN
-       PRINT *, "ERROR in MallocFluxes: Unable to allocate memory!"
-       STOP
+       CALL Error(this, "MallocFluxes", "Unable to allocate memory.")
     END IF
 
     ! set reconstruction pointer
@@ -143,7 +146,7 @@ CONTAINS
     !------------------------------------------------------------------------!
     TYPE(Fluxes_TYP)  :: this
     !------------------------------------------------------------------------!
-    INTENT(IN)        :: this
+    INTENT(INOUT)     :: this
     !------------------------------------------------------------------------!
     DEALLOCATE(this%cons,this%prim,this%pfluxes,this%qfluxes)
     CALL CloseReconstruction(this%Reconstruction)

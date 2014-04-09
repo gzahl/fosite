@@ -3,7 +3,8 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: init_riemann3d.f90                                                #
 !#                                                                           #
-!# Copyright (C) 2006 Tobias Illenseer <tillense@ita.uni-heidelberg.de>      #
+!# Copyright (C) 2006-2008                                                   #
+!# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
 !# it under the terms of the GNU General Public License as published by      #
@@ -31,8 +32,7 @@ MODULE Init
   USE mesh_generic
   USE reconstruction_generic
   USE boundary_generic
-  USE output_generic
-  USE logio_generic
+  USE fileio_generic
   USE timedisc_generic
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
@@ -47,15 +47,15 @@ MODULE Init
 
 CONTAINS
 
-  SUBROUTINE InitProgram(Mesh,Physics,Fluxes,Timedisc,Output,Logio)
+  SUBROUTINE InitProgram(Mesh,Physics,Fluxes,Timedisc,Datafile,Logfile)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Mesh_TYP)    :: Mesh
     TYPE(Physics_TYP) :: Physics
     TYPE(Fluxes_TYP)  :: Fluxes
     TYPE(Timedisc_TYP):: Timedisc
-    TYPE(Output_TYP)  :: Output
-    TYPE(Logio_TYP)   :: Logio
+    TYPE(FileIO_TYP)  :: Datafile
+    TYPE(FileIO_TYP)  :: Logfile
     !------------------------------------------------------------------------!
     ! Local variable declaration
     INTEGER           :: onum
@@ -63,7 +63,7 @@ CONTAINS
     REAL              :: test_stoptime
     CHARACTER(LEN=256):: ofname, lfname
     !------------------------------------------------------------------------!
-    INTENT(OUT)       :: Mesh,Physics,Fluxes,Timedisc,Output,Logio
+    INTENT(OUT)       :: Mesh,Physics,Fluxes,Timedisc,Datafile,Logfile
     !------------------------------------------------------------------------!
 
 
@@ -79,22 +79,6 @@ CONTAINS
 !    geometry = SPHERICAL
 !    geometry = OBLATE_SPHEROIDAL
 
-    SELECT CASE(testnum)
-    CASE(1) ! original Test of Langseth and LeVeque
-       test_stoptime = 0.7
-       onum=7                              ! number of output data sets
-       ofname="leveque.dat"
-       lfname="leveque.log"
-    CASE(2) ! angular momentum test
-       test_stoptime = 1.5
-       onum=15                             ! number of output data sets
-       ofname="rotspher.dat"
-       lfname="rotspher.log"
-     CASE DEFAULT
-       PRINT *, "ERROR in InitProgram: testnum should be one of 1, 2"
-       STOP
-    END SELECT
-
     ! physics settings
     CALL InitPhysics(Physics, &
          problem = EULER3D_ROTSYM, &
@@ -109,9 +93,9 @@ CONTAINS
     ! reconstruction method
     CALL InitReconstruction(Fluxes%reconstruction, &
          order     = LINEAR, &
-         variables = PRIMITIVE, &   ! vars. to use for reconstruction!
+         variables = CONSERVATIVE, &! vars. to use for reconstruction!
          limiter   = MONOCENT, &    ! one of: minmod, monocent,...   !
-         theta     = 1.3)           ! optional parameter for limiter !
+         theta     = 1.2)           ! optional parameter for limiter !
 
     SELECT CASE(geometry)
     CASE(CYLINDRICAL)
@@ -125,32 +109,49 @@ CONTAINS
                 ymin = 0.0, &
                 ymax = 1.5)
        ! boundary conditions
-       CALL InitBoundary(Mesh%boundary,Mesh,Physics,REFLECTING,WEST)
-       CALL InitBoundary(Mesh%boundary,Mesh,Physics,REFLECTING,EAST)
-       CALL InitBoundary(Mesh%boundary,Mesh,Physics,AXIS,SOUTH)
-       CALL InitBoundary(Mesh%boundary,Mesh,Physics,REFLECTING,NORTH)
+       CALL InitBoundary(Timedisc%boundary,Mesh,Physics, &
+         western  = REFLECTING, &
+         eastern  = REFLECTING, &
+         southern = AXIS, &
+         northern = REFLECTING)
     CASE(SPHERICAL)
        ! mesh settings
        CALL InitMesh(Mesh,Fluxes,SPHERICAL,50,60,0.0,1.5,0.0,0.5*PI)
        ! boundary conditions
-       CALL InitBoundary(Mesh%boundary,Mesh,Physics,REFLECTING,WEST)
-       CALL InitBoundary(Mesh%boundary,Mesh,Physics,REFLECTING,EAST)
-       CALL InitBoundary(Mesh%boundary,Mesh,Physics,AXIS,SOUTH)
-       CALL InitBoundary(Mesh%boundary,Mesh,Physics,AXIS,NORTH)
+       CALL InitBoundary(Timedisc%boundary,Mesh,Physics, &
+         western  = REFLECTING, &
+         eastern  = REFLECTING, &
+         southern = AXIS, &
+         northern = AXIS)
     CASE(OBLATE_SPHEROIDAL)
        ! mesh settings
        CALL InitMesh(Mesh,Fluxes,OBLATE_SPHEROIDAL,50,60, &
             0.0,1.4,-0.5*PI,0.5*PI, &
             0.75)                   ! optional geometry parameter    !
        ! boundary conditions
-       CALL InitBoundary(Mesh%boundary,Mesh,Physics,REFLECTING,WEST)
-       CALL InitBoundary(Mesh%boundary,Mesh,Physics,REFLECTING,EAST)
-       CALL InitBoundary(Mesh%boundary,Mesh,Physics,AXIS,SOUTH)
-       CALL InitBoundary(Mesh%boundary,Mesh,Physics,AXIS,NORTH)
+       CALL InitBoundary(Timedisc%boundary,Mesh,Physics, &
+         western  = REFLECTING, &
+         eastern  = REFLECTING, &
+         southern = AXIS, &
+         northern = AXIS)
     CASE DEFAULT
-       PRINT *, "ERROR in InitProgram: geometry should be either ", ACHAR(13), &
-            "cylindrical, spherical or oblate spheroidal"
-       STOP
+       CALL Error(Physics,"InitProgram", &
+            "geometry should one of cylindrical, spherical or oblate spheroidal")
+    END SELECT
+
+    SELECT CASE(testnum)
+    CASE(1) ! original Test of Langseth and LeVeque
+       test_stoptime = 0.7
+       onum=7                              ! number of output data sets
+       ofname="leveque"
+       lfname="levequelog"
+    CASE(2) ! angular momentum test
+       test_stoptime = 1.5
+       onum=15                             ! number of output data sets
+       ofname="rotspher"
+       lfname="rotspherlog"
+     CASE DEFAULT
+       CALL Error(Physics,"InitProgram", " testnum should be one of 1, 2")
     END SELECT
 
     ! time discretization settings
@@ -163,32 +164,36 @@ CONTAINS
          maxiter  = 100000)
 
     ! set initial condition
-    CALL InitData(Mesh,Physics,Timedisc%pvar,Timedisc%cvar)
+    CALL InitData(Mesh,Physics,Timedisc)
 
     ! initialize log input/output
-    CALL InitLogio(Logio,Mesh,Physics,Timedisc, &
-         logformat = NOLOG, &
-         filename  = lfname, &
-         logdt     = 300)
+    CALL InitFileIO(Logfile,Mesh,Physics,Timedisc, &
+         fileformat = BINARY, &
+#ifdef PARALLEL
+         filename   = "/tmp/" // lfname, &
+#else
+         filename   = lfname, &
+#endif
+         filecycles = 1)
 
-    ! set parameters for data output
-    CALL InitOutput(Output,Mesh,Physics,Timedisc,&
-         filetype  = GNUPLOT, &
-         filename  = ofname, &
-         mode      = OVERWRITE, &
-         starttime = 0.0, &
-         stoptime  = Timedisc%stoptime, &
-         count     = onum)
+    ! initialize data input/output
+    CALL InitFileIO(Datafile,Mesh,Physics,Timedisc, &
+         fileformat = BINARY, &
+#ifdef PARALLEL
+         filename   = "/tmp/" // ofname, &
+#else
+         filename   = ofname, &
+#endif
+         count      = onum)
 
   END SUBROUTINE InitProgram
 
-  SUBROUTINE InitData(Mesh,Physics,pvar,cvar)
+  SUBROUTINE InitData(Mesh,Physics,Timedisc)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Physics_TYP) :: Physics
     TYPE(Mesh_TYP)    :: Mesh
-    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum)&
-                      :: pvar,cvar
+    TYPE(Timedisc_TYP):: Timedisc
     !------------------------------------------------------------------------!
     ! Local variable declaration
     INTEGER, PARAMETER :: icmax=1, jcmax=1
@@ -202,7 +207,7 @@ CONTAINS
     CHARACTER(LEN=80) :: teststr
     !------------------------------------------------------------------------!
     INTENT(IN)        :: Mesh,Physics
-    INTENT(OUT)       :: pvar,cvar
+    INTENT(INOUT)     :: Timedisc
     !------------------------------------------------------------------------!
 
     SELECT CASE(testnum)
@@ -235,8 +240,7 @@ CONTAINS
        omega_in  = 5.
        omega_out = 5.
     CASE DEFAULT
-       PRINT *, "ERROR in InitProgram: testnum should be one of 1, 2"
-       STOP
+       CALL Error(Mesh,"InitData","testnum should be one of 1, 2")
     END SELECT
 
     ! set density and pressure for homogenious sphere
@@ -264,26 +268,27 @@ CONTAINS
           END DO
           ratio = (1.0 * nc) / ncmax
           ! density
-          pvar(i,j,1) = ratio * rho_in + (1.-ratio) * rho_out
+          Timedisc%pvar(i,j,Physics%DENSITY) = ratio * rho_in + (1.-ratio) * rho_out
           ! angular velocity
-          pvar(i,j,4) = (ratio * omega_in + (1.-ratio) * omega_out) * Mesh%bhz(i,j)
+          Timedisc%pvar(i,j,Physics%ZVELOCITY) = (ratio * omega_in + (1.-ratio) &
+               * omega_out) * Mesh%bhz(i,j)
           ! pressure
-          pvar(i,j,5) = ratio * P_in + (1.-ratio) * P_out
+          Timedisc%pvar(i,j,Physics%PRESSURE) = ratio * P_in + (1.-ratio) * P_out
        END DO
     END DO
 
     ! velocities
-    pvar(:,:,2:3) = 0.
+    Timedisc%pvar(:,:,Physics%XVELOCITY) = 0.
+    Timedisc%pvar(:,:,Physics%YVELOCITY) = 0.
 
     ! for specific angular momentum transport
     IF (GetType(Physics).EQ.EULER3D_ROTAMT) THEN
        ! specific angular momentum
-       pvar(:,:,4) = pvar(:,:,4)*Mesh%bhz(:,:)
+       Timedisc%pvar(:,:,4) = Timedisc%pvar(:,:,4) * Mesh%bhz(:,:)
     END IF
 
-    CALL Convert2Conservative(Physics,Mesh,pvar,cvar)
-
-    PRINT "(A,A)", " DATA-----> initial condition: ", TRIM(teststr)
+    CALL Convert2Conservative(Physics,Mesh,Timedisc%pvar,Timedisc%cvar)
+    CALL Info(Mesh, " DATA-----> initial condition: " // TRIM(teststr))
   END SUBROUTINE InitData
 
 END MODULE Init

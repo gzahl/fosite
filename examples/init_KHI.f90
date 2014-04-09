@@ -3,7 +3,8 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: init_KHI.f90                                                      #
 !#                                                                           #
-!# Copyright (C) 2006 Tobias Illenseer <tillense@ita.uni-heidelberg.de>      #
+!# Copyright (C) 2006-2008                                                   #
+!# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
 !# it under the terms of the GNU General Public License as published by      #
@@ -31,8 +32,7 @@ MODULE Init
   USE mesh_generic
   USE reconstruction_generic
   USE boundary_generic
-  USE output_generic
-  USE logio_generic
+  USE fileio_generic
   USE timedisc_generic
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
@@ -46,19 +46,19 @@ MODULE Init
 
 CONTAINS
 
-  SUBROUTINE InitProgram(Mesh,Physics,Fluxes,Timedisc,Output,Logio)
+  SUBROUTINE InitProgram(Mesh,Physics,Fluxes,Timedisc,Datafile,Logfile)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Mesh_TYP)    :: Mesh
     TYPE(Physics_TYP) :: Physics
     TYPE(Fluxes_TYP)  :: Fluxes
     TYPE(Timedisc_TYP):: Timedisc
-    TYPE(Output_TYP)  :: Output
-    TYPE(Logio_TYP)   :: Logio
+    TYPE(FILEIO_TYP)  :: Datafile
+    TYPE(FILEIO_TYP)  :: Logfile
     !------------------------------------------------------------------------!
     ! Local variable declaration
     !------------------------------------------------------------------------!
-    INTENT(OUT)       :: Mesh,Physics,Fluxes,Timedisc,Output,Logio
+    INTENT(OUT)       :: Mesh,Physics,Fluxes,Timedisc,Datafile,Logfile
     !------------------------------------------------------------------------!
 
     ! physics settings
@@ -89,10 +89,11 @@ CONTAINS
              ymax = 0.5)
 
     ! boundary conditions
-    CALL InitBoundary(Mesh%boundary,Mesh,Physics,PERIODIC,WEST)
-    CALL InitBoundary(Mesh%boundary,Mesh,Physics,PERIODIC,EAST)
-    CALL InitBoundary(Mesh%boundary,Mesh,Physics,PERIODIC,SOUTH)
-    CALL InitBoundary(Mesh%boundary,Mesh,Physics,PERIODIC,NORTH)
+    CALL InitBoundary(Timedisc%boundary,Mesh,Physics, &
+         western  = PERIODIC, &
+         eastern  = PERIODIC, &
+         southern = PERIODIC, &
+         northern = PERIODIC)
 
     ! time discretization settings
     CALL InitTimedisc(Timedisc,Mesh,Physics,&
@@ -104,42 +105,48 @@ CONTAINS
          maxiter  = 100000)
 
     ! set initial condition
-    CALL InitData(Mesh,Physics,Timedisc%pvar,Timedisc%cvar)
+    CALL InitData(Mesh,Physics,Timedisc)
 
     ! initialize log input/output
-    CALL InitLogio(Logio,Mesh,Physics,Timedisc, &
-         logformat = NOLOG, &
-         filename  = "KHI.log", &
-         logdt     = 300)
+    CALL InitFileIO(Logfile,Mesh,Physics,Timedisc, &
+         fileformat = BINARY, &
+#ifdef PARALLEL
+         filename   = "/tmp/KHIlog", &
+#else
+         filename   = "KHIog", &
+#endif
+         dtwall     = 1800, &
+         filecycles = 1)
 
-    ! set parameters for data output
-    CALL InitOutput(Output,Mesh,Physics,Timedisc,&
-         filetype  = GNUPLOT, &
-         filename  = "KHI.dat", &
-         mode      = OVERWRITE, &
-         starttime = 0.0, &
-         stoptime  = Timedisc%stoptime, &
-         count     = 50)
+    ! initialize data input/output
+    CALL InitFileIO(Datafile,Mesh,Physics,Timedisc, &
+         fileformat = BINARY, &
+#ifdef PARALLEL
+         filename   = "/tmp/KHI", &
+#else
+         filename   = "KHI", &
+#endif
+         filecycles = 101, &
+         count      = 100)
 
   END SUBROUTINE InitProgram
 
 
-  SUBROUTINE InitData(Mesh,Physics,pvar,cvar)
+  SUBROUTINE InitData(Mesh,Physics,Timedisc)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Physics_TYP) :: Physics
     TYPE(Mesh_TYP)    :: Mesh
-    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum)&
-                      :: pvar,cvar
+    TYPE(Timedisc_TYP):: Timedisc
     !------------------------------------------------------------------------!
     ! Local variable declaration
     INTEGER           :: i,j
-    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,2):: dv
+    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,2) :: dv
     REAL              :: rho0, rho1, v0, v1, P0, P1
     REAL              :: ylen
     !------------------------------------------------------------------------!
-    INTENT(IN)        :: Mesh, Physics
-    INTENT(OUT)       :: pvar, cvar
+    INTENT(IN)        :: Mesh,Physics
+    INTENT(INOUT)     :: Timedisc
     !------------------------------------------------------------------------!
     
     ! outer regions
@@ -153,29 +160,33 @@ CONTAINS
     P1   = P0
 
     ! y-velocity vanishes everywhere
-    pvar(:,:,3) = 0.
+    Timedisc%pvar(:,:,Physics%YVELOCITY) = 0.
 
+    ! extent along the the y-direction
     ylen = ABS(Mesh%ymax-Mesh%ymin)
 
     WHERE ((Mesh%bcenter(:,:,2).LT.(Mesh%ymin+0.25*ylen)).OR. &
          (Mesh%bcenter(:,:,2).GT.(Mesh%ymin+0.75*ylen)))
-       pvar(:,:,1) = rho0
-       pvar(:,:,2) = v0
-       pvar(:,:,4) = P0
+       Timedisc%pvar(:,:,Physics%DENSITY) = rho0
+       Timedisc%pvar(:,:,Physics%XVELOCITY) = v0
+       Timedisc%pvar(:,:,Physics%PRESSURE) = P0
     ELSEWHERE
-       pvar(:,:,1) = rho1
-       pvar(:,:,2) = v1
-       pvar(:,:,4) = P1
+       Timedisc%pvar(:,:,Physics%DENSITY) = rho1
+       Timedisc%pvar(:,:,Physics%XVELOCITY) = v1
+       Timedisc%pvar(:,:,Physics%PRESSURE) = P1
     END WHERE
        
     ! add velocity perturbations
     CALL RANDOM_SEED
     CALL RANDOM_NUMBER(dv)
-    pvar(:,:,2:3) = pvar(:,:,2:3) + (dv(:,:,:)-0.5)*0.02
+    Timedisc%pvar(:,:,Physics%XVELOCITY) = Timedisc%pvar(:,:,Physics%XVELOCITY) &
+         + (dv(:,:,1)-0.5)*0.02
+    Timedisc%pvar(:,:,Physics%YVELOCITY) = Timedisc%pvar(:,:,Physics%YVELOCITY) &
+         + (dv(:,:,2)-0.5)*0.02
 
-    CALL Convert2Conservative(Physics,Mesh,pvar,cvar)
-    PRINT "(A,A)", " DATA-----> initial condition: ", &
-         "Kelvin-Helmholtz instability"
+    CALL Convert2Conservative(Physics,Mesh,Timedisc%pvar,Timedisc%cvar)
+    CALL Info(Mesh, " DATA-----> initial condition: " // &
+         "Kelvin-Helmholtz instability")
 
   END SUBROUTINE InitData
 

@@ -3,7 +3,8 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: boundary_nogradients.f90                                          #
 !#                                                                           #
-!# Copyright (C) 2007 Tobias Illenseer <tillense@ita.uni-heidelberg.de>      #
+!# Copyright (C) 2006-2008                                                   #
+!# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
 !# it under the terms of the GNU General Public License as published by      #
@@ -38,27 +39,34 @@ MODULE boundary_nogradients
        ! types
        Boundary_TYP, &
        ! constants
+#ifdef PARALLEL
+       DEFAULT_MPI_REAL, &
+#endif
        WEST, EAST, SOUTH, NORTH, &
        ! methods
+       InitBoundary, &
        InitBoundary_nogradients, &
+       CenterBoundary_nogradients, &
        GetType, &
        GetName, &
        GetDirection, &
        GetDirectionName, &
-       CenterBoundary_nogradients, &
-       FaceBoundary_nogradients
+       GetRank, &
+       GetNumProcs, &
+       Info, &
+       Warning, &
+       Error
   !--------------------------------------------------------------------------!
 
 CONTAINS
 
-  SUBROUTINE InitBoundary_nogradients(this,Physics,btype,dir)
+  SUBROUTINE InitBoundary_nogradients(this,btype,dir)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Boundary_TYP) :: this
-    TYPE(Physics_TYP)  :: Physics
     INTEGER            :: btype,dir
     !------------------------------------------------------------------------!
-    INTENT(IN)    :: Physics,btype,dir
+    INTENT(IN)    :: btype,dir
     INTENT(INOUT) :: this
     !------------------------------------------------------------------------!
     CALL InitBoundary(this,btype,boundcond_name,dir)
@@ -91,35 +99,5 @@ CONTAINS
        rvar(:,Mesh%JMAX+2,:) = rvar(:,Mesh%JMAX,:)
     END SELECT
   END SUBROUTINE CenterBoundary_nogradients
-
-
-  PURE SUBROUTINE FaceBoundary_nogradients(this,Mesh,Physics,we,ea,so,no,rstates)
-    IMPLICIT NONE
-    !------------------------------------------------------------------------!
-    TYPE(Boundary_TYP) :: this
-    TYPE(Mesh_TYP)     :: Mesh
-    TYPE(Physics_TYP)  :: Physics
-    INTEGER            :: we,ea,so,no
-    REAL :: rstates(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,4,Physics%vnum)
-    !------------------------------------------------------------------------!
-    INTENT(IN)    :: this,Mesh,Physics,we,ea,so,no
-    INTENT(INOUT) :: rstates
-    !------------------------------------------------------------------------!
-    !************************************************************************!
-    ! Be careful! There is a problem with trapezoidal rule, because          !
-    ! SetFaceBoundary is called twice with different pairs of boundary values!
-    ! (1st call:sw/se,sw/nw; 2nd call:nw/ne,se/ne).                          !
-    !************************************************************************!
-    SELECT CASE(GetDirection(this))
-    CASE(WEST)
-       rstates(Mesh%IMIN-1,:,ea,:) = rstates(Mesh%IMIN,:,ea,:)
-    CASE(EAST)
-       rstates(Mesh%IMAX+1,:,we,:) = rstates(Mesh%IMAX,:,we,:)
-    CASE(SOUTH)
-       rstates(:,Mesh%JMIN-1,no,:) = rstates(:,Mesh%JMIN,no,:) 
-    CASE(NORTH)
-       rstates(:,Mesh%JMAX+1,so,:) = rstates(:,Mesh%JMAX,so,:)
-    END SELECT
-  END SUBROUTINE FaceBoundary_nogradients
 
 END MODULE boundary_nogradients

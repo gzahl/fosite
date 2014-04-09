@@ -3,7 +3,8 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: boundary_fixed.f90                                                #
 !#                                                                           #
-!# Copyright (C) 2007 Tobias Illenseer <tillense@ita.uni-heidelberg.de>      #
+!# Copyright (C) 2006-2008                                                   #
+!# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
 !# it under the terms of the GNU General Public License as published by      #
@@ -27,46 +28,42 @@
 ! fixed boundary data
 !----------------------------------------------------------------------------!
 MODULE boundary_fixed
-  USE boundary_common
   USE mesh_common, ONLY : Mesh_TYP
   USE physics_common, ONLY : Physics_TYP
+  USE boundary_nogradients
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   PRIVATE
   CHARACTER(LEN=32), PARAMETER  :: boundcond_name = "fixed in/outflow"  
   !--------------------------------------------------------------------------!
   PUBLIC :: &
-       ! types
-       Boundary_TYP, &
-       ! constants
-       WEST, EAST, SOUTH, NORTH, &
        ! methods
        InitBoundary_fixed, &
-       GetType, &
-       GetName, &
-       GetDirection, &
-       GetDirectionName, &
        CenterBoundary_fixed, &
-       FaceBoundary_fixed, &
        CloseBoundary_fixed
   !--------------------------------------------------------------------------!
 
 CONTAINS
 
-  SUBROUTINE InitBoundary_fixed(this,Mesh,Physics,btype,dir)
+  SUBROUTINE InitBoundary_fixed(this,Mesh,Physics,btype,dir,bcname)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Boundary_TYP) :: this
     TYPE(Mesh_TYP)     :: Mesh
     TYPE(Physics_TYP)  :: Physics
     INTEGER            :: btype,dir
+    CHARACTER(LEN=*), OPTIONAL :: bcname
     !------------------------------------------------------------------------!
     INTEGER            :: err
     !------------------------------------------------------------------------!
-    INTENT(IN)    :: Mesh,Physics,btype,dir
+    INTENT(IN)    :: Mesh,Physics,btype,dir,bcname
     INTENT(INOUT) :: this
     !------------------------------------------------------------------------!
-    CALL InitBoundary(this,btype,boundcond_name,dir)
+    IF (PRESENT(bcname)) THEN
+       CALL InitBoundary(this,btype,bcname,dir)
+    ELSE
+       CALL InitBoundary(this,btype,boundcond_name,dir)
+    END IF
     ! allocate memory for boundary data and mask
     SELECT CASE(GetDirection(this))
     CASE(WEST,EAST)
@@ -79,8 +76,7 @@ CONTAINS
             STAT=err)
     END SELECT
     IF (err.NE.0) THEN
-       PRINT *, "ERROR in InitBoundary_fixed: Unable to allocate memory"
-       STOP
+       CALL Error(this,"InitBoundary_fixed", "Unable to allocate memory.")
     END IF
     ! fixed(:) defaults to NO_GRADIENTS everywhere, so that fixed boundaries
     ! work even if the boundary data remains undefined
@@ -103,111 +99,55 @@ CONTAINS
     !------------------------------------------------------------------------!
     SELECT CASE(GetDirection(this))
     CASE(WEST)
-       FORALL (i=1:2,j=Mesh%JGMIN:Mesh%JGMAX)
-          WHERE(this%fixed)
-             ! set fixed boundary data
-             rvar(Mesh%IMIN-i,j,:) = this%data(i,j,:)
-          ELSEWHERE
-             ! first order extrapolation
-             rvar(Mesh%IMIN-i,j,:) = 2.0*rvar(Mesh%IMIN-i+1,j,:) - rvar(Mesh%IMIN-i+2,j,:)
-          END WHERE
-       END FORALL
+       DO j=Mesh%JGMIN,Mesh%JGMAX
+          DO i=1,Mesh%GNUM
+             WHERE(this%fixed)
+                ! set fixed boundary data
+                rvar(Mesh%IMIN-i,j,:) = this%data(i,j,:)
+             ELSEWHERE
+                ! first order extrapolation
+                rvar(Mesh%IMIN-i,j,:) = 2.0*rvar(Mesh%IMIN-i+1,j,:) - rvar(Mesh%IMIN-i+2,j,:)
+             END WHERE
+          END DO
+       END DO
     CASE(EAST)
-       FORALL (i=1:2,j=Mesh%JGMIN:Mesh%JGMAX)
-          WHERE(this%fixed)
-             ! set fixed boundary data
-             rvar(Mesh%IMAX+i,j,:) = this%data(i,j,:)
-          ELSEWHERE
-             ! first order extrapolation
-             rvar(Mesh%IMAX+i,j,:) = 2.0*rvar(Mesh%IMAX+i-1,j,:) - rvar(Mesh%IMAX+i-2,j,:)
-          END WHERE
-       END FORALL
+       DO j=Mesh%JGMIN,Mesh%JGMAX
+          DO i=1,Mesh%GNUM
+             WHERE(this%fixed)
+                ! set fixed boundary data
+                rvar(Mesh%IMAX+i,j,:) = this%data(i,j,:)
+             ELSEWHERE
+                ! first order extrapolation
+                rvar(Mesh%IMAX+i,j,:) = 2.0*rvar(Mesh%IMAX+i-1,j,:) - rvar(Mesh%IMAX+i-2,j,:)
+             END WHERE
+          END DO
+       END DO
     CASE(SOUTH)
-       FORALL (i=Mesh%IGMIN:Mesh%IGMAX,j=1:2)
-          WHERE(this%fixed)
-             ! set fixed boundary data
-             rvar(i,Mesh%JMIN-j,:) = this%data(i,j,:)
-          ELSEWHERE
-             ! first order extrapolation
-             rvar(i,Mesh%JMIN-j,:) = 2.0*rvar(i,Mesh%JMIN-j+1,:) - rvar(i,Mesh%JMIN-j+2,:)
-          END WHERE
-       END FORALL
+       DO j=1,Mesh%GNUM
+          DO i=Mesh%IGMIN,Mesh%IGMAX
+             WHERE(this%fixed)
+                ! set fixed boundary data
+                rvar(i,Mesh%JMIN-j,:) = this%data(i,j,:)
+             ELSEWHERE
+                ! first order extrapolation
+                rvar(i,Mesh%JMIN-j,:) = 2.0*rvar(i,Mesh%JMIN-j+1,:) - rvar(i,Mesh%JMIN-j+2,:)
+             END WHERE
+          END DO
+       ENd DO
     CASE(NORTH)
-       FORALL (i=Mesh%IGMIN:Mesh%IGMAX,j=1:2)
-          WHERE(this%fixed)
-             ! set fixed boundary data
-             rvar(i,Mesh%JMAX+j,:) = this%data(i,j,:)
-          ELSEWHERE
-             ! first order extrapolation
-             rvar(i,Mesh%JMAX+j,:) = 2.0*rvar(i,Mesh%JMAX+j-1,:) - rvar(i,Mesh%JMAX+j-2,:)
-          END WHERE
-       END FORALL
+       DO j=1,Mesh%GNUM
+          DO i=Mesh%IGMIN,Mesh%IGMAX
+             WHERE(this%fixed)
+                ! set fixed boundary data
+                rvar(i,Mesh%JMAX+j,:) = this%data(i,j,:)
+             ELSEWHERE
+                ! first order extrapolation
+                rvar(i,Mesh%JMAX+j,:) = 2.0*rvar(i,Mesh%JMAX+j-1,:) - rvar(i,Mesh%JMAX+j-2,:)
+             END WHERE
+          END DO
+       END DO
     END SELECT
   END SUBROUTINE CenterBoundary_fixed
-
-
-  PURE SUBROUTINE FaceBoundary_fixed(this,Mesh,Physics,we,ea,so,no,rstates)
-    IMPLICIT NONE
-    !------------------------------------------------------------------------!
-    TYPE(Boundary_TYP) :: this
-    TYPE(Mesh_TYP)     :: Mesh
-    TYPE(Physics_TYP)  :: Physics
-    INTEGER            :: we,ea,so,no
-    REAL :: rstates(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,4,Physics%vnum)
-    !------------------------------------------------------------------------!
-    INTEGER       :: i,j
-    !------------------------------------------------------------------------!
-    INTENT(IN)    :: this,Mesh,Physics,we,ea,so,no
-    INTENT(INOUT) :: rstates
-    !------------------------------------------------------------------------!
-    !************************************************************************!
-    ! Be careful! There is a problem with trapezoidal rule, because          !
-    ! SetFaceBoundary is called twice with different pairs of boundary values!
-    ! (1st call:sw/se,sw/nw; 2nd call:nw/ne,se/ne).                          !
-    !************************************************************************!
-    SELECT CASE(GetDirection(this))
-    CASE(WEST)
-       FORALL (j=Mesh%JGMIN:Mesh%JGMAX)
-          WHERE(this%fixed)
-             ! set fixed boundary data
-             rstates(Mesh%IMIN-1,j,ea,:) = this%data(1,j,:)
-          ELSEWHERE
-             ! first order extrapolation
-             rstates(Mesh%IMIN-1,j,ea,:) = 2.0*rstates(Mesh%IMIN,j,ea,:) - rstates(Mesh%IMIN+1,j,ea,:)
-          END WHERE
-       END FORALL
-    CASE(EAST)
-       FORALL (j=Mesh%JGMIN:Mesh%JGMAX)
-          WHERE(this%fixed)
-             ! set fixed boundary data
-             rstates(Mesh%IMAX+1,j,we,:) = this%data(1,j,:)
-          ELSEWHERE
-             ! zero order extrapolation
-             rstates(Mesh%IMAX+1,j,we,:) = 2.0*rstates(Mesh%IMAX,j,we,:) - rstates(Mesh%IMAX-1,j,we,:)
-          END WHERE
-       END FORALL
-    CASE(SOUTH)
-       FORALL (i=Mesh%IGMIN:Mesh%IGMAX)
-          WHERE(this%fixed)
-             ! set fixed boundary data
-             rstates(i,Mesh%JMIN-1,no,:) = this%data(i,1,:)
-          ELSEWHERE
-             ! zero order extrapolation
-             rstates(i,Mesh%JMIN-1,no,:) = 2.0*rstates(i,Mesh%JMIN,no,:) - rstates(i,Mesh%JMIN+1,no,:) 
-          END WHERE
-       END FORALL
-    CASE(NORTH)
-       FORALL (i=Mesh%IGMIN:Mesh%IGMAX)
-          WHERE(this%fixed)
-             ! set fixed boundary data
-             rstates(i,Mesh%JMAX+1,so,:) = this%data(i,1,:)
-          ELSEWHERE
-             ! zero order extrapolation
-             rstates(i,Mesh%JMAX+1,so,:) = 2.0*rstates(i,Mesh%JMAX,so,:) - rstates(i,Mesh%JMAX-1,so,:)
-          END WHERE
-       END FORALL
-    END SELECT
-  END SUBROUTINE FaceBoundary_fixed
 
 
   SUBROUTINE CloseBoundary_fixed(this)

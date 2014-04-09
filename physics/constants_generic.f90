@@ -3,7 +3,8 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: constants_generic.f90                                             #
 !#                                                                           #
-!# Copyright (C) 2007 Tobias Illenseer <tillense@ita.uni-heidelberg.de>      #
+!# Copyright (C) 2007-2008                                                   #
+!# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
 !# it under the terms of the GNU General Public License as published by      #
@@ -61,15 +62,14 @@ CONTAINS
     CASE(GEOMETRICAL)
        CALL InitConstants_geometrical(this,units)
     CASE DEFAULT
-       PRINT *, "ERROR in InitConstants: unknown physical units"
-       STOP
+       CALL Error(this, "InitConstants", "Unknown physical units.")
     END SELECT
 
     ! derived constants
     this%RG = this%KB * this%NA         ![J/mol/K]    universal gas constant !
 
     ! print some information
-    PRINT "(A,A)", " CONSTANTS> physical units:    ", TRIM(GetName(this))
+    CALL Info(this, " CONSTANTS> physical units:    " // TRIM(GetName(this)))
   END SUBROUTINE InitConstants
 
 END MODULE constants_generic

@@ -1,0 +1,302 @@
+common_types
+
+boundary_common
+  USE common_types
+
+	boundary_nogradients
+	  USE boundary_common
+	  USE mesh_common, ONLY : Mesh_TYP
+	  USE physics_common, ONLY : Physics_TYP
+
+		boundary_periodic
+		  USE mesh_common, ONLY : Mesh_TYP
+		  USE physics_common, ONLY : Physics_TYP
+		  USE boundary_nogradients
+
+		boundary_extrapolation
+		  USE mesh_common, ONLY : Mesh_TYP
+		  USE physics_common, ONLY : Physics_TYP
+		  USE boundary_nogradients
+
+		boundary_fixed
+		  USE mesh_common, ONLY : Mesh_TYP
+		  USE physics_common, ONLY : Physics_TYP
+		  USE boundary_nogradients
+
+                        boundary_noh
+                          USE mesh_common, ONLY : Mesh_TYP
+                          USE physics_common, ONLY : Physics_TYP
+                          USE boundary_nogradients
+                          USE boundary_fixed
+
+		boundary_reflecting
+		  USE mesh_common, ONLY : Mesh_TYP
+		  USE boundary_nogradients
+		  USE physics_generic
+
+			boundary_axis
+			  USE mesh_common, ONLY : Mesh_TYP
+			  USE boundary_reflecting
+			  USE physics_generic
+
+			boundary_folded
+			  USE mesh_common, ONLY : Mesh_TYP
+			  USE boundary_reflecting
+			  USE physics_generic
+
+				boundary_generic
+                                  USE mesh_common, ONLY : Mesh_TYP, GetRank, Error
+                                  USE physics_common, ONLY : Physics_TYP
+                                  USE boundary_nogradients, InitBoundary_common => InitBoundary
+                                  USE boundary_periodic
+                                  USE boundary_reflecting, InitBoundary_common1 => InitBoundary
+                                  USE boundary_axis
+                                  USE boundary_folded
+                                  USE boundary_fixed
+                                  USE boundary_extrapolation
+                                  USE boundary_noh
+
+	timedisc_common
+	  USE common_types
+	  USE boundary_common, ONLY : Boundary_TYP
+
+		timedisc_modeuler
+		  USE timedisc_common
+		  USE mesh_generic
+		  USE fluxes_generic
+		  USE boundary_generic
+		  USE physics_generic
+		  USE sources_generic
+	
+			timedisc_generic
+			  USE timedisc_modeuler
+			  USE boundary_generic
+			  USE mesh_generic
+			  USE physics_generic
+			  USE fluxes_generic
+
+
+sources_common
+  USE common_types
+
+	sources_pointmass
+	  USE sources_common
+	  USE fluxes_common, ONLY : Fluxes_TYP
+	  USE physics_generic
+	  USE mesh_generic
+
+		sources_diskthomson
+		  USE sources_pointmass
+		  USE fluxes_common, ONLY : Fluxes_TYP
+		  USE physics_generic
+		  USE mesh_generic
+		  USE integration
+
+                sources_viscosity
+                  USE common_types, ONLY : Common_TYP, InitCommon
+                  USE sources_pointmass
+                  USE physics_generic
+                  USE fluxes_generic
+                  USE mesh_generic
+
+			sources_generic
+			  USE sources_pointmass
+			  USE sources_diskthomson
+			  USE physics_generic
+			  USE fluxes_generic
+			  USE mesh_common, ONLY : Mesh_TYP
+
+
+
+constants_common
+  USE common_types
+
+	constants_geometrical
+	  USE constants_common
+
+	constants_SI
+	  USE constants_common
+
+		constants_generic
+		  USE constants_SI
+		  USE constants_geometrical
+
+	physics_common
+	  USE common_types
+	  USE sources_common, ONLY : Sources_TYP
+	  USE constants_common, ONLY : Constants_TYP
+
+		physics_euler2D
+		  USE physics_common
+		  USE mesh_common, ONLY : Mesh_TYP
+                  USE sources_common, ONLY : Sources_TYP
+
+			physics_euler3Drotsym
+			  USE physics_common
+			  USE physics_euler2D
+			  USE mesh_common, ONLY : Mesh_TYP
+                          USE sources_common, ONLY : Sources_TYP
+
+				physics_euler3Drotamt
+				  USE physics_common
+				  USE physics_euler2D
+				  USE physics_euler3Drotsym
+				  USE mesh_common, ONLY : Mesh_TYP
+
+					physics_generic
+					  USE physics_euler2D
+					  USE physics_euler3Drotsym
+					  USE physics_euler3Drotamt
+					  USE constants_generic
+					  USE sources_common, ONLY : Sources_TYP
+					  USE mesh_common, ONLY : Mesh_TYP
+
+geometry_common
+  USE common_types
+
+	geometry_cartesian
+	  USE geometry_common
+
+		geometry_cylindrical
+		  USE geometry_cartesian
+
+		geometry_polar
+		  USE geometry_cartesian
+
+		geometry_spherical
+		  USE geometry_cartesian
+
+		geometry_oblatespheroidal
+		  USE geometry_cartesian	
+
+                        geometry_logpolar
+                          USE geometry_cartesian
+                          USE geometry_oblatespheroidal
+
+                                  geometry_generic
+                                    USE geometry_cartesian, InitGeometry_common => InitGeometry
+                                    USE geometry_polar
+                                    USE geometry_logpolar
+                                    USE geometry_cylindrical
+                                    USE geometry_spherical
+                                    USE geometry_oblatespheroidal
+	
+	mesh_common
+	  USE common_types
+	  USE geometry_common, ONLY : Geometry_TYP
+
+		mesh_midpoint
+		  USE mesh_common
+		  USE geometry_generic
+
+			mesh_trapezoidal
+			  USE mesh_midpoint
+			  USE geometry_generic
+
+				mesh_generic
+				  USE data_common, ONLY : Datastruct_TYP
+				  USE mesh_midpoint
+				  USE mesh_trapezoidal
+				  USE geometry_generic
+				  USE fluxes_generic
+
+reconstruction_common
+  USE common_types
+
+	reconstruction_constant
+	  USE reconstruction_common
+	  USE mesh_common, ONLY : Mesh_TYP
+	  USE physics_common, ONLY : Physics_TYP
+
+		reconstruction_linear
+		  USE reconstruction_constant
+		  USE common_types, ONLY : Common_TYP, InitCommon
+		  USE mesh_common, ONLY : Mesh_TYP
+		  USE physics_common, ONLY : Physics_TYP
+
+				reconstruction_generic
+			  USE reconstruction_constant
+			  USE reconstruction_linear
+			  USE mesh_common, ONLY : Mesh_TYP
+			  USE physics_common, ONLY : Physics_TYP
+
+	fluxes_common
+	  USE common_types
+	  USE reconstruction_common, ONLY : Reconstruction_TYP
+
+		fluxes_midpoint
+		  USE fluxes_common
+		  USE mesh_common, ONLY : Mesh_TYP
+		  USE boundary_generic, ONLY : Boundary_TYP, FaceBoundary
+		  USE physics_generic
+		  USE reconstruction_generic
+
+			fluxes_trapezoidal
+			  USE mesh_common, ONLY : Mesh_TYP
+			  USE fluxes_midpoint
+			  USE boundary_generic, ONLY : Boundary_TYP, FaceBoundary
+			  USE physics_generic
+			  USE reconstruction_generic
+
+				fluxes_generic
+				  USE mesh_common, ONLY : Mesh_TYP
+				  USE physics_common, ONLY : Physics_TYP
+				  USE fluxes_midpoint
+				  USE fluxes_trapezoidal
+				  USE reconstruction_generic
+
+
+fileio_common
+  USE common_types
+  USE mesh_common, ONLY : Mesh_TYP
+  USE physics_common, ONLY : Physics_TYP
+
+        fileio_gnuplot
+          USE common_types, ONLY : Error_common => Error
+          USE fileio_common, InitFileIO_common => InitFileIO, Error_fileio => Error
+	  USE mesh_common, ONLY : Mesh_TYP
+	  USE physics_common, ONLY : Physics_TYP
+          USE timedisc_common, ONLY : Timedisc_TYP
+
+	        fileio_binary
+                  USE fileio_gnuplot
+                  USE geometry_common, ONLY : Geometry_TYP, GetType
+                  USE mesh_common, ONLY : Mesh_TYP
+                  USE physics_common, ONLY : Physics_TYP, GetType
+                  USE timedisc_common, ONLY : Timedisc_TYP
+
+                        fileio_generic
+                          USE fileio_gnuplot, InitFileIO_common => InitFileIO, OpenFile_basic => OpenFile
+                          USE fileio_binary
+                          USE mesh_common, ONLY : Mesh_TYP
+                          USE physics_generic, ONLY : Physics_TYP, Convert2Conservative
+                          USE timedisc_common, ONLY : Timedisc_TYP
+
+Init
+  USE physics_generic
+  USE fluxes_generic
+  USE mesh_generic
+  USE reconstruction_generic
+  USE boundary_generic
+  USE fileio_generic
+  USE sources_generic
+  USE timedisc_generic
+
+	fosite
+	  USE physics_generic
+	  USE sources_generic
+	  USE mesh_generic
+	  USE fluxes_generic
+	  USE boundary_generic
+	  USE output_generic
+	  USE fileio_generic
+	  USE reconstruction_generic
+	  USE timedisc_generic
+	  USE init
+	  USE integration
+
+Integration
+	
+Factors
+
+Roots	

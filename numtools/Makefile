@@ -8,7 +8,7 @@ OBJECTS=$(SOURCES:.f90=.o)
 .PHONY: clean distclean
 
 %.o : %.f90
-	$(FC) $(FFLAGS) -c $<
+	$(FC) $(FCFLAGS) -c $<
 	
 $(TARGET) : $(OBJECTS)
 	$(AR) $(AFLAGS) $@ $(OBJECTS)

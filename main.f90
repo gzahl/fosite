@@ -3,7 +3,8 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# program file: main.f90                                                    #
 !#                                                                           #
-!# Copyright (C) 2006 Tobias Illenseer <tillense@ita.uni-heidelberg.de>      #
+!# Copyright (C) 2006-2008                                                   #
+!# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
 !# it under the terms of the GNU General Public License as published by      #
@@ -27,124 +28,167 @@
 !----------------------------------------------------------------------------!
 PROGRAM fosite
   USE physics_generic
-  USE sources_generic
-  USE mesh_generic, ONLY : Mesh_TYP, CloseMesh
+  USE sources_generic, CalcTimestep_sources => CalcTimestep
+  USE mesh_generic
   USE fluxes_generic
   USE boundary_generic
-  USE output_generic
-  USE logio_generic
+  USE fileio_generic
   USE reconstruction_generic
   USE timedisc_generic
   USE init
   USE integration
   IMPLICIT NONE
+#ifdef PARALLEL
+    include 'mpif.h'
+#endif
   !--------------------------------------------------------------------------!
   TYPE(Mesh_TYP)       :: Mesh
   TYPE(Fluxes_TYP)     :: Fluxes
   TYPE(Physics_TYP)    :: Physics
-  TYPE(Output_TYP)     :: Output
+  TYPE(FileIO_TYP)     :: Datafile
   TYPE(Timedisc_TYP)   :: Timedisc
-  TYPE(Logio_TYP)      :: Logio
+  TYPE(FileIO_TYP)     :: Logfile
   
   INTEGER              :: n
-  INTEGER              :: rtc_count,rtc_rate  ! real time clock count/rate   ! 
-  INTEGER              :: rtc_max             ! rtc max count                ! 
-  REAL                 :: log_count           ! time for next log output     !
-  REAL                 :: start_time          ! system clock start time      !
-  REAL                 :: end_time            ! system clock end time        !
+  INTEGER              :: myrank
+  DOUBLE PRECISION     :: wall_time           ! wall clock elapsed time      !
+  DOUBLE PRECISION     :: log_time            ! time for next log output     !
+  DOUBLE PRECISION     :: start_time          ! system clock start time      !
+  DOUBLE PRECISION     :: end_time            ! system clock end time        !
+  DOUBLE PRECISION     :: run_time            ! = end_time - start_time      !
+#ifdef PARALLEL
+  INTEGER              :: ierror
+  REAL                 :: dt_all              ! min timestep of all processes!
+#endif
   !--------------------------------------------------------------------------!
+
+#ifdef PARALLEL
+  ! initialize MPI library for parallel execution
+  CALL MPI_Init(ierror)
+  CALL MPI_Comm_rank(MPI_COMM_WORLD,myrank,ierror)     
+#else
+    myrank = 0
+#endif
 
   CALL InitIntegration
 
-  ! print some information
-  PRINT "(A)", "+---------------------------------------------------------+"
-  PRINT "(A)", "|          Solution of 2D advection problems              |"
-  PRINT "(A)", "+---------------------------------------------------------+"
-  PRINT *, "Initializing program setup:"
+  IF (myrank.EQ.0) THEN
+     ! print some information
+     PRINT "(A)", "+---------------------------------------------------------+"
+     PRINT "(A)", "|          Solution of 2D advection problems              |"
+     PRINT "(A)", "+---------------------------------------------------------+"
+     PRINT *, "Initializing program setup:"
+  END IF
   
   ! setup simulation
-  CALL InitProgram(Mesh,Physics,Fluxes,Timedisc,Output,Logio)
+  CALL InitProgram(Mesh,Physics,Fluxes,Timedisc,Datafile,Logfile)
 
   ! allocate memory for physics and fluxes modules
   CALL MallocPhysics(Physics,Mesh)
   CALL MallocFluxes(Fluxes,Mesh,Physics)
 
+#ifdef PARALLEL
+  wall_time = MPI_Wtime()
+  CALL MPI_AllReduce(wall_time,start_time,1,MPI_DOUBLE_PRECISION,MPI_MIN, &
+       Mesh%comm_cart,ierror)
+#else
+  CALL CPU_TIME(start_time)
+#endif
+
+  ! make sure that the initial data is written to the log file
+  wall_time = start_time
+  log_time  = wall_time
+
   ! set boundary values
   CALL SetBoundaries(Timedisc,Mesh,Physics,Fluxes)
 
-  PRINT *, "==================================================================="
-  PRINT *, "Starting calculation..."
+  IF (myrank.EQ.0) THEN
+     PRINT *, "==================================================================="
+     PRINT *, "Starting calculation..."
+  END IF
 
-
-  CALL SYSTEM_CLOCK(rtc_count,rtc_rate,rtc_max)
-  log_count = rtc_count
-
-  CALL CPU_TIME(start_time)
+  ! store initial data
+  IF (Timedisc%time.EQ.0.0) THEN
+     CALL WriteDataset(Datafile,Mesh,Physics,Timedisc,Mesh%bcenter,Timedisc%pvar)
+     IF (myrank.EQ.0) CALL PrintInfo(0,0.0,0.0,Timedisc%n_adj)
+  END IF
 
   ! main loop
   DO n=1,Timedisc%maxiter
+     ! finish simulation if stop time is reached
+     IF (ABS(Timedisc%stoptime-Timedisc%time).LE.1.0E-05*Timedisc%stoptime) EXIT
+
      ! calculate timestep
      CALL CalcTimestep(Timedisc,Mesh,Physics)
 
      ! adjust timestep for output
-     IF ((Timedisc%time+Timedisc%dt)/Output%time.GT.1.0) THEN
-        Timedisc%dt = Output%time - Timedisc%time
-     ELSE IF((Timedisc%time+1.5*Timedisc%dt)/Output%time.GT.1.0) THEN
-        Timedisc%dt = 0.5*(Output%time - Timedisc%time)
-     END IF
+     ! and calculate the wall clock time
+     CALL AdjustTimestep(Datafile,Timedisc%time,Timedisc%dt)
+#ifdef PARALLEL
+     CALL MPI_Allreduce(Timedisc%dt,dt_all,1,DEFAULT_MPI_REAL,MPI_MIN,&
+          Mesh%comm_cart,ierror)
+     Timedisc%dt = dt_all
+     run_time = MPI_Wtime()
+     CALL MPI_AllReduce(run_time,wall_time,1,MPI_DOUBLE_PRECISION,MPI_MIN, &
+          Mesh%comm_cart,ierror)
+#else
+     CALL CPU_TIME(wall_time)
+#endif
 
      ! advance the solution in time
      CALL SolveODE(Timedisc,Mesh,Physics,Fluxes)
 
-     ! log output
-     CALL SYSTEM_CLOCK(COUNT=rtc_count)
-     IF (rtc_count.GE.log_count) THEN
-        CALL WriteLogdata(Logio,Mesh,Physics,Timedisc)
-        log_count = MODULO(rtc_count + rtc_rate*GetLogstep(Logio),rtc_max)
-     END IF
-
-     ! write output
-     IF (ABS(1.0-Timedisc%time/Output%time).LT.1.0E-5) THEN
-        CALL WriteOutput(Output,Mesh,Physics,Timedisc%pvar)
-        CALL WriteLogdata(Logio,Mesh,Physics,Timedisc)
-        CALL PrintInfo(n,Timedisc%time,Timedisc%dtmin,Timedisc%n_adj)
+     ! write output to data file
+     IF (ABS(Datafile%time-Timedisc%time).LE.1.0E-5*Datafile%time) THEN
+        CALL WriteDataset(Datafile,Mesh,Physics,Timedisc,Mesh%bcenter,Timedisc%pvar)
+        IF (myrank.EQ.0) THEN
+           CALL PrintInfo(n,Timedisc%time,Timedisc%dtmin,Timedisc%n_adj)
+        END IF
         ! reset dt_min and n_adj
         Timedisc%dtmin = Timedisc%stoptime
         Timedisc%n_adj = 0
-        IF (Output%time.GT.GetEnd(Output)) THEN
-           Output%time = Timedisc%stoptime
-        END IF
      END IF
 
-     ! finish simulation if stoptime is reached
-     IF (ABS(1.0-Timedisc%time/Timedisc%stoptime).LT.1.0E-05) EXIT
+     ! write output to log file
+     IF (wall_time.GE.log_time) THEN
+        CALL WriteDataset(Logfile,Mesh,Physics,Timedisc,Mesh%bcenter,Timedisc%pvar)
+        log_time = wall_time + Logfile%dtwall
+     END IF
+
   END DO
 
-  PRINT *, "==================================================================="
-
+#ifdef PARALLEL
+  run_time = MPI_Wtime()
+  CALL MPI_AllReduce(run_time,end_time,1,MPI_DOUBLE_PRECISION,MPI_MIN,&
+       Mesh%comm_cart,ierror)
+#else
   CALL CPU_TIME(end_time)
-  PRINT "(A,F10.2,A)", " main loop runtime: ", end_time - start_time, " sec."
+#endif
 
-  IF (n.LT.Timedisc%maxiter) THEN
-     PRINT *, "calculation finished correctly."
-  ELSE
-     PRINT *, "too many iterations, aborting!"
+  IF (myrank.EQ.0) THEN
+     PRINT *, "==================================================================="
+     IF (n.LT.Timedisc%maxiter) THEN
+        PRINT *, "calculation finished correctly."
+     ELSE
+        PRINT *, "too many iterations, aborting!"
+     END IF
+     run_time = end_time - start_time
+     PRINT "(A,F10.2,A)", " main loop runtime: ", run_time, " sec."
   END IF
 
-
+  CALL CloseFileIO(Datafile)
+  CALL CloseFileIO(Logfile)
   CALL CloseTimedisc(Timedisc)
-  CALL CloseLogio
-  CALL CloseOutput(Output)
+
   IF (ASSOCIATED(Physics%sources)) CALL CloseSources(Physics%sources,Fluxes)
   CALL CloseFluxes(Fluxes)
   CALL ClosePhysics(Physics)
-  CALL CloseBoundary(Mesh%Boundary,WEST)
-  CALL CloseBoundary(Mesh%Boundary,EAST)
-  CALL CloseBoundary(Mesh%Boundary,SOUTH)
-  CALL CloseBoundary(Mesh%Boundary,NORTH)
   CALL CloseMesh(Mesh,Fluxes)
   CALL CloseIntegration
 
+#ifdef PARALLEL
+  CALL MPI_Finalize(ierror)
+#endif
 
 CONTAINS
 

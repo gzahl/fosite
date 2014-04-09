@@ -3,7 +3,8 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: fluxes_common.f90                                                 #
 !#                                                                           #
-!# Copyright (C) 2007 Tobias Illenseer <tillense@ita.uni-heidelberg.de>      #
+!# Copyright (C) 2006-2008                                                   #
+!# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
 !# it under the terms of the GNU General Public License as published by      #
@@ -26,7 +27,9 @@
 ! basic fluxes module
 !----------------------------------------------------------------------------!
 MODULE fluxes_common
-  USE common_types, GetType_common => GetType, GetName_common => GetName
+  USE common_types, GetType_common => GetType, GetName_common => GetName, &
+       GetRank_common => GetRank, Info_common => Info, &
+       Warning_common => Warning, Error_common => Error
   USE reconstruction_common, ONLY : Reconstruction_TYP
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
@@ -36,6 +39,18 @@ MODULE fluxes_common
   END INTERFACE
   INTERFACE GetName
      MODULE PROCEDURE GetQuadruleName, GetName_common
+  END INTERFACE
+  INTERFACE GetRank
+     MODULE PROCEDURE GetFluxesRank, GetRank_common
+  END INTERFACE
+  INTERFACE Info
+     MODULE PROCEDURE FluxesInfo, Info_common
+  END INTERFACE
+  INTERFACE Warning
+     MODULE PROCEDURE FluxesWarning, Warning_common
+  END INTERFACE
+  INTERFACE Error
+     MODULE PROCEDURE FluxesError, Error_common
   END INTERFACE
   !--------------------------------------------------------------------------!
   ! fluxes data structure
@@ -59,7 +74,11 @@ MODULE fluxes_common
        ! methods
        InitFluxes, &
        GetType, &
-       GetName
+       GetName, &
+       GetRank, &
+       Info, &
+       Warning, &
+       Error
   !--------------------------------------------------------------------------!
 
 CONTAINS
@@ -96,6 +115,46 @@ CONTAINS
     !------------------------------------------------------------------------!
     qn = GetName_common(this%quadrule)
   END FUNCTION GetQuadruleName
+
+
+  PURE FUNCTION GetFluxesRank(this) RESULT(r)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Fluxes_TYP), INTENT(IN) :: this
+    INTEGER :: r
+    !------------------------------------------------------------------------!
+    r = GetRank_common(this%quadrule)
+  END FUNCTION GetFluxesRank
+
+
+  SUBROUTINE FluxesInfo(this,msg)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Fluxes_TYP), INTENT(IN) :: this
+    CHARACTER(LEN=*),  INTENT(IN) :: msg
+    !------------------------------------------------------------------------!
+    CALL Info_common(this%quadrule,msg)
+  END SUBROUTINE FluxesInfo
+
+
+  SUBROUTINE FluxesWarning(this,modproc,msg)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Fluxes_TYP), INTENT(IN) :: this
+    CHARACTER(LEN=*),  INTENT(IN) :: modproc,msg
+    !------------------------------------------------------------------------!
+    CALL Warning_common(this%quadrule,modproc,msg)
+  END SUBROUTINE FluxesWarning
+
+
+  SUBROUTINE FluxesError(this,modproc,msg)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Fluxes_TYP), INTENT(IN) :: this
+    CHARACTER(LEN=*),  INTENT(IN) :: modproc,msg
+    !------------------------------------------------------------------------!
+    CALL Error_common(this%quadrule,modproc,msg)
+  END SUBROUTINE FluxesError
 
 
 END MODULE fluxes_common

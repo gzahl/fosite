@@ -8,7 +8,7 @@ OBJECTS=$(SOURCES:.f90=.o)
 .PHONY: clean distclean
 
 %.o : %.f90
-	$(FC) $(FFLAGS) -c $<
+	$(FC) $(FCFLAGS) -c $<
 
 $(TARGET) : $(OBJECTS)
 	$(AR) $(AFLAGS) $@ $(OBJECTS)
@@ -21,12 +21,11 @@ distclean :
 
 boundary_common.o : common_types.o
 constants_common.o : common_types.o
+fileio_common.o : common_types.o mesh_common.o physics_common.o
+fluxes_common.o : common_types.o reconstruction_common.o
 geometry_common.o : common_types.o
-logio_common.o : common_types.o
-output_common.o : common_types.o
+mesh_common.o : geometry_common.o
+physics_common.o : common_types.o constants_common.o sources_common.o 
 reconstruction_common.o : common_types.o
 sources_common.o : common_types.o
-timedisc_common.o : common_types.o
-physics_common.o : common_types.o constants_common.o sources_common.o
-fluxes_common.o : common_types.o reconstruction_common.o
-mesh_common.o : boundary_common.o geometry_common.o
+timedisc_common.o : common_types.o boundary_common.o

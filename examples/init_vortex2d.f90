@@ -3,7 +3,8 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: init_vortex2d.f90                                                 #
 !#                                                                           #
-!# Copyright (C) 2006 Tobias Illenseer <tillense@ita.uni-heidelberg.de>      #
+!# Copyright (C) 2006-2008                                                   #
+!# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
 !# it under the terms of the GNU General Public License as published by      #
@@ -31,8 +32,7 @@ MODULE Init
   USE mesh_generic
   USE reconstruction_generic
   USE boundary_generic
-  USE output_generic
-  USE logio_generic
+  USE fileio_generic
   USE timedisc_generic
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
@@ -46,25 +46,25 @@ MODULE Init
 
 CONTAINS
 
-  SUBROUTINE InitProgram(Mesh,Physics,Fluxes,Timedisc,Output,Logio)
+  SUBROUTINE InitProgram(Mesh,Physics,Fluxes,Timedisc,Datafile,Logfile)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Mesh_TYP)    :: Mesh
     TYPE(Physics_TYP) :: Physics
     TYPE(Fluxes_TYP)  :: Fluxes
     TYPE(Timedisc_TYP):: Timedisc
-    TYPE(Output_TYP)  :: Output
-    TYPE(Logio_TYP)   :: Logio
+    TYPE(FILEIO_TYP)  :: Datafile
+    TYPE(FILEIO_TYP)  :: Logfile
     !------------------------------------------------------------------------!
     ! Local variable declaration
     INTEGER           :: geometry
     !------------------------------------------------------------------------!
-    INTENT(OUT)       :: Mesh,Physics,Fluxes,Timedisc,Output,Logio
+    INTENT(OUT)       :: Mesh,Physics,Fluxes,Timedisc,Datafile,Logfile
     !------------------------------------------------------------------------!
 
     ! set the geometry
-!    geometry = CARTESIAN
-    geometry = POLAR
+    geometry = CARTESIAN
+!    geometry = POLAR
 
     ! physics settings
     CALL InitPhysics(Physics, &
@@ -96,10 +96,11 @@ CONTAINS
                 ymin = -5.0, &
                 ymax = 5.0)
        ! boundary conditions
-       CALL InitBoundary(Mesh%boundary,Mesh,Physics,PERIODIC,WEST)
-       CALL InitBoundary(Mesh%boundary,Mesh,Physics,PERIODIC,EAST)
-       CALL InitBoundary(Mesh%boundary,Mesh,Physics,PERIODIC,SOUTH)
-       CALL InitBoundary(Mesh%boundary,Mesh,Physics,PERIODIC,NORTH)
+       CALL InitBoundary(Timedisc%boundary,Mesh,Physics, &
+         western  = PERIODIC, &
+         eastern  = PERIODIC, &
+         southern = PERIODIC, &
+         northern = PERIODIC)
     CASE(POLAR)
        ! mesh settings
        CALL InitMesh(Mesh,Fluxes, &
@@ -111,14 +112,14 @@ CONTAINS
                 ymin = 0.0, &
                 ymax = 2*PI)
        ! boundary conditions
-       CALL InitBoundary(Mesh%boundary,Mesh,Physics,NO_GRADIENTS,WEST)
-       CALL InitBoundary(Mesh%boundary,Mesh,Physics,NO_GRADIENTS,EAST)
-       CALL InitBoundary(Mesh%boundary,Mesh,Physics,PERIODIC,SOUTH)
-       CALL InitBoundary(Mesh%boundary,Mesh,Physics,PERIODIC,NORTH)
+       CALL InitBoundary(Timedisc%boundary,Mesh,Physics, &
+         western  = NO_GRADIENTS, &
+         eastern  = NO_GRADIENTS, &
+         southern = PERIODIC, &
+         northern = PERIODIC)
     CASE DEFAULT
-       PRINT *, "ERROR in InitProgram: geometry should be either ", ACHAR(13), &
-            "cartesian or polar"
-       STOP
+       CALL Error(Physics,"InitProgram", &
+            "geometry should be either cartesian or polar")
     END SELECT
 
     ! time discretization settings
@@ -131,33 +132,37 @@ CONTAINS
          maxiter  = 1000000)
 
     ! set initial condition
-    CALL InitData(Mesh,Physics,Timedisc%pvar,Timedisc%cvar)
+    CALL InitData(Mesh,Physics,Timedisc)
 
     ! initialize log input/output
-    CALL InitLogio(Logio,Mesh,Physics,Timedisc, &
-         logformat = NOLOG, &
-         filename  = "vortex2d.log", &
-         logdt     = 300)
+    CALL InitFileIO(Logfile,Mesh,Physics,Timedisc,&
+         fileformat = BINARY, &
+#ifdef PARALLEL
+         filename   = "/tmp/vortex2dlog", &
+#else
+         filename   = "vortex2dlog", &
+#endif
+         filecycles = 1)
 
-    ! set parameters for data output
-    CALL InitOutput(Output,Mesh,Physics,Timedisc,&
-         filetype  = GNUPLOT, &
-         filename  = "vortex2d.dat", &
-         mode      = OVERWRITE, &
-         starttime = 0.0, &
-         stoptime  = Timedisc%stoptime, &
-         count     = 10)
+    ! initialize data input/output
+    CALL InitFileIO(Datafile,Mesh,Physics,Timedisc, &
+         fileformat = GNUPLOT, &
+#ifdef PARALLEL
+         filename   = "/tmp/vortex2d", &
+#else
+         filename   = "vortex2d", &
+#endif
+         count      = 10)
 
   END SUBROUTINE InitProgram
 
 
-  SUBROUTINE InitData(Mesh,Physics,pvar,cvar)
+  SUBROUTINE InitData(Mesh,Physics,Timedisc)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Physics_TYP) :: Physics
     TYPE(Mesh_TYP)    :: Mesh
-    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum)&
-                      :: pvar,cvar
+    TYPE(Timedisc_TYP):: Timedisc
     !------------------------------------------------------------------------!
     ! Local variable declaration
     INTEGER           :: i,j
@@ -167,7 +172,7 @@ CONTAINS
     REAL              :: rho0,u0,v0,P0,T,T0,T0_nd,du,dv,T_nd,dT_nd,beta
     !------------------------------------------------------------------------!
     INTENT(IN)        :: Mesh,Physics
-    INTENT(OUT)       :: pvar,cvar
+    INTENT(INOUT)     :: Timedisc
     !------------------------------------------------------------------------!
 
     ! ambient values of primitive variables
@@ -187,8 +192,8 @@ CONTAINS
        x0 = 0.5*(Mesh%xmax+Mesh%xmin)
        y0 = 0.5*(Mesh%ymax+Mesh%ymin)
        ! global velocity field
-       u0 = 0.
-       v0 = 0.
+       u0 = 0.1
+       v0 = 0.1
     CASE(POLAR)
        ! vortex position
        x0 = 0.0
@@ -197,8 +202,7 @@ CONTAINS
        u0 = 0.
        v0 = 0.
     CASE DEFAULT
-       PRINT *, "ERROR in InitProgram: geometry should be either cartesian or polar"
-       STOP
+       CALL Error(Mesh,"InitProgram", "geometry should be either cartesian or polar")
     END SELECT
 
     DO j=Mesh%JGMIN,Mesh%JGMAX
@@ -212,19 +216,20 @@ CONTAINS
           T_nd = T0_nd + dT_nd
           T = T0/T0_nd * T_nd
           ! set primitive variables
-          pvar(i,j,1) = rho0*(T/T0)**(1./(Physics%gamma-1.))
+          Timedisc%pvar(i,j,Physics%DENSITY) = rho0*(T/T0)**(1./(Physics%gamma-1.))
           vxy(i,j,1) = u0 + du
           vxy(i,j,2) = v0 + dv
-          pvar(i,j,4) = Physics%constants%RG/Physics%mu * T * pvar(i,j,1)
+          Timedisc%pvar(i,j,Physics%PRESSURE) = &
+               Physics%constants%RG/Physics%mu * T * Timedisc%pvar(i,j,Physics%DENSITY)
        END DO
     END DO
 
     ! transform velocities
-    CALL Convert2Curvilinear(Mesh%geometry,Mesh%bcenter,vxy(:,:,1:2),pvar(:,:,2:3))
+    CALL Convert2Curvilinear(Mesh%geometry,Mesh%bcenter,vxy(:,:,:),&
+         Timedisc%pvar(:,:,Physics%XVELOCITY:Physics%YVELOCITY))
 
-    CALL Convert2Conservative(Physics,Mesh,pvar,cvar)
-    PRINT "(A,A)", " DATA-----> initial condition: ", &
-         "2D isentropic vortex"
+    CALL Convert2Conservative(Physics,Mesh,Timedisc%pvar,Timedisc%cvar)
+    CALL Info(Mesh," DATA-----> initial condition: 2D isentropic vortex")
 
   END SUBROUTINE InitData
 

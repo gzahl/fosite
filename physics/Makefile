@@ -8,7 +8,7 @@ OBJECTS=$(SOURCES:.f90=.o)
 .PHONY: clean distclean
 
 %.o : %.f90
-	$(FC) $(FFLAGS) -c $<
+	$(FC) $(FCFLAGS) -c $<
 
 $(TARGET) : $(OBJECTS)
 	$(AR) $(AFLAGS) $@ $(OBJECTS)
@@ -19,8 +19,8 @@ clean :
 distclean :
 	rm -f $(OBJECTS) $(TARGET) *.mod *.bak *~
 
-physics_generic.o : physics_euler2D.o physics_euler3Drotsym.o \
-	physics_euler3Drotamt.o constants_generic.o
 physics_euler3Drotsym.o : physics_euler2D.o
 physics_euler3Drotamt.o : physics_euler2D.o physics_euler3Drotsym.o
+physics_generic.o : physics_euler2D.o physics_euler3Drotsym.o \
+	physics_euler3Drotamt.o constants_generic.o
 constants_generic.o : constants_SI.o constants_geometrical.o

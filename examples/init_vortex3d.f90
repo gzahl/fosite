@@ -3,7 +3,8 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: init_vortex3d.f90                                                 #
 !#                                                                           #
-!# Copyright (C) 2006 Tobias Illenseer <tillense@ita.uni-heidelberg.de>      #
+!# Copyright (C) 2006-2008                                                   #
+!# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
 !# it under the terms of the GNU General Public License as published by      #
@@ -31,8 +32,7 @@ MODULE Init
   USE mesh_generic
   USE reconstruction_generic
   USE boundary_generic
-  USE output_generic
-  USE logio_generic
+  USE fileio_generic
   USE timedisc_generic
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
@@ -46,26 +46,25 @@ MODULE Init
 
 CONTAINS
 
-  SUBROUTINE InitProgram(Mesh,Physics,Fluxes,Timedisc,Output,Logio)
+  SUBROUTINE InitProgram(Mesh,Physics,Fluxes,Timedisc,Datafile,Logfile)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Mesh_TYP)    :: Mesh
     TYPE(Physics_TYP) :: Physics
     TYPE(Fluxes_TYP)  :: Fluxes
     TYPE(Timedisc_TYP):: Timedisc
-    TYPE(Output_TYP)  :: Output
-    TYPE(Logio_TYP)   :: Logio
+    TYPE(FILEIO_TYP)  :: Datafile
+    TYPE(FILEIO_TYP)  :: Logfile
     !------------------------------------------------------------------------!
     ! Local variable declaration
     !------------------------------------------------------------------------!
-    INTENT(OUT)       :: Mesh,Physics,Fluxes,Timedisc,Output,Logio
+    INTENT(OUT)       :: Mesh,Physics,Fluxes,Timedisc,Datafile,Logfile
     !------------------------------------------------------------------------!
 
     ! physics settings
     CALL InitPhysics(Physics, &
          problem = EULER3D_ROTSYM, &
          gamma   = 1.4, &           ! ratio of specific heats        !
-         mu      = 0.602E-03, &     ! mean molecular weight          !
          dpmax   = 1.0)             ! for advanced time step control !
 
     ! numerical scheme for flux calculation
@@ -77,7 +76,7 @@ CONTAINS
          order     = LINEAR, &
          variables = CONSERVATIVE, &! vars. to use for reconstruction!
          limiter   = MONOCENT, &    ! one of: minmod, monocent,...   !
-         theta     = 1.3)           ! optional parameter for limiter !
+         theta     = 1.2)           ! optional parameter for limiter !
 
     ! mesh settings
     CALL InitMesh(Mesh,Fluxes, &
@@ -90,10 +89,11 @@ CONTAINS
              ymax = 5.0)
 
     ! boundary conditions
-    CALL InitBoundary(Mesh%boundary,Mesh,Physics,PERIODIC,WEST)
-    CALL InitBoundary(Mesh%boundary,Mesh,Physics,PERIODIC,EAST)
-    CALL InitBoundary(Mesh%boundary,Mesh,Physics,AXIS,SOUTH)
-    CALL InitBoundary(Mesh%boundary,Mesh,Physics,REFLECTING,NORTH)
+    CALL InitBoundary(Timedisc%boundary,Mesh,Physics, &
+         western  = NO_GRADIENTS, &
+         eastern  = NO_GRADIENTS, &
+         southern = AXIS, &
+         northern = REFLECTING)
 
     ! time discretization settings
     CALL InitTimedisc(Timedisc,Mesh,Physics,&
@@ -105,33 +105,38 @@ CONTAINS
          maxiter  = 100000)
 
     ! set initial condition
-    CALL InitData(Mesh,Physics,Timedisc%pvar,Timedisc%cvar)
+    CALL InitData(Mesh,Physics,Timedisc)
 
     ! initialize log input/output
-    CALL InitLogio(Logio,Mesh,Physics,Timedisc, &
-         logformat = NOLOG, &
-         filename  = "vortex3d.log", &
-         logdt     = 300)
+    CALL InitFileIO(Logfile,Mesh,Physics,Timedisc, &
+         fileformat = BINARY, &
+#ifdef PARALLEL
+         filename   = "/tmp/vortex3dlog", &
+#else
+         filename   = "vortex3d", &
+#endif
+         filecycles = 1)
 
-    ! set parameters for data output
-    CALL InitOutput(Output,Mesh,Physics,Timedisc,&
-         filetype  = GNUPLOT, &
-         filename  = "vortex3d.dat", &
-         mode      = OVERWRITE, &
-         starttime = 0.0, &
-         stoptime  = Timedisc%stoptime, &
-         count     = 10)
+    ! initialize data input/output
+    CALL InitFileIO(Datafile,Mesh,Physics,Timedisc, &
+         fileformat = GNUPLOT, &
+#ifdef PARALLEL
+         filename   = "/tmp/vortex3d", &
+#else
+         filename   = "vortex3d", &
+#endif
+         stoptime   = Timedisc%stoptime, &
+         count      = 10)
 
   END SUBROUTINE InitProgram
 
 
-  SUBROUTINE InitData(Mesh,Physics,pvar,cvar)
+  SUBROUTINE InitData(Mesh,Physics,Timedisc)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Physics_TYP) :: Physics
     TYPE(Mesh_TYP)    :: Mesh
-    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum)&
-                      :: pvar,cvar
+    TYPE(Timedisc_TYP):: Timedisc
     !------------------------------------------------------------------------!
     ! Local variable declaration
     REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,2)&
@@ -141,7 +146,7 @@ CONTAINS
     REAL              :: rho0,P0,T,T0,T0_nd,du,dv,T_nd,dT_nd,beta
     !------------------------------------------------------------------------!
     INTENT(IN)        :: Mesh,Physics
-    INTENT(OUT)       :: pvar,cvar
+    INTENT(INOUT)     :: Timedisc
     !------------------------------------------------------------------------!
 
     ! ambient values of primitive variables
@@ -164,22 +169,23 @@ CONTAINS
           T_nd = T0_nd + dT_nd
           T = T0/T0_nd * T_nd
           ! set primitive variables
-          pvar(i,j,1) = rho0*(T/T0)**(1./(Physics%gamma-1.))
-          pvar(i,j,2) = 0.
-          pvar(i,j,3) = 0.
-          pvar(i,j,4) = dv
-          pvar(i,j,5) = Physics%constants%RG/Physics%mu * T * pvar(i,j,1)
+          Timedisc%pvar(i,j,Physics%DENSITY) = rho0*(T/T0)**(1./(Physics%gamma-1.))
+          Timedisc%pvar(i,j,Physics%XVELOCITY) = 0.
+          Timedisc%pvar(i,j,Physics%YVELOCITY) = 0.
+          Timedisc%pvar(i,j,Physics%ZVELOCITY) = dv
+          Timedisc%pvar(i,j,Physics%PRESSURE) = &
+               Physics%constants%RG/Physics%mu * T * Timedisc%pvar(i,j,Physics%DENSITY)
        END DO
     END DO
     
+    ! set specific angular momentum for EULER3D_ROTAMT
     IF (GetType(Physics).EQ.EULER3D_ROTAMT) THEN
-       pvar(:,:,4) = pvar(:,:,4)*Mesh%bhz(:,:)
+       Timedisc%pvar(:,:,Physics%ZVELOCITY) = &
+            Timedisc%pvar(:,:,Physics%ZVELOCITY)*Mesh%bhz(:,:)
     END IF
     
-    CALL Convert2Conservative(Physics,Mesh,pvar,cvar)
-    PRINT "(A,A)", " DATA-----> initial condition: ", &
-         "3D isentropic vortex"
-
+    CALL Convert2Conservative(Physics,Mesh,Timedisc%pvar,Timedisc%cvar)
+    CALL Info(Mesh," DATA-----> initial condition: 3D isentropic vortex")
   END SUBROUTINE InitData
 
 END MODULE Init

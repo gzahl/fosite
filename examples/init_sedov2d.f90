@@ -3,7 +3,8 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: init_sedov2d.f90                                                  #
 !#                                                                           #
-!# Copyright (C) 2006 Tobias Illenseer <tillense@ita.uni-heidelberg.de>      #
+!# Copyright (C) 2006-2008                                                   #
+!# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
 !# it under the terms of the GNU General Public License as published by      #
@@ -31,8 +32,7 @@ MODULE Init
   USE mesh_generic
   USE reconstruction_generic
   USE boundary_generic
-  USE output_generic
-  USE logio_generic
+  USE fileio_generic
   USE timedisc_generic
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
@@ -46,20 +46,20 @@ MODULE Init
 
 CONTAINS
 
-  SUBROUTINE InitProgram(Mesh,Physics,Fluxes,Timedisc,Output,Logio)
+  SUBROUTINE InitProgram(Mesh,Physics,Fluxes,Timedisc,Datafile,Logfile)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Mesh_TYP)    :: Mesh
     TYPE(Physics_TYP) :: Physics
     TYPE(Fluxes_TYP)  :: Fluxes
     TYPE(Timedisc_TYP):: Timedisc
-    TYPE(Output_TYP)  :: Output
-    TYPE(Logio_TYP)   :: Logio
+    TYPE(FILEIO_TYP)  :: Datafile
+    TYPE(FILEIO_TYP)  :: Logfile
     !------------------------------------------------------------------------!
     ! Local variable declaration
     INTEGER           :: geometry
     !------------------------------------------------------------------------!
-    INTENT(OUT)       :: Mesh,Physics,Fluxes,Timedisc,Output,Logio
+    INTENT(OUT)       :: Mesh,Physics,Fluxes,Timedisc,Datafile,Logfile
     !------------------------------------------------------------------------!
 
     ! set the geometry
@@ -81,7 +81,7 @@ CONTAINS
          order     = LINEAR, &
          variables = CONSERVATIVE, &! vars. to use for reconstruction!
          limiter   = MONOCENT, &    ! one of: minmod, monocent,...   !
-         theta     = 1.3)           ! optional parameter for limiter !
+         theta     = 1.2)           ! optional parameter for limiter !
 
     SELECT CASE(geometry)
     CASE(CARTESIAN)
@@ -95,10 +95,11 @@ CONTAINS
                 ymin = -0.3, &
                 ymax = 0.3)
        ! boundary conditions
-       CALL InitBoundary(Mesh%boundary,Mesh,Physics,NO_GRADIENTS,WEST)
-       CALL InitBoundary(Mesh%boundary,Mesh,Physics,NO_GRADIENTS,EAST)
-       CALL InitBoundary(Mesh%boundary,Mesh,Physics,NO_GRADIENTS,SOUTH)
-       CALL InitBoundary(Mesh%boundary,Mesh,Physics,NO_GRADIENTS,NORTH)
+       CALL InitBoundary(Timedisc%boundary,Mesh,Physics, &
+         western  = NO_GRADIENTS, &
+         eastern  = NO_GRADIENTS, &
+         southern = NO_GRADIENTS, &
+         northern = NO_GRADIENTS)
     CASE(POLAR)
        ! mesh settings
        CALL InitMesh(Mesh,Fluxes, &
@@ -110,14 +111,14 @@ CONTAINS
                 ymin = 0.0, &
                 ymax = 2*PI)
        ! boundary conditions
-       CALL InitBoundary(Mesh%boundary,Mesh,Physics,REFLECTING,WEST)
-       CALL InitBoundary(Mesh%boundary,Mesh,Physics,NO_GRADIENTS,EAST)
-       CALL InitBoundary(Mesh%boundary,Mesh,Physics,PERIODIC,SOUTH)
-       CALL InitBoundary(Mesh%boundary,Mesh,Physics,PERIODIC,NORTH)
+       CALL InitBoundary(Timedisc%boundary,Mesh,Physics, &
+         western  = REFLECTING, &
+         eastern  = NO_GRADIENTS, &
+         southern = PERIODIC, &
+         northern = PERIODIC)
     CASE DEFAULT
-       PRINT *, "ERROR in InitProgram: geometry should be either ", ACHAR(13), &
-            "cartesian or polar"
-       STOP
+       CALL Error(Physics,"InitProgram",&
+            "geometry should be either cartesian or polar")
     END SELECT
 
     ! time discretization settings
@@ -130,77 +131,76 @@ CONTAINS
          maxiter  = 100000)
 
     ! set initial condition
-    CALL InitData(Mesh,Physics,Timedisc%pvar,Timedisc%cvar)
+    CALL InitData(Mesh,Physics,Timedisc)
 
     ! initialize log input/output
-    CALL InitLogio(Logio,Mesh,Physics,Timedisc, &
-         logformat = NOLOG, &
-         filename  = "sedov2d.log", &
-         logdt     = 300)
+    CALL InitFileIO(Logfile,Mesh,Physics,Timedisc,&
+         fileformat = BINARY, &
+#ifdef PARALLEL
+         filename   = "/tmp/sedov2dlog", &
+#else
+         filename   = "sedov2dlog", &
+#endif
+         filecycles = 1)
 
-    ! set parameters for data output
-    CALL InitOutput(Output,Mesh,Physics,Timedisc,&
-         filetype  = GNUPLOT, &
-         filename  = "sedov2d.dat", &
-         mode      = OVERWRITE, &
-         starttime = 0.0, &
-         stoptime  = Timedisc%stoptime, &
-         count     = 10)
+    ! initialize data input/output
+    CALL InitFileIO(Datafile,Mesh,Physics,Timedisc, &
+         fileformat = GNUPLOT, &
+#ifdef PARALLEL
+         filename   = "/tmp/sedov2d", &
+#else
+         filename   = "sedov2d", &
+#endif
+         count      = 10)
 
   END SUBROUTINE InitProgram
 
 
-  SUBROUTINE InitData(Mesh,Physics,pvar,cvar)
+  SUBROUTINE InitData(Mesh,Physics,Timedisc)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Physics_TYP) :: Physics
     TYPE(Mesh_TYP)    :: Mesh
-    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum)&
-                      :: pvar,cvar
+    TYPE(Timedisc_TYP):: Timedisc
     !------------------------------------------------------------------------!
     ! Local variable declaration
     INTEGER           :: n
-    REAL              :: dr,P0,E
+    REAL              :: dr,rho0,P0,P1,E
+    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,2) :: cart
     !------------------------------------------------------------------------!
     INTENT(IN)        :: Mesh,Physics
-    INTENT(OUT)       :: pvar,cvar
+    INTENT(INOUT)     :: Timedisc
     !------------------------------------------------------------------------!
+    ! 2D Sedov explosion parameters
+    n    = 2       ! 2D
+    E    = 1.0     ! total energy input
+    rho0 = 1.0     ! ambient density
+    P0   = 1.0E-05 ! ambient pressure
 
-    ! 2D Sedov explosion
-    n  = 2    ! 2D
-    E  = 1.0  ! energy
+    ! spatial with of the puls should be at least 5 cells
+    ! be careful, if you wish to compare with the polar
+    ! results dr should be the same
+    dr = 0.03
+    ! peak pressure
+    P1 = 3.*(Physics%gamma-1.0) * E / ((n + 1) * PI * dr**n)
 
-    pvar(:,:,1) = 1.
-    pvar(:,:,2) = 0.
-    pvar(:,:,3) = 0.
-    pvar(:,:,4) = 1.0D-05
+    ! cartesian coordinates
+    CALL Convert2Cartesian(Mesh%geometry,Mesh%bcenter,cart)
+
+    WHERE ((cart(:,:,1)**2 + cart(:,:,2)**2).LE.dr**2)
+       Timedisc%pvar(:,:,Physics%DENSITY)   = rho0
+       Timedisc%pvar(:,:,Physics%XVELOCITY) = 0.
+       Timedisc%pvar(:,:,Physics%YVELOCITY) = 0.
+       Timedisc%pvar(:,:,Physics%PRESSURE)  = P1
+    ELSEWHERE
+       Timedisc%pvar(:,:,Physics%DENSITY)   = rho0
+       Timedisc%pvar(:,:,Physics%XVELOCITY) = 0.
+       Timedisc%pvar(:,:,Physics%YVELOCITY) = 0.
+       Timedisc%pvar(:,:,Physics%PRESSURE)  = P0
+    END WHERE
      
-    SELECT CASE(GetType(Mesh%geometry))
-    CASE(CARTESIAN)
-       ! should be at least 5 cells
-!       dr = 3.5*SQRT(Mesh%dx**2+Mesh%dy**2)
-       dr = 0.03
-       P0 = 3.*(Physics%gamma-1.0) * E / ((n + 1) * PI * dr**n)
-       WHERE ((Mesh%bcenter(:,:,1)**2 + Mesh%bcenter(:,:,2)**2).LE.dr**2)
-          pvar(:,:,4) = P0
-       END WHERE
-    CASE(POLAR)
-       ! should be at least 5 cells
-       ! be careful, if you wish to compare with the cartesian
-       ! results dr should be the same
-       dr = 0.03
-       P0 = 3.*(Physics%gamma-1.0) * E / ((n + 1) * PI * dr**n)
-       WHERE (Mesh%bcenter(:,:,1).LE.dr)
-          pvar(:,:,4) = P0
-       END WHERE
-    CASE DEFAULT
-       PRINT *, "ERROR in InitData: geometry should be either cartesian or polar"
-       STOP
-    END SELECT
-
-    CALL Convert2Conservative(Physics,Mesh,pvar,cvar)
-    PRINT "(A,A)", " DATA-----> initial condition  ", &
-         "2D Sedov explosion"
+    CALL Convert2Conservative(Physics,Mesh,Timedisc%pvar,Timedisc%cvar)
+    CALL Info(Mesh, " DATA-----> initial condition: 2D Sedov explosion")
 
   END SUBROUTINE InitData
 

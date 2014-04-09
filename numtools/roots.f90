@@ -3,7 +3,8 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: roots.f90                                                         #
 !#                                                                           #
-!# Copyright (C) 2006 Tobias Illenseer <tillense@ita.uni-heidelberg.de>      #
+!# Copyright (C) 2006-2008                                                   #
+!# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
 !# it under the terms of the GNU General Public License as published by      #
@@ -31,7 +32,7 @@ MODULE Roots
   PRIVATE
   INTEGER, PARAMETER :: MAXIT=100000
   !--------------------------------------------------------------------------!
-  PUBLIC :: RtNewtBisec
+  PUBLIC :: RtNewtBisec, GetRoot
   !--------------------------------------------------------------------------!
 
 CONTAINS
@@ -101,5 +102,58 @@ CONTAINS
     END IF
 
   END FUNCTION RtNewtBisec
+
+
+  FUNCTION GetRoot(funcd,x1,x2,xacc) RESULT(root)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    REAL, INTENT(IN) :: x1,x2,xacc
+    REAL :: root
+    !------------------------------------------------------------------------!
+    INTERFACE
+       SUBROUTINE funcd(x,fx,dfx)
+         IMPLICIT NONE
+         REAL, INTENT(IN)  :: x
+         REAL, INTENT(OUT) :: fx,dfx
+       END SUBROUTINE funcd
+    END INTERFACE
+    !------------------------------------------------------------------------!
+    REAL    :: fm,dfm,fl,dfl,fr,dfr
+    REAL    :: xm,xl,xr,dx
+    INTEGER :: i
+    !------------------------------------------------------------------------!
+    ! compute left and right function values
+    xl = MIN(x1,x2)
+    xr = MAX(x1,x2)
+    CALL funcd(xl,fl,dfl)
+    CALL funcd(xr,fr,dfr)
+    ! check if root is within the interval [x1,x2]
+    IF (fl*fr.GT.0.0) THEN
+       WRITE (*,*) "GetRoot Error: f(x1)*f(x2) should be < 0, aborting!"
+       STOP
+    END IF
+    ! main loop
+    DO i=1,MAXIT
+       ! regular falsi
+       dx = fl*(xl-xr)/(fl-fr)
+       xm = xl - dx
+       root = xm
+       CALL funcd(xm,fm,dfm)
+       ! check abort criteron
+       IF (ABS(fm).LT.xacc) THEN
+          EXIT
+       END IF
+       IF (fm*fl.GT.0.0) THEN
+          xl=xm
+          fl=fm
+       ELSE
+          xr=xm
+          fr=fm
+       END IF
+    END DO
+    IF (i.GT.MAXIT) THEN
+       WRITE (*,*) "WARNING: limit of iterations exceeded!"
+    END IF
+  END FUNCTION GetRoot
 
 END MODULE Roots

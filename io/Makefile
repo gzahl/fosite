@@ -8,7 +8,7 @@ OBJECTS=$(SOURCES:.f90=.o)
 .PHONY: clean distclean
 
 %.o : %.f90
-	$(FC) $(FFLAGS) -c $<
+	$(FC) $(FCFLAGS) -c $<
 
 $(TARGET) : $(OBJECTS)
 	$(AR) $(AFLAGS) $@ $(OBJECTS)
@@ -19,5 +19,6 @@ clean :
 distclean :
 	rm -f $(OBJECTS) $(TARGET) *.mod *.bak *~
 
-output_generic.o : output_gnuplot.o output_opendx.o
-logio_generic.o : logio_binary.o
+fileio_binary.o : fileio_gnuplot.o 
+fileio_hdf5.o : fileio_gnuplot.o 
+fileio_generic.o : fileio_binary.o fileio_hdf5.o fileio_gnuplot.o 

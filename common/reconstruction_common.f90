@@ -3,7 +3,8 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: reconstruction_common.f90                                         #
 !#                                                                           #
-!# Copyright (C) 2007 Tobias Illenseer <tillense@ita.uni-heidelberg.de>      #
+!# Copyright (C) 2006-2008                                                   #
+!# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
 !# it under the terms of the GNU General Public License as published by      #
@@ -26,7 +27,9 @@
 ! basic reconstruction module
 !----------------------------------------------------------------------------!
 MODULE reconstruction_common
-  USE common_types, GetType_common => GetType, GetName_common => GetName
+  USE common_types, GetType_common => GetType, GetName_common => GetName, &
+       GetRank_common => GetRank, Info_common => Info, &
+       Warning_common => Warning, Error_common => Error
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   PRIVATE
@@ -35,6 +38,18 @@ MODULE reconstruction_common
   END INTERFACE
   INTERFACE GetName
      MODULE PROCEDURE GetOrderName, GetName_common
+  END INTERFACE
+  INTERFACE GetRank
+     MODULE PROCEDURE GetReconstructionRank, GetRank_common
+  END INTERFACE
+  INTERFACE Info
+     MODULE PROCEDURE ReconstructionInfo, Info_common
+  END INTERFACE
+  INTERFACE Warning
+     MODULE PROCEDURE ReconstructionWarning, Warning_common
+  END INTERFACE
+  INTERFACE Error
+     MODULE PROCEDURE ReconstructionError, Error_common
   END INTERFACE
   !--------------------------------------------------------------------------!
   ! Reconstruction data structure
@@ -59,14 +74,18 @@ MODULE reconstruction_common
        PRIMITIVE, CONSERVATIVE, &
        ! methods
        InitReconstruction, &
+       PrimRecon, &
        GetType, &
        GetName, &
-       PrimRecon
+       GetRank, &
+       Info, &
+       Warning, &
+       Error
   !--------------------------------------------------------------------------!
 
 CONTAINS
 
-  PURE SUBROUTINE InitReconstruction(this,rtype,rname,pc)
+  SUBROUTINE InitReconstruction(this,rtype,rname,pc)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Reconstruction_TYP) :: this
@@ -111,4 +130,45 @@ CONTAINS
     pc = this%primcons
   END FUNCTION PrimRecon
   
+
+  PURE FUNCTION GetReconstructionRank(this) RESULT(r)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Reconstruction_TYP), INTENT(IN) :: this
+    INTEGER :: r
+    !------------------------------------------------------------------------!
+    r = GetRank_common(this%order)
+  END FUNCTION GetReconstructionRank
+
+
+  SUBROUTINE ReconstructionInfo(this,msg)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Reconstruction_TYP), INTENT(IN) :: this
+    CHARACTER(LEN=*),  INTENT(IN) :: msg
+    !------------------------------------------------------------------------!
+    CALL Info_common(this%order,msg)
+  END SUBROUTINE ReconstructionInfo
+
+
+  SUBROUTINE ReconstructionWarning(this,modproc,msg)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Reconstruction_TYP), INTENT(IN) :: this
+    CHARACTER(LEN=*),  INTENT(IN) :: modproc,msg
+    !------------------------------------------------------------------------!
+    CALL Warning_common(this%order,modproc,msg)
+  END SUBROUTINE ReconstructionWarning
+
+
+  SUBROUTINE ReconstructionError(this,modproc,msg)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Reconstruction_TYP), INTENT(IN) :: this
+    CHARACTER(LEN=*),  INTENT(IN) :: modproc,msg
+    !------------------------------------------------------------------------!
+    CALL Error_common(this%order,modproc,msg)
+  END SUBROUTINE ReconstructionError
+
+
 END MODULE reconstruction_common

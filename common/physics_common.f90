@@ -3,7 +3,8 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: physics_common.f90                                                #
 !#                                                                           #
-!# Copyright (C) 2007 Tobias Illenseer <tillense@ita.uni-heidelberg.de>      #
+!# Copyright (C) 2006-2008                                                   #
+!# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
 !# it under the terms of the GNU General Public License as published by      #
@@ -26,7 +27,10 @@
 ! basic physics module
 !----------------------------------------------------------------------------!
 MODULE physics_common
-  USE common_types, GetType_common => GetType, GetName_common => GetName
+  USE common_types, &
+       GetType_common => GetType, GetName_common => GetName, &
+       GetRank_common => GetRank, Info_common => Info, &
+       Warning_common => Warning, Error_common => Error
   USE sources_common, ONLY : Sources_TYP
   USE constants_common, ONLY : Constants_TYP
   IMPLICIT NONE
@@ -38,12 +42,35 @@ MODULE physics_common
   INTERFACE GetName
      MODULE PROCEDURE GetAdvProblemName, GetName_common
   END INTERFACE
+  INTERFACE GetRank
+     MODULE PROCEDURE GetPhysicsRank, GetRank_common
+  END INTERFACE
+  INTERFACE Info
+     MODULE PROCEDURE PhysicsInfo, Info_common
+  END INTERFACE
+  INTERFACE Warning
+     MODULE PROCEDURE PhysicsWarning, Warning_common
+  END INTERFACE
+  INTERFACE Error
+     MODULE PROCEDURE PhysicsError, Error_common
+  END INTERFACE
   !--------------------------------------------------------------------------!
   TYPE Physics_TYP
      TYPE(Common_TYP)       :: advproblem            ! advection problem     !
+     TYPE(Constants_TYP)    :: constants             ! physical constants    !
      TYPE(Sources_TYP), POINTER &
                             :: sources               ! list of source terms  !
-     TYPE(Constants_TYP)    :: constants             ! physical constants    !
+     REAL                   :: gamma                 ! ratio of spec. heats  !
+     REAL                   :: mu                    ! mean molecular weight !
+     REAL                   :: rhomin                ! density minimum       !
+     REAL                   :: pmin                  ! pressure minimum      !
+     REAL                   :: dpmax                 ! for time step control !
+     INTEGER                :: VNUM                  ! number of variables   !
+     INTEGER                :: DENSITY               ! array indices for     !
+     INTEGER                :: PRESSURE, ENERGY      !    primitive and      !
+     INTEGER                :: XVELOCITY, XMOMENTUM  !    conservative       !
+     INTEGER                :: YVELOCITY, YMOMENTUM  !    variables          !
+     INTEGER                :: ZVELOCITY, ZMOMENTUM  !                       !
      REAL, DIMENSION(:,:,:), POINTER &
                             :: csound                ! sound speed           !
      REAL, DIMENSION(:,:), POINTER &
@@ -52,10 +79,6 @@ MODULE physics_common
                             :: tmin, tmax            ! temporary storage     !
      REAL, DIMENSION(:,:,:,:), POINTER &
                             :: fcent                 ! centrifugal force     !
-     REAL                   :: gamma                 ! ratio of spec. heats  !
-     REAL                   :: mu                    ! mean molecular weight !
-     REAL                   :: dpmax                 ! for time step control !
-     INTEGER                :: vnum                  ! number of variables   !
   END TYPE Physics_TYP
   !--------------------------------------------------------------------------!
   PUBLIC :: &
@@ -64,12 +87,16 @@ MODULE physics_common
        ! methods
        InitPhysics, &
        GetType, &
-       GetName
+       GetName, &
+       GetRank, &
+       Info, &
+       Warning, &
+       Error
   !--------------------------------------------------------------------------!
 
 CONTAINS
 
-  PURE SUBROUTINE InitPhysics(this,atype,aname,vnum)
+  SUBROUTINE InitPhysics(this,atype,aname,vnum)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Physics_TYP) :: this
@@ -78,7 +105,7 @@ CONTAINS
     INTEGER           :: vnum
     !------------------------------------------------------------------------!
     INTENT(IN)        :: atype,aname,vnum
-    INTENT(OUT)       :: this
+    INTENT(INOUT)     :: this
     !------------------------------------------------------------------------!
     CALL InitCommon(this%advproblem,atype,aname)
     this%vnum=vnum
@@ -103,6 +130,51 @@ CONTAINS
     !------------------------------------------------------------------------!
     an = GetName_common(this%advproblem)
   END FUNCTION GetAdvProblemName
+
+
+  PURE FUNCTION GetPhysicsRank(this) RESULT(r)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Physics_TYP), INTENT(IN) :: this
+    INTEGER :: r
+    !------------------------------------------------------------------------!
+    r = GetRank_common(this%advproblem)
+  END FUNCTION GetPhysicsRank
+
+
+  SUBROUTINE PhysicsInfo(this,msg)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Physics_TYP), INTENT(IN) :: this
+    CHARACTER(LEN=*),  INTENT(IN) :: msg
+    !------------------------------------------------------------------------!
+    CALL Info_common(this%advproblem,msg)
+  END SUBROUTINE PhysicsInfo
+
+
+  SUBROUTINE PhysicsWarning(this,modproc,msg)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Physics_TYP), INTENT(IN) :: this
+    CHARACTER(LEN=*),  INTENT(IN) :: modproc,msg
+    !------------------------------------------------------------------------!
+    CALL Warning_common(this%advproblem,modproc,msg)
+  END SUBROUTINE PhysicsWarning
+
+
+  SUBROUTINE PhysicsError(this,modproc,msg,rank)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Physics_TYP), INTENT(IN) :: this
+    CHARACTER(LEN=*),  INTENT(IN) :: modproc,msg
+    INTEGER, OPTIONAL, INTENT(IN) :: rank
+    !------------------------------------------------------------------------!
+    IF (PRESENT(rank)) THEN
+       CALL Error_common(this%advproblem,modproc,msg,rank)
+    ELSE
+       CALL Error_common(this%advproblem,modproc,msg)
+    END IF
+  END SUBROUTINE PhysicsError
 
 
 END MODULE physics_common

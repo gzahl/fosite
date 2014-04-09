@@ -8,7 +8,7 @@ OBJECTS=$(SOURCES:.f90=.o)
 .PHONY: clean distclean
 
 %.o : %.f90
-	$(FC) $(FFLAGS) -c $<
+	$(FC) $(FCFLAGS) -c $<
 
 $(TARGET) : $(OBJECTS)
 	$(AR) $(AFLAGS) $@ $(OBJECTS)
@@ -19,4 +19,4 @@ clean :
 distclean :
 	rm -f $(OBJECTS) $(TARGET) *.mod *.bak *~
 
-timedisc_generic.o : timedisc_modeuler.o
+timedisc_generic.o : timedisc_modeuler.o 

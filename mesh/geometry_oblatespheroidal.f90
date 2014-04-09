@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: geometry_oblatespheroidal.f90                                     #
 !#                                                                           #
-!# Copyright (C) 2007 Tobias Illenseer <tillense@ita.uni-heidelberg.de>      #
+!# Copyright (C) 2007 Tobias Illenseer <tillense@astrophysik.uni-kiel.de>    #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
 !# it under the terms of the GNU General Public License as published by      #
@@ -26,29 +26,29 @@
 ! define properties of a 2.5D oblate spheroidal mesh
 !----------------------------------------------------------------------------!
 MODULE geometry_oblatespheroidal
-  USE geometry_common
+  USE geometry_cartesian
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
-  INTERFACE Convert2Cartesian_oblatespheroidal
+  INTERFACE Convert2Cartesian_oblatespher
      MODULE PROCEDURE Convert2Cartesian_coords, Convert2Cartesian_vectors
   END INTERFACE
-  INTERFACE Convert2Curvilinear_oblatespheroidal
+  INTERFACE Convert2Curvilinear_oblatespher
      MODULE PROCEDURE Convert2Curvilinear_coords, Convert2Curvilinear_vectors
   END INTERFACE
   PRIVATE
   CHARACTER(LEN=32), PARAMETER :: geometry_name = "oblate spheroidal"
   !--------------------------------------------------------------------------!
   PUBLIC :: &
-       InitGeometry_oblatespheroidal, &
+       InitGeometry_oblatespher, &
        GetScale, &
-       ScaleFactors_oblatespheroidal, &
-       Convert2Cartesian_oblatespheroidal, &
-       Convert2Curvilinear_oblatespheroidal
+       ScaleFactors_oblatespher, &
+       Convert2Cartesian_oblatespher, &
+       Convert2Curvilinear_oblatespher
   !--------------------------------------------------------------------------!
 
 CONTAINS
 
-  PURE SUBROUTINE InitGeometry_oblatespheroidal(this,gt,gs)
+  SUBROUTINE InitGeometry_oblatespher(this,gt,gs)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Geometry_TYP), INTENT(INOUT) :: this
@@ -57,7 +57,7 @@ CONTAINS
     !------------------------------------------------------------------------!
     CALL InitGeometry(this,gt,geometry_name)
     this%scalefactor = gs
-  END SUBROUTINE InitGeometry_oblatespheroidal
+  END SUBROUTINE InitGeometry_oblatespher
     
 
   PURE FUNCTION GetScale(this) RESULT(gs)
@@ -70,7 +70,7 @@ CONTAINS
   END FUNCTION GetScale
 
 
-  ELEMENTAL SUBROUTINE ScaleFactors_oblatespheroidal(gs,xi,eta,hxi,heta,hphi)
+  ELEMENTAL SUBROUTINE ScaleFactors_oblatespher(gs,xi,eta,hxi,heta,hphi)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     REAL, INTENT(IN)  :: gs,xi,eta
@@ -80,7 +80,7 @@ CONTAINS
     hxi  = gs*SQRT(SINH(xi)**2+SIN(eta)**2)
     heta = hxi
     hphi = gs*COSH(xi)*COS(eta)
-  END SUBROUTINE ScaleFactors_oblatespheroidal
+  END SUBROUTINE ScaleFactors_oblatespher
 
   
   ! coordinate transformation

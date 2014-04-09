@@ -3,7 +3,8 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: sources_diskthomson.f90                                           #
 !#                                                                           #
-!# Copyright (C) 2007 Tobias Illenseer <tillense@ita.uni-heidelberg.de>      #
+!# Copyright (C) 2007-2008                                                   #
+!# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
 !# it under the terms of the GNU General Public License as published by      #
@@ -55,7 +56,6 @@ CONTAINS
     !------------------------------------------------------------------------!
     TYPE(Sources_TYP), POINTER :: this
     TYPE(Mesh_TYP)    :: Mesh
-    TYPE(Fluxes_TYP)  :: Fluxes
     TYPE(Physics_TYP) :: Physics
     INTEGER           :: stype
     REAL              :: mass,mdot,s0,s1
@@ -77,7 +77,7 @@ CONTAINS
     this%mdot = mdot
 
     ! some constants
-    rs = 2*(Physics%constants%GN * mass) * & ! Schwarzschildradius of the BH !
+    rs = 2*Physics%constants%GN * &          ! Schwarzschildradius of the BH !
          (this%mass / (Physics%constants%C**2 + TINY))
     s0rs = s0 / rs                           ! inner radius in terms of R_s  !
     factor = 3.*Physics%constants%KE / &     ! constant factor               !
@@ -86,10 +86,7 @@ CONTAINS
     ! reserve memory for radiational acceleration
     ALLOCATE(this%accel(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,2), &
          STAT = err)
-    IF (err.NE.0) THEN
-       PRINT *, "ERROR in InitSources_diskthomson: Unable allocate memory!"
-       STOP
-    END IF
+    IF (err.NE.0) CALL Error(this,"InitSources_diskthomson", "Unable allocate memory!")
 
     ! convert to cartesian coordinates
     curv(:,:,:) = Mesh%bcenter(:,:,:)
@@ -116,20 +113,6 @@ CONTAINS
 
     ! convert to curvilinear vector components
     CALL Convert2Curvilinear(Mesh%geometry,curv,accel,this%accel)
-
-    ! for advanced time step control: 
-    ! minimal free thomson acceleration time scale on the mesh
-    this%dtmin = SQRT(MIN(MINVAL(ABS(Mesh%dlx(:,:)/this%accel(:,:,1))), &
-         MINVAL(ABS(Mesh%dly(:,:)/this%accel(:,:,2)))))
-
-!!$    ! test forces
-!!$    DO i=Mesh%IGMIN,Mesh%IGMAX
-!!$       DO j=Mesh%JGMIN,Mesh%JGMAX
-!!$          WRITE (*,"(4(ES10.2))") cart(i,j,:), this%accel(i,j,:)
-!!$       END DO
-!!$       PRINT *, ""
-!!$    END DO
-!!$    STOP
   END SUBROUTINE InitSources_diskthomson
 
 

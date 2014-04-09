@@ -3,7 +3,8 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: reconstruction_generic.f90                                        #
 !#                                                                           #
-!# Copyright (C) 2007 Tobias Illenseer <tillense@ita.uni-heidelberg.de>      #
+!# Copyright (C) 2007-2008                                                   #
+!# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
 !# it under the terms of the GNU General Public License as published by      #
@@ -26,7 +27,7 @@
 ! generic module for reconstruction process
 !----------------------------------------------------------------------------!
 MODULE reconstruction_generic
-  USE reconstruction_constant
+  USE reconstruction_constant, InitReconstruction_common => InitReconstruction
   USE reconstruction_linear
   USE mesh_common, ONLY : Mesh_TYP
   USE physics_common, ONLY : Physics_TYP
@@ -64,6 +65,7 @@ CONTAINS
     INTEGER, OPTIONAL        :: limiter
     REAL, OPTIONAL           :: theta
     !------------------------------------------------------------------------!
+    CHARACTER(LEN=32)        :: infostr
     INTEGER                  :: limiter_default
     REAL                     :: theta_default
     !------------------------------------------------------------------------!
@@ -90,24 +92,22 @@ CONTAINS
        CASE(MINMOD,MONOCENT,SWEBY,SUPERBEE,OSPRE)
           CALL InitReconstruction_linear(this,order,variables,limiter_default,theta_default)
        CASE DEFAULT
-          PRINT *, "ERROR in InitReconstruction: unknown limiter"
-          STOP
+          CALL Error(this, "InitReconstruction", "Unknown limiter")
        END SELECT
     CASE DEFAULT
-       PRINT *, "ERROR in InitReconstruction: order not supported"
-       STOP
+       CALL Error(this,"MallocReconstruction",  "Unknown reconstruction type.")
     END SELECT
 
     ! print some information
-    PRINT "(A,A)", " RECONSTR-> order:             ", TRIM(GetName(this))
-    WRITE (*,FMT='(A)',ADVANCE='NO'), "            primitive:         "
+    CALL Info(this, " RECONSTR-> order:             " // TRIM(GetName(this)))
     IF (PrimRecon(this)) THEN
-       PRINT "(A)", "true"
+       WRITE (infostr,'(A)') "primitive"
     ELSE
-       PRINT "(A)", "false"
+       WRITE (infostr,'(A)') "conservative"
     END IF
+    CALL Info(this, "            variables:         " // TRIM(infostr))
     IF (order.EQ.LINEAR) THEN
-       PRINT "(A,A)", "            limiter:           ", TRIM(GetLimiterName(this))
+       CALL Info(this, "            limiter:           " // TRIM(GetLimiterName(this)))
     END IF
   END SUBROUTINE InitReconstruction
 
@@ -119,8 +119,6 @@ CONTAINS
     TYPE(Mesh_TYP)           :: Mesh
     TYPE(Physics_TYP)        :: Physics
     !------------------------------------------------------------------------!
-    INTEGER       :: err
-    !------------------------------------------------------------------------!
     INTENT(IN)    :: Mesh,Physics
     INTENT(INOUT) :: this
     !------------------------------------------------------------------------!
@@ -131,8 +129,7 @@ CONTAINS
     CASE(LINEAR)
        CALL MallocReconstruction_linear(this,Mesh,Physics)
     CASE DEFAULT
-       PRINT *, "ERROR in MallocReconstruction: unknown reconstruction type"
-       STOP
+       CALL Error(this,"MallocReconstruction",  "Unknown reconstruction type.")
     END SELECT
   END SUBROUTINE MallocReconstruction
 
@@ -190,7 +187,7 @@ CONTAINS
     !------------------------------------------------------------------------!
     TYPE(Reconstruction_TYP) :: this
     !------------------------------------------------------------------------!
-    INTENT(IN)               :: this
+    INTENT(INOUT)            :: this
     !------------------------------------------------------------------------!
     SELECT CASE(GetType(this))
     CASE(CONSTANT)
@@ -198,8 +195,7 @@ CONTAINS
     CASE(LINEAR)
        CALL CloseReconstruction_linear(this)
     CASE DEFAULT
-       PRINT *, "ERROR in CloseReconstruction: unknown reconstruction type"
-       STOP
+       CALL Error(this, "CloseReconstruction",  "Unknown reconstruction type.")
     END SELECT
   END SUBROUTINE CloseReconstruction
 

@@ -3,7 +3,8 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: boundary_axis.f90                                                 #
 !#                                                                           #
-!# Copyright (C) 2007 Tobias Illenseer <tillense@ita.uni-heidelberg.de>      #
+!# Copyright (C) 2006-2008                                                   #
+!# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
 !# it under the terms of the GNU General Public License as published by      #
@@ -26,9 +27,9 @@
 ! boundary module for axis boundaries
 !----------------------------------------------------------------------------!
 MODULE boundary_axis
+  USE mesh_common, ONLY : Mesh_TYP
   USE boundary_reflecting, CloseBoundary_axis => CloseBoundary_reflecting, &
        CenterBoundary_axis => CenterBoundary_reflecting
-  USE mesh_common, ONLY : Mesh_TYP
   USE physics_generic
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
@@ -42,12 +43,7 @@ MODULE boundary_axis
        WEST, EAST, SOUTH, NORTH, &
        ! methods
        InitBoundary_axis, &
-       GetType, &
-       GetName, &
-       GetDirection, &
-       GetDirectionName, &
        CenterBoundary_axis, &
-       FaceBoundary_axis, &
        CloseBoundary_axis
   !--------------------------------------------------------------------------!
 
@@ -71,8 +67,7 @@ CONTAINS
          this%reflY(Physics%vnum), &
          STAT=err)
     IF (err.NE.0) THEN
-       PRINT *, "ERROR in InitBoundary_axis: Can't allocate memory!"
-       STOP
+       CALL Error(this, "InitBoundary_axis", "Unable to allocate memory.")
     END IF
     ! this tells us which vars get the opposite sign/vanish at cell faces;
     ! e.g. vertical velocities (depends on the underlying physics)
@@ -82,7 +77,7 @@ CONTAINS
     ! along all coordinate directions;
     ! check the underlying physics/geometry  modules
     !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    CALL GetAxisMasks(Physics,this%reflX,this%reflY)
+    CALL AxisMasks(Physics,this%reflX,this%reflY)
   END SUBROUTINE InitBoundary_axis
 
 

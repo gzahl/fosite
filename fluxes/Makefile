@@ -8,7 +8,7 @@ OBJECTS=$(SOURCES:.f90=.o)
 .PHONY: clean distclean
 
 %.o : %.f90
-	$(FC) $(FFLAGS) -c $<
+	$(FC) $(FCFLAGS) -c $<
 
 $(TARGET) : $(OBJECTS)
 	$(AR) $(AFLAGS) $@ $(OBJECTS)
@@ -19,7 +19,8 @@ clean :
 distclean :
 	rm -f $(OBJECTS) $(TARGET) *.mod *.bak *~
 
+reconstruction_linear.o : reconstruction_constant.o
 reconstruction_generic.o : reconstruction_constant.o reconstruction_linear.o
 fluxes_midpoint.o : reconstruction_generic.o
-fluxes_trapezoidal.o : fluxes_midpoint.o reconstruction_generic.o
+fluxes_trapezoidal.o : fluxes_midpoint.o
 fluxes_generic.o : fluxes_midpoint.o fluxes_trapezoidal.o

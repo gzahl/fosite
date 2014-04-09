@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: geometry_cartesian.f90                                            #
 !#                                                                           #
-!# Copyright (C) 2007 Tobias Illenseer <tillense@ita.uni-heidelberg.de>      #
+!# Copyright (C) 2007 Tobias Illenseer <tillense@astrophysik.uni-kiel.de>    #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
 !# it under the terms of the GNU General Public License as published by      #
@@ -33,15 +33,23 @@ MODULE geometry_cartesian
   CHARACTER(LEN=32), PARAMETER :: geometry_name = "cartesian"
   !--------------------------------------------------------------------------!
   PUBLIC :: &
+       ! types
+       Geometry_TYP, &
+       ! methods
+       InitGeometry, &
        InitGeometry_cartesian, &
+       ScaleFactors_cartesian, &
        GetType, &
        GetName, &
-       ScaleFactors_cartesian
+       GetRank, &
+       Info, &
+       Warning, &
+       Error
   !--------------------------------------------------------------------------!
 
 CONTAINS
 
-  PURE SUBROUTINE InitGeometry_cartesian(this,gt)
+  SUBROUTINE InitGeometry_cartesian(this,gt)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Geometry_TYP), INTENT(INOUT) :: this

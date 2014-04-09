@@ -3,7 +3,8 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: boundary_folded.f90                                               #
 !#                                                                           #
-!# Copyright (C) 2007 Tobias Illenseer <tillense@ita.uni-heidelberg.de>      #
+!# Copyright (C) 2006-2008                                                   #
+!# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
 !# it under the terms of the GNU General Public License as published by      #
@@ -28,9 +29,9 @@
 ! use this for oblate spheroidal coordinates
 !----------------------------------------------------------------------------!
 MODULE boundary_folded
+  USE mesh_common, ONLY : Mesh_TYP
   USE boundary_reflecting, CloseBoundary_folded => CloseBoundary_reflecting
   USE physics_generic
-  USE mesh_common, ONLY : Mesh_TYP
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   PRIVATE
@@ -43,12 +44,7 @@ MODULE boundary_folded
        WEST, EAST, SOUTH, NORTH, &
        ! methods
        InitBoundary_folded, &
-       GetType, &
-       GetName, &
-       GetDirection, &
-       GetDirectionName, &
        CenterBoundary_folded, &
-       FaceBoundary_folded, &
        CloseBoundary_folded
   !--------------------------------------------------------------------------!
 
@@ -72,12 +68,11 @@ CONTAINS
          this%reflY(Physics%vnum), &
          STAT=err)
     IF (err.NE.0) THEN
-       PRINT *, "ERROR in InitBoundary_folded: Can't allocate memory!"
-       STOP
+       CALL Error(this,"InitBoundary_folded", "Unable to allocate memory.")
     END IF
     ! this tells us which vars get the opposite sign/vanish at cell faces;
     ! e.g. vertical velocities (depends on the underlying physics)
-    CALL GetReflectionMasks(Physics,this%reflX,this%reflY)
+    CALL ReflectionMasks(Physics,this%reflX,this%reflY)
     ! odd cell numbers: IMID+1 and JMID+1 are in the middle 
     this%IMID = Mesh%INUM / 2 + Mesh%IMIN - 1
     this%JMID = Mesh%JNUM / 2 + Mesh%JMIN - 1
@@ -180,86 +175,5 @@ CONTAINS
       END FORALL
     END SELECT
   END SUBROUTINE CenterBoundary_folded
-
-
-  PURE SUBROUTINE FaceBoundary_folded(this,Mesh,Physics,we,ea,so,no,rstates)
-    IMPLICIT NONE
-    !------------------------------------------------------------------------!
-    TYPE(Boundary_TYP) :: this
-    TYPE(Mesh_TYP)     :: Mesh
-    TYPE(Physics_TYP)  :: Physics
-    INTEGER            :: we,ea,so,no
-    REAL :: rstates(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,4,Physics%vnum)
-    !------------------------------------------------------------------------!
-    INTEGER       :: i,j
-    !------------------------------------------------------------------------!
-    INTENT(IN)    :: this,Mesh,Physics,we,ea,so,no
-    INTENT(INOUT) :: rstates
-    !------------------------------------------------------------------------!
-    !************************************************************************!
-    ! Be careful! There is a problem with trapezoidal rule, because          !
-    ! SetFaceBoundary is called twice with different pairs of boundary values!
-    ! (1st call:sw/se,sw/nw; 2nd call:nw/ne,se/ne).                          !
-    !************************************************************************!
-    SELECT CASE(GetDirection(this))
-    CASE(WEST)
-       ! middle cell transmissive boundaries
-       rstates(Mesh%IMIN-1,this%JMID+1,ea,:) = rstates(Mesh%IMIN,this%JMID+1,we,:)
-       ! JGMAX -> JGMIN, JGMAX-1 -> JGMIN+1, ..., JGMAX-JMID -> JMID
-       ! and JGMIN -> JGMAX, JGMIN+1 -> JGMAX-1, ...
-       FORALL (j=Mesh%JGMIN:this%JMID)
-          WHERE (this%reflX)
-             rstates(Mesh%IMIN-1,j,ea,:) = -rstates(Mesh%IMIN,Mesh%JGMAX-j,we,:)
-             rstates(Mesh%IMIN-1,Mesh%JGMAX-j,ea,:) = -rstates(Mesh%IMIN,j,we,:)
-          ELSEWHERE
-             rstates(Mesh%IMIN-1,j,ea,:) = rstates(Mesh%IMIN,Mesh%JGMAX-j,we,:)
-             rstates(Mesh%IMIN-1,Mesh%JGMAX-j,ea,:) = rstates(Mesh%IMIN,j,we,:)
-          END WHERE
-       END FORALL
-    CASE(EAST)
-       ! middle cell transmissive boundaries
-       rstates(Mesh%IMAX+1,this%JMID+1,we,:) = rstates(Mesh%IMAX,this%JMID+1,ea,:)
-       ! JGMAX -> JGMIN, JGMAX-1 -> JGMIN+1, ..., JGMAX-JMID -> JMID
-       ! and JGMIN -> JGMAX, JGMIN+1 -> JGMAX-1, ...
-       FORALL (j=Mesh%JGMIN:this%JMID)
-          WHERE (this%reflX)
-             rstates(Mesh%IMAX+1,j,we,:) = -rstates(Mesh%IMAX,Mesh%JGMAX-j,ea,:)
-             rstates(Mesh%IMAX+1,Mesh%JGMAX-j,we,:) = -rstates(Mesh%IMAX,j,ea,:)
-          ELSEWHERE
-             rstates(Mesh%IMAX+1,j,we,:) = rstates(Mesh%IMAX,Mesh%JGMAX-j,ea,:)
-             rstates(Mesh%IMAX+1,Mesh%JGMAX-j,we,:) = rstates(Mesh%IMAX,j,ea,:)
-          END WHERE
-       END FORALL
-    CASE(SOUTH)
-       ! middle cell transmissive boundaries
-       rstates(this%IMID+1,Mesh%JMIN-1,no,:) = rstates(this%IMID+1,Mesh%JMIN,so,:)
-       ! IGMAX -> IGMIN, IGMAX-1 -> IGMIN+1, ..., IGMAX-IMID -> IMID
-       ! and IGMIN -> IGMAX, IGMIN+1 -> IGMAX-1, ...
-       FORALL (i=Mesh%IGMIN:this%IMID)
-          WHERE (this%reflY)
-             rstates(i,Mesh%JMIN-1,no,:) = -rstates(Mesh%IMAX-i,Mesh%JMIN,so,:)
-             rstates(Mesh%IMAX-i,Mesh%JMIN-1,no,:) = -rstates(i,Mesh%JMIN,so,:)
-          ELSEWHERE
-             rstates(i,Mesh%JMIN-1,no,:) = rstates(Mesh%IMAX-i,Mesh%JMIN,so,:)
-             rstates(Mesh%IMAX-i,Mesh%JMIN-1,no,:) = rstates(i,Mesh%JMIN,so,:)
-          END WHERE
-       END FORALL
-    CASE(NORTH)
-       ! middle cell transmissive boundaries
-       rstates(this%IMID+1,Mesh%JMAX+1,so,:) = rstates(this%IMID+1,Mesh%JMAX,no,:)
-       ! IGMAX -> IGMIN, IGMAX-1 -> IGMIN+1, ..., IGMAX-IMID -> IMID
-       ! and IGMIN -> IGMAX, IGMIN+1 -> IGMAX-1, ...
-       FORALL (i=Mesh%IGMIN:this%IMID)
-          WHERE (this%reflY)
-             rstates(i,Mesh%JMAX+1,so,:) = -rstates(Mesh%IMAX-i,Mesh%JMAX,no,:)
-             rstates(Mesh%IMAX-i,Mesh%JMAX+1,so,:) = -rstates(i,Mesh%JMAX,no,:)
-          ELSEWHERE
-             rstates(i,Mesh%JMAX+1,so,:) = rstates(Mesh%IMAX-i,Mesh%JMAX,no,:)
-             rstates(Mesh%IMAX-i,Mesh%JMAX+1,so,:) = rstates(i,Mesh%JMAX,no,:)
-          END WHERE
-       END FORALL
-    END SELECT
-  END SUBROUTINE FaceBoundary_folded
-
 
 END MODULE boundary_folded

@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: mesh_trapezoidal.f90                                              #
 !#                                                                           #
-!# Copyright (C) 2007 Tobias Illenseer <tillense@ita.uni-heidelberg.de>      #
+!# Copyright (C) 2007 Tobias Illenseer <tillense@astrophysik.uni-kiel.de>    #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
 !# it under the terms of the GNU General Public License as published by      #
@@ -26,8 +26,8 @@
 ! mesh module for trapezoidal quadrature rule
 !----------------------------------------------------------------------------!
 MODULE mesh_trapezoidal
+  USE mesh_midpoint
   USE geometry_generic
-  USE mesh_common, ONLY : Mesh_TYP
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   PRIVATE
@@ -43,18 +43,23 @@ MODULE mesh_trapezoidal
 CONTAINS
 
 
-  SUBROUTINE InitMesh_trapezoidal(this,inum,jnum,xmin,xmax,ymin,ymax)
+  SUBROUTINE InitMesh_trapezoidal(this,geometry,inum,jnum,xmin,xmax,ymin,ymax,gparam)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Mesh_TYP)    :: this
+    INTEGER           :: geometry
     INTEGER           :: inum,jnum
     REAL              :: xmin,xmax,ymin,ymax    
+    REAL              :: gparam
     !------------------------------------------------------------------------!
     INTEGER           :: err
     !------------------------------------------------------------------------!
     INTENT(IN)        :: inum,jnum,xmin,xmax,ymin,ymax
     INTENT(INOUT)     :: this
     !------------------------------------------------------------------------!
+
+    ! basic mesh and geometry initialization
+    CALL InitMesh(this,geometry,inum,jnum,xmin,xmax,ymin,ymax,gparam)
 
     ! allocate memory for pointers that are specific for trapezoidal fluxes
     ALLOCATE(this%dAx(this%IGMIN:this%IGMAX,this%JGMIN:this%JGMAX,2), &
@@ -73,8 +78,7 @@ CONTAINS
          this%weights(this%IGMIN:this%IGMAX,this%JGMIN:this%JGMAX,2,2), &
          STAT=err)
     IF (err.NE.0) THEN
-       PRINT *, "ERROR in InitMesh_trapezoidal: Unable to allocate memory!"
-       STOP
+       CALL Error(this,"InitMesh_trapezoidal", "Unable to allocate memory.")
     END IF
 
     ! corner positions
@@ -241,8 +245,7 @@ CONTAINS
              ! determinant
              det = df(1,1)*df(2,2) - df(1,2)*df(2,1)
              IF (det.EQ.0) THEN
-                PRINT *, "ERROR in CalculateWeights: det=0 while inverting matrix"
-                STOP
+                CALL Error(this,"CalculateWeights", "det=0 while inverting matrix")
              END IF
              ! invert the jacobian
              dfinv(1,1) = df(2,2) / det
@@ -257,8 +260,7 @@ CONTAINS
           END DO
 
           IF (n.GE.10) THEN
-             PRINT *, "ERROR in CalculateWeights: Newton-Raphson not convergent"
-             STOP
+             CALL Error(this,"CalculateWeights", "Newton-Raphson not convergent")
           END IF
 
           ! set the weights for the corner enclosed by
@@ -279,11 +281,9 @@ CONTAINS
     TYPE(Mesh_TYP)    :: this
     !------------------------------------------------------------------------!
 
-    DEALLOCATE(this%dAx,this%dAy,this%dAydx,this%dAxdy, &
-         this%cyxy,this%cxyx,this%czxz,this%czyz, &
-         this%cpos,this%chx,this%chy,this%chz, &
+    DEALLOCATE(this%cpos,this%chx,this%chy,this%chz, &
          this%sqrtg,this%weights)
-
+    CALL CloseMesh_midpoint(this)
   END SUBROUTINE CloseMesh_trapezoidal
 
 

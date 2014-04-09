@@ -3,7 +3,8 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: fluxes_midpoint.f90                                               #
 !#                                                                           #
-!# Copyright (C) 2007 Tobias Illenseer <tillense@ita.uni-heidelberg.de>      #
+!# Copyright (C) 2007-2008                                                   #
+!# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
 !# it under the terms of the GNU General Public License as published by      #
@@ -27,10 +28,9 @@
 !----------------------------------------------------------------------------!
 MODULE fluxes_midpoint
   USE fluxes_common
-  USE reconstruction_generic
-  USE physics_generic
-  USE boundary_generic, ONLY : Boundary_TYP, FaceBoundary
   USE mesh_common, ONLY : Mesh_TYP
+  USE physics_generic
+  USE reconstruction_generic
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   PRIVATE
@@ -45,6 +45,10 @@ MODULE fluxes_midpoint
        InitFluxes_midpoint, &
        GetType, &
        GetName, &
+       GetRank, &
+       Info, &
+       Warning, &
+       Error, &
        PrimRecon, &
        CalculateFaceData, &
        CalculateFluxes_midpoint
@@ -83,13 +87,11 @@ CONTAINS
        CALL CalculateSlopes(this%Reconstruction,Mesh,Physics,pvar)
        CALL CalculateStates(this%Reconstruction,Mesh,Physics,4,Mesh%bcenter,&
             Mesh%fpos,pvar,this%rstates)
-!       CALL FaceBoundary(Mesh%Boundary,Mesh,Physics,1,2,3,4,this%prim)
        CALL Convert2Conservative(Physics,Mesh,this%rstates,this%cons)
     ELSE
        CALL CalculateSlopes(this%Reconstruction,Mesh,Physics,cvar)
        CALL CalculateStates(this%Reconstruction,Mesh,Physics,4,Mesh%bcenter,&
             Mesh%fpos,cvar,this%rstates)
-!       CALL FaceBoundary(Mesh%Boundary,Mesh,Physics,1,2,3,4,this%cons)
        CALL Convert2Primitive(Physics,Mesh,this%rstates,this%prim)
     END IF
 
@@ -119,27 +121,41 @@ CONTAINS
     ! execute generic tasks common to all flux types
     CALL CalculateFaceData(this,Mesh,Physics,pvar,cvar)
 
-    ! physical fluxes
     ! west and east
-    CALL CalculateFluxesX(Physics,Mesh,1,2,this%prim,this%cons,this%pfluxes)
-    ! south and north
-    CALL CalculateFluxesY(Physics,Mesh,3,4,this%prim,this%cons,this%pfluxes)
-
-    ! numerical fluxes
-    FORALL (i=Mesh%IMIN-1:Mesh%IMAX, j=Mesh%JMIN-1:Mesh%JMAX, k=1:Physics%vnum)
-       ! x-direction (nonsense for j=JMIN-1)
-       xflux(i,j,k) = Mesh%dAxdy(i+1,j,1)/(Physics%amax(i,j) - Physics%amin(i,j)) * &
+    IF (Mesh%INUM.GT.1) THEN
+       ! physical fluxes
+       CALL CalculateFluxesX(Physics,Mesh,1,2,this%prim,this%cons,this%pfluxes)
+       ! numerical fluxes
+       FORALL (i=Mesh%IMIN-1:Mesh%IMAX,j=Mesh%JGMIN:Mesh%JGMAX,k=1:Physics%vnum)
+          ! x-direction
+          xflux(i,j,k) = Mesh%dAxdy(i+1,j,1) / &
+            (Physics%amax(i,j) - Physics%amin(i,j)) * &
             (Physics%amax(i,j)*this%pfluxes(i,j,2,k) - &
             Physics%amin(i,j)*this%pfluxes(i+1,j,1,k) + &
             Physics%amin(i,j)*Physics%amax(i,j) * &
             (this%cons(i+1,j,1,k) - this%cons(i,j,2,k)))
-      ! y-direction (nonsense for i=IMIN-1)
-       yflux(i,j,k) = Mesh%dAydx(i,j+1,1)/(Physics%bmax(i,j) - Physics%bmin(i,j)) * &
+       END FORALL
+    ELSE
+       xflux(:,:,:) = 0.0
+    END IF
+
+    ! south and north
+    IF (Mesh%JNUM.GT.1) THEN
+       ! physical fluxes
+       CALL CalculateFluxesY(Physics,Mesh,3,4,this%prim,this%cons,this%pfluxes)
+       ! numerical fluxes
+       FORALL (i=Mesh%IGMIN:Mesh%IGMAX,j=Mesh%JMIN-1:Mesh%JMAX,k=1:Physics%vnum)
+         ! y-direction (nonsense for i=IMIN-1)
+         yflux(i,j,k) = Mesh%dAydx(i,j+1,1) / &
+            (Physics%bmax(i,j) - Physics%bmin(i,j)) * &
             (Physics%bmax(i,j)*this%pfluxes(i,j,4,k) - &
             Physics%bmin(i,j)*this%pfluxes(i,j+1,3,k) + &
             Physics%bmin(i,j)*Physics%bmax(i,j) * &
             (this%cons(i,j+1,3,k) - this%cons(i,j,4,k)))
-    END FORALL
+       END FORALL
+    ELSE
+       yflux(:,:,:) = 0.0
+    END IF
 
   END SUBROUTINE CalculateFluxes_midpoint
 

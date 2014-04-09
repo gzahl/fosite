@@ -3,7 +3,8 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: sources_pointmass.f90                                             #
 !#                                                                           #
-!# Copyright (C) 2007 Tobias Illenseer <tillense@ita.uni-heidelberg.de>      #
+!# Copyright (C) 2007-2008                                                   #
+!# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
 !# it under the terms of the GNU General Public License as published by      #
@@ -26,6 +27,7 @@
 ! a point mass at the center of the coordinate system
 !----------------------------------------------------------------------------!
 MODULE sources_pointmass
+  USE common_types, ONLY : Common_TYP, InitCommon
   USE sources_common, InitSources_common => InitSources
   USE fluxes_common, ONLY : Fluxes_TYP
   USE physics_generic
@@ -35,17 +37,27 @@ MODULE sources_pointmass
   PRIVATE
   REAL, PARAMETER :: TINY = 1.0E-30              ! to avoid division by 0    !
   CHARACTER(LEN=32), PARAMETER :: source_name = "central point mass"
+  INTEGER, PARAMETER :: NEWTON = 1
+  INTEGER, PARAMETER :: WIITA  = 2
   !--------------------------------------------------------------------------!
   PUBLIC :: &
        ! types
        Sources_TYP, &
+       ! constants
+       NEWTON, WIITA, &
        ! methods
        InitSources, &
        InitSources_pointmass, &
+       ExternalSources_pointmass, &
+       CloseSources_pointmass, &
+       GetSourcesPointer, &
        GetType, &
        GetName, &
-       ExternalSources_pointmass, &
-       CloseSources_pointmass
+       GetRank, &
+       GetNumProcs, &
+       Info, &
+       Warning, &
+       Error
   !--------------------------------------------------------------------------!
 
 CONTAINS
@@ -64,10 +76,7 @@ CONTAINS
     !------------------------------------------------------------------------!
     ! allocate memory for new source term
     ALLOCATE(newsrc,STAT=err)
-    IF (err.NE.0) THEN
-       PRINT *, "ERROR in InitSources: Unable to allocate memory"
-       STOP
-    END IF
+    IF (err.NE.0) CALL Error(this,"InitSources", "Unable allocate memory!")
     
     ! basic initialization
     CALL InitSources_common(newsrc,stype,sname)
@@ -85,7 +94,7 @@ CONTAINS
   END SUBROUTINE InitSources
 
 
-  SUBROUTINE InitSources_pointmass(this,Mesh,Physics,stype,mass)
+  SUBROUTINE InitSources_pointmass(this,Mesh,Physics,stype,potential,mass)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Sources_TYP), POINTER :: this
@@ -93,47 +102,54 @@ CONTAINS
     TYPE(Fluxes_TYP)  :: Fluxes
     TYPE(Physics_TYP) :: Physics
     INTEGER           :: stype
+    INTEGER           :: potential
     REAL              :: mass
     !------------------------------------------------------------------------!
-    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,2) :: cart, accel
-    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX) :: tanphi
+    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,2) :: accel
+    REAL              :: r,a
     INTEGER           :: err
     INTEGER           :: i,j
     !------------------------------------------------------------------------!
-    INTENT(IN)        :: Mesh,Physics,stype,mass
+    INTENT(IN)        :: Mesh,Physics,stype,potential,mass
     !------------------------------------------------------------------------!
     CALL InitSources(this,stype,source_name)
 
     ! set mass
     this%mass = mass
+
     ALLOCATE(this%accel(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,2), &
          STAT = err)
-    IF (err.NE.0) THEN
-       PRINT *, "ERROR in InitSources_pointmass: Unable allocate memory!"
-       STOP
-    END IF
+    IF (err.NE.0) CALL Error(this,"InitSources_pointmass", "Unable allocate memory!")
 
-    ! convert to cartesian coordinates
-    CALL Convert2Cartesian(Mesh%geometry,Mesh%bcenter,cart)
+    SELECT CASE(potential)
+    CASE(NEWTON) ! newtonian gravity
+       ! set type of potential
+       CALL InitCommon(this%potential,NEWTON,"Newton")
+       a = 0.0
+    CASE(WIITA) ! pseudo-Newton Paczinski-Wiita potential
+       ! set type of potential
+       CALL InitCommon(this%potential,WIITA,"Paczinski-Wiita")
+       ! Schwarzschild radius
+       a = 2*Physics%constants%GN * this%mass / Physics%constants%C**2
+    END SELECT
 
     ! initialize gravitational acceleration
-    FORALL (i=Mesh%IGMIN:Mesh%IGMAX, j=Mesh%JGMIN:Mesh%JGMAX)
-       ! calculate distance ratio
-       tanphi(i,j) = cart(i,j,2)/cart(i,j,1)
-       ! calculate cartesian components
-       accel(i,j,1) = -SIGN(1.0,cart(i,j,1))* Physics%constants%GN &
-            * (this%mass / cart(i,j,1)**2 ) &
-            / (SQRT(1. + tanphi(i,j)**2)**3 + TINY)
-       accel(i,j,2) = accel(i,j,1) * tanphi(i,j)
-    END FORALL
+    DO j=Mesh%JMIN,Mesh%JMAX
+       DO i=Mesh%IMIN,Mesh%IMAX
+          ! calculate the distance to the center
+          r = SQRT(Mesh%bccart(i,j,1)**2 + Mesh%bccart(i,j,2)**2)
+          ! calculate cartesian components
+          accel(i,j,:) = -(Physics%constants%GN * this%mass) * Mesh%bccart(i,j,:) &
+               / ((r+TINY)*((r-a)**2+TINY))
+       END DO
+    END DO
+    accel(Mesh%IGMIN:Mesh%IMIN-1,:,:) = 0.0
+    accel(Mesh%IMAX+1:Mesh%IGMAX,:,:) = 0.0
+    accel(:,Mesh%JGMIN:Mesh%JMIN-1,:) = 0.0
+    accel(:,Mesh%JMAX+1:Mesh%JGMAX,:) = 0.0    
 
     ! convert to curvilinear vector components
     CALL Convert2Curvilinear(Mesh%geometry,Mesh%bcenter,accel,this%accel)
-
-    ! for advanced time step control: 
-    ! minimal free fall time scale on the mesh
-    this%dtmin = SQRT(MIN(MINVAL(ABS(Mesh%dlx(:,:)/this%accel(:,:,1))), &
-         MINVAL(ABS(Mesh%dly(:,:)/this%accel(:,:,2)))))
   END SUBROUTINE InitSources_pointmass
 
 

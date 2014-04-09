@@ -1,9 +1,9 @@
 !#############################################################################
 !#                                                                           #
 !# fosite - 2D hydrodynamical simulation program                             #
-!# module: logio_common.f90                                                  #
+!# module: geometry_logpolar.f90                                             #
 !#                                                                           #
-!# Copyright (C) 2007 Tobias Illenseer <tillense@ita.uni-heidelberg.de>      #
+!# Copyright (C) 2008 Tobias Illenseer <tillense@astrophysik.uni-kiel.de>    #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
 !# it under the terms of the GNU General Public License as published by      #
@@ -23,109 +23,111 @@
 !#############################################################################
 
 !----------------------------------------------------------------------------!
-! basic module for I/O of log files
+! define properties of a logarithmic 2D polar mesh
+!    x = r0 * exp(r) * cos(phi)  
+!    y = r0 * exp(r) * sin(phi)
 !----------------------------------------------------------------------------!
-MODULE logio_common
-  USE common_types, GetType_common => GetType, GetName_common => GetName
+MODULE geometry_logpolar
+  USE geometry_cartesian
+  USE geometry_oblatespheroidal
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
+  INTERFACE Convert2Cartesian_logpolar
+     MODULE PROCEDURE Convert2Cartesian_coords, Convert2Cartesian_vectors
+  END INTERFACE
+  INTERFACE Convert2Curvilinear_logpolar
+     MODULE PROCEDURE Convert2Curvilinear_coords, Convert2Curvilinear_vectors
+  END INTERFACE
   PRIVATE
-  INTERFACE GetType
-     MODULE PROCEDURE GetLogFormat, GetType_common
-  END INTERFACE
-  INTERFACE GetName
-     MODULE PROCEDURE GetLogFormatName, GetName_common
-  END INTERFACE
-  !--------------------------------------------------------------------------!
-  TYPE Logio_TYP
-     PRIVATE
-     TYPE(Common_TYP)       :: logformat           ! logfile format          !
-     CHARACTER(LEN=256)     :: filename            ! logfile name            !
-     INTEGER                :: logunit             ! logfile i/o unit        !
-     INTEGER                :: logdt               ! timestep for log output !
-  END TYPE Logio_TYP
-  SAVE
+  CHARACTER(LEN=32), PARAMETER :: geometry_name = "logpolar"
   !--------------------------------------------------------------------------!
   PUBLIC :: &
-       ! types
-       Logio_TYP, &
-       ! methods
-       InitLogio, &
-       GetType, &
-       GetName, &
-       GetFilename, &
-       GetUnit, &
-       GetLogstep
+       InitGeometry_logpolar, &
+       ScaleFactors_logpolar, &
+       Convert2Cartesian_logpolar, &
+       Convert2Curvilinear_logpolar
   !--------------------------------------------------------------------------!
 
 CONTAINS
 
-  PURE SUBROUTINE InitLogio(this,logfmt,fmtname,logunit,filename,logdt)
+  SUBROUTINE InitGeometry_logpolar(this,gt,gs)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    TYPE(Logio_TYP)    :: this
-    INTEGER            :: logfmt,logunit
-    CHARACTER(LEN=32)  :: fmtname
-    CHARACTER(LEN=*)   :: filename
-    INTEGER            :: logdt
+    TYPE(Geometry_TYP), INTENT(INOUT) :: this
+    INTEGER, INTENT(IN) :: gt
+    REAL, INTENT(IN) :: gs
     !------------------------------------------------------------------------!
-    INTENT(IN)         :: logfmt,fmtname,logunit,filename,logdt
-    INTENT(INOUT)      :: this
-    !------------------------------------------------------------------------!
-    CALL InitCommon(this%logformat,logfmt,fmtname)
-    this%logunit  = logunit
-    this%logdt    = logdt
-    this%filename = filename
-  END SUBROUTINE InitLogio
+    CALL InitGeometry(this,gt,geometry_name)
+    this%scalefactor = gs
+  END SUBROUTINE InitGeometry_logpolar
+    
 
-
-  PURE FUNCTION GetLogFormat(this) RESULT(lf)
+  ELEMENTAL SUBROUTINE ScaleFactors_logpolar(gs,r,hr,hphi,hz)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    TYPE(Logio_TYP), INTENT(IN) :: this
-    INTEGER :: lf
+    REAL, INTENT(IN)  :: gs,r
+    REAL, INTENT(OUT) :: hr,hphi,hz
     !------------------------------------------------------------------------!
-    lf = GetType_common(this%logformat)
-  END FUNCTION GetLogFormat
+    hr   = gs*EXP(r)
+    hphi = hr
+    hz   = 1.
+  END SUBROUTINE ScaleFactors_logpolar
 
 
-  PURE FUNCTION GetLogFormatName(this) RESULT(fn)
+  ! coordinate transformation
+  ! logpolar -> cartesian
+  ELEMENTAL SUBROUTINE Convert2Cartesian_coords(gs,r,phi,x,y)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    TYPE(Logio_TYP), INTENT(IN) :: this
-    CHARACTER(LEN=32) :: fn
+    REAL, INTENT(IN)  :: gs,r,phi
+    REAL, INTENT(OUT) :: x,y
     !------------------------------------------------------------------------!
-    fn = GetName_common(this%logformat)
-  END FUNCTION GetLogFormatName
+    REAL :: r0
+    !------------------------------------------------------------------------!
+    r0 = gs*EXP(r)
+    x = r0*COS(phi)
+    y = r0*SIN(phi)
+  END SUBROUTINE Convert2Cartesian_coords
 
 
-  PURE FUNCTION GetFilename(this) RESULT(fn)
+  ! cartesian -> logpolar
+  ELEMENTAL SUBROUTINE Convert2Curvilinear_coords(gs,x,y,r,phi)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    TYPE(Logio_TYP), INTENT(IN) :: this
-    CHARACTER(LEN=256) :: fn
+    REAL, INTENT(IN)  :: gs,x,y
+    REAL, INTENT(OUT) :: r,phi
     !------------------------------------------------------------------------!
-    fn = this%filename
-  END FUNCTION GetFilename
+    REAL :: x1,y1
+    !------------------------------------------------------------------------!
+    x1 = x/gs
+    y1 = y/gs
+    r = 0.5*LOG(x1*x1+y1*y1)
+    phi = ATAN(y1/x1) ! = ATAN(y/x)
+  END SUBROUTINE Convert2Curvilinear_coords
 
 
-  PURE FUNCTION GetUnit(this) RESULT(lu)
+  ! vector transformation
+  ! logpolar -> cartesian  
+  ELEMENTAL SUBROUTINE Convert2Cartesian_vectors(gs,phi,vr,vphi,vx,vy)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    TYPE(Logio_TYP), INTENT(IN) :: this
-    INTEGER :: lu
+    REAL, INTENT(IN)  :: gs,phi,vr,vphi
+    REAL, INTENT(OUT) :: vx,vy
     !------------------------------------------------------------------------!
-    lu = this%logunit
-  END FUNCTION GetUnit
+    vx = vr * COS(phi) - vphi * SIN(phi)
+    vy = vr * SIN(phi) + vphi * COS(phi)
+  END SUBROUTINE Convert2Cartesian_vectors
 
 
-  PURE FUNCTION GetLogstep(this) RESULT(ls)
+  ! cartesian -> logpolar
+  ELEMENTAL SUBROUTINE Convert2Curvilinear_vectors(gs,phi,vx,vy,vr,vphi)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    TYPE(Logio_TYP), INTENT(IN) :: this
-    INTEGER :: ls
+    REAL, INTENT(IN)  :: gs,phi,vx,vy
+    REAL, INTENT(OUT) :: vr,vphi
     !------------------------------------------------------------------------!
-    ls = this%logdt
-  END FUNCTION GetLogstep
-
-END MODULE logio_common
+    vr   = vx * COS(phi) + vy * SIN(phi)
+    vphi = -vx * SIN(phi) + vy * COS(phi)
+  END SUBROUTINE Convert2Curvilinear_vectors
+  
+END MODULE geometry_logpolar

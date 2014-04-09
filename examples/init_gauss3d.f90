@@ -3,7 +3,8 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: init_gauss3d.f90                                                  #
 !#                                                                           #
-!# Copyright (C) 2006 Tobias Illenseer <tillense@ita.uni-heidelberg.de>      #
+!# Copyright (C) 2006-2008                                                   #
+!# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
 !# it under the terms of the GNU General Public License as published by      #
@@ -31,9 +32,9 @@ MODULE Init
   USE mesh_generic
   USE reconstruction_generic
   USE boundary_generic
-  USE output_generic
-  USE logio_generic
+  USE fileio_generic
   USE timedisc_generic
+  USE sources_generic
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   PRIVATE
@@ -47,22 +48,22 @@ MODULE Init
 
 CONTAINS
 
-  SUBROUTINE InitProgram(Mesh,Physics,Fluxes,Timedisc,Output,Logio)
+  SUBROUTINE InitProgram(Mesh,Physics,Fluxes,Timedisc,Datafile,Logfile)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Mesh_TYP)    :: Mesh
     TYPE(Physics_TYP) :: Physics
     TYPE(Fluxes_TYP)  :: Fluxes
     TYPE(Timedisc_TYP):: Timedisc
-    TYPE(Output_TYP)  :: Output
-    TYPE(Logio_TYP)   :: Logio
+    TYPE(FILEIO_TYP)  :: Datafile
+    TYPE(FILEIO_TYP)  :: Logfile
     !------------------------------------------------------------------------!
     ! Local variable declaration
     INTEGER           :: geometry
     INTEGER           :: onum
     REAL              :: test_stoptime
     !------------------------------------------------------------------------!
-    INTENT(OUT)       :: Mesh,Physics,Fluxes,Timedisc,Output,Logio
+    INTENT(OUT)       :: Mesh,Physics,Fluxes,Timedisc,Datafile,Logfile
     !------------------------------------------------------------------------!
 
     ! 3D tests with continous initial condition
@@ -109,40 +110,66 @@ CONTAINS
        ! mesh settings
        CALL InitMesh(Mesh,Fluxes, &
             geometry = CYLINDRICAL, &
-                inum = 100, &       ! resolution in x and            !
-                jnum = 100, &       !   y direction                  !             
+                inum = 200, &       ! resolution in x and            !
+                jnum = 200, &       !   y direction                  !             
                 xmin = 0.0, &
                 xmax = 1.0, &
                 ymin = 0.0, &
                 ymax = 1.0)
        ! boundary conditions
-       CALL InitBoundary(Mesh%boundary,Mesh,Physics,REFLECTING,WEST)
-       CALL InitBoundary(Mesh%boundary,Mesh,Physics,REFLECTING,EAST)
-       CALL InitBoundary(Mesh%boundary,Mesh,Physics,AXIS,SOUTH)
-       CALL InitBoundary(Mesh%boundary,Mesh,Physics,REFLECTING,NORTH)
+       IF (testnum.EQ.1) THEN
+          CALL InitBoundary(Timedisc%boundary,Mesh,Physics, &
+               western  = REFLECTING, &
+               eastern  = NO_GRADIENTS, &
+               southern = AXIS, &
+               northern = NO_GRADIENTS)
+       ELSE
+          CALL InitBoundary(Timedisc%boundary,Mesh,Physics, &
+               western  = REFLECTING, &
+               eastern  = REFLECTING, &
+               southern = AXIS, &
+               northern = REFLECTING)
+       END IF
     CASE(SPHERICAL)
        ! mesh settings
-       CALL InitMesh(Mesh,Fluxes,SPHERICAL,50,30,0.0,1.5,0.0,0.5*PI)
+       CALL InitMesh(Mesh,Fluxes,SPHERICAL,60,30,0.0,1.5,0.0,0.5*PI)
        ! boundary conditions
-       CALL InitBoundary(Mesh%boundary,Mesh,Physics,REFLECTING,WEST)
-       CALL InitBoundary(Mesh%boundary,Mesh,Physics,REFLECTING,EAST)
-       CALL InitBoundary(Mesh%boundary,Mesh,Physics,AXIS,SOUTH)
-       CALL InitBoundary(Mesh%boundary,Mesh,Physics,AXIS,NORTH)
+       IF (testnum.EQ.1) THEN
+          CALL InitBoundary(Timedisc%boundary,Mesh,Physics, &
+               western  = REFLECTING, &
+               eastern  = REFLECTING, &
+               southern = AXIS, &
+               northern = REFLECTING)
+       ELSE
+          CALL InitBoundary(Timedisc%boundary,Mesh,Physics, &
+               western  = REFLECTING, &
+               eastern  = NO_GRADIENTS, &
+               southern = AXIS, &
+               northern = REFLECTING)
+       END IF
     CASE(OBLATE_SPHEROIDAL)
        ! mesh settings
        CALL InitMesh(Mesh,Fluxes,OBLATE_SPHEROIDAL,50,30, &
             0.0,1.4,0.0,0.5*PI, &
             0.75)                    ! optional geometry parameter    !
        ! boundary conditions
-       CALL InitBoundary(Mesh%boundary,Mesh,Physics,REFLECTING,WEST)
-       CALL InitBoundary(Mesh%boundary,Mesh,Physics,REFLECTING,EAST)
-       CALL InitBoundary(Mesh%boundary,Mesh,Physics,AXIS,SOUTH)
-       CALL InitBoundary(Mesh%boundary,Mesh,Physics,AXIS,NORTH)
+       CALL InitBoundary(Timedisc%boundary,Mesh,Physics, &
+         western  = REFLECTING, &
+         eastern  = REFLECTING, &
+         southern = AXIS, &
+         northern = AXIS)
     CASE DEFAULT
        PRINT *, "ERROR in InitProgram: geometry should be either ", ACHAR(13), &
             "cylindrical, spherical or oblate spheroidal"
        STOP
     END SELECT
+
+    ! viscosity source term
+!!$    CALL InitSources(Physics%sources,Mesh,Fluxes,Physics, &
+!!$         stype    = VISCOSITY, &
+!!$         vismodel = MOLECULAR, &
+!!$         cvis     = 0.5, &
+!!$         dynconst = 1.0E-2)
 
     ! time discretization settings
     CALL InitTimedisc(Timedisc,Mesh,Physics,&
@@ -151,25 +178,32 @@ CONTAINS
          cfl      = 0.4, &
          stoptime = test_stoptime, &
          dtlimit  = 1.0E-8, &
-         maxiter  = 100000)
+         maxiter  = 10000000)
 
     ! set initial condition
     CALL InitData(Mesh,Physics,Timedisc%pvar,Timedisc%cvar)
 
     ! initialize log input/output
-    CALL InitLogio(Logio,Mesh,Physics,Timedisc, &
-         logformat = NOLOG, &
-         filename  = "gauss3d.log", &
-         logdt     = 300)
+    CALL InitFileIO(Logfile,Mesh,Physics,Timedisc, &
+         fileformat = BINARY, &
+#ifdef PARALLEL
+         filename   = "/tmp/gauss3dlog", &
+#else
+         filename   = "gauss3dlog", &
+#endif
+         dtwall     = 1740, &
+         filecycles = 1)
 
-    ! set parameters for data output
-    CALL InitOutput(Output,Mesh,Physics,Timedisc,&
-         filetype  = GNUPLOT, &
-         filename  = "gauss3d.dat", &
-         mode      = OVERWRITE, &
-         starttime = 0.0, &
-         stoptime  = Timedisc%stoptime, &
-         count     = onum)
+    ! initialize data input/output
+    CALL InitFileIO(Datafile,Mesh,Physics,Timedisc, &
+         fileformat = GNUPLOT, &
+#ifdef PARALLEL
+         filename   = "/tmp/gauss3d", &
+#else
+         filename   = "gauss3d", &
+#endif
+         stoptime   = Timedisc%stoptime, &
+         count      = onum)
 
   END SUBROUTINE InitProgram
 
@@ -227,27 +261,28 @@ CONTAINS
     END SELECT
 
     FORALL (i=Mesh%IGMIN:Mesh%IGMAX,j=Mesh%JGMIN:Mesh%JGMAX)
-       pvar(i,j,1) = rho0 + rho1*EXP(-LOG(2.0) &
+       pvar(i,j,Physics%DENSITY) = rho0 + rho1*EXP(-LOG(2.0) &
             * ((cart(i,j,1)-x0)**2 + (cart(i,j,2)-y0)**2)/hwidth**2)
-       pvar(i,j,5) = P0 + P1*EXP(-LOG(2.0) &
+       pvar(i,j,Physics%PRESSURE) = P0 + P1*EXP(-LOG(2.0) &
             * ((cart(i,j,1)-x0)**2 + (cart(i,j,2)-y0)**2)/hwidth**2)
     END FORALL
 
     ! velocities in the x-y-plane
-    pvar(:,:,2:3) = 0.
+    pvar(:,:,Physics%XVELOCITY) = 0.
+    pvar(:,:,Physics%YVELOCITY) = 0.
 
     ! rotational velocity
-    pvar(:,:,4) = omega * Mesh%bhz(:,:)
+    pvar(:,:,Physics%ZVELOCITY) = omega * Mesh%bhz(:,:)
 
     ! for specific angular momentum transport
     IF (GetType(Physics).EQ.EULER3D_ROTAMT) THEN
        ! specific angular momentum
-       pvar(:,:,4) = pvar(:,:,4)*Mesh%bhz(:,:)
+       pvar(:,:,Physics%ZVELOCITY) = pvar(:,:,Physics%ZVELOCITY)*Mesh%bhz(:,:)
     END IF
     
     CALL Convert2Conservative(Physics,Mesh,pvar,cvar)
 
-    PRINT "(A,A)", " DATA-----> initial condition: ", TRIM(teststr)
+    CALL Info(Mesh, " DATA-----> initial condition: " // TRIM(teststr))
 
   END SUBROUTINE InitData
 

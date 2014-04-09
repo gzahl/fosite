@@ -3,7 +3,8 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: reconstruction_constant.f90                                       #
 !#                                                                           #
-!# Copyright (C) 2007 Tobias Illenseer <tillense@ita.uni-heidelberg.de>      #
+!# Copyright (C) 2007-2008                                                   #
+!# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
 !# it under the terms of the GNU General Public License as published by      #
@@ -40,11 +41,16 @@ MODULE reconstruction_constant
        ! constants
        PRIMITIVE, CONSERVATIVE, &
        ! methods
+       InitReconstruction, &
        InitReconstruction_constant, &
        CalculateStates_constant, &
+       PrimRecon, &
        GetType, &
        GetName, &
-       PrimRecon
+       GetRank, &
+       Info, &
+       Warning, &
+       Error
   !--------------------------------------------------------------------------!
 
 CONTAINS

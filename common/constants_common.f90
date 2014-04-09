@@ -3,7 +3,8 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: constants_common.f90                                              #
 !#                                                                           #
-!# Copyright (C) 2007 Tobias Illenseer <tillense@ita.uni-heidelberg.de>      #
+!# Copyright (C) 2006-2008                                                   #
+!# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
 !# it under the terms of the GNU General Public License as published by      #
@@ -26,7 +27,9 @@
 ! basic physical constants module
 !----------------------------------------------------------------------------!
 MODULE constants_common
-  USE common_types, GetType_common => GetType, GetName_common => GetName
+  USE common_types, GetType_common => GetType, GetName_common => GetName, &
+       GetRank_common => GetRank, Info_common => Info, &
+       Warning_common => Warning, Error_common => Error
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   PRIVATE
@@ -36,9 +39,21 @@ MODULE constants_common
   INTERFACE GetName
      MODULE PROCEDURE GetUnitsName, GetName_common
   END INTERFACE
+  INTERFACE GetRank
+     MODULE PROCEDURE GetConstantsRank, GetRank_common
+  END INTERFACE
+  INTERFACE Info
+     MODULE PROCEDURE ConstantsInfo, Info_common
+  END INTERFACE
+  INTERFACE Warning
+     MODULE PROCEDURE ConstantsWarning, Warning_common
+  END INTERFACE
+  INTERFACE Error
+     MODULE PROCEDURE ConstantsError, Error_common
+  END INTERFACE
   !--------------------------------------------------------------------------!
   TYPE Constants_TYP
-     TYPE(Common_TYP) :: units                      ! cartesian, polar, etc. !
+     TYPE(Common_TYP) :: units                      ! SI, natural, etc.      !
      ! some physical constants
      DOUBLE PRECISION :: C                          ! light speed            !
      DOUBLE PRECISION :: GN                         ! Newtons grav. constant !
@@ -63,12 +78,16 @@ MODULE constants_common
        ! methods
        InitConstants, &
        GetType, &
-       GetName
+       GetName, &
+       GetRank, &
+       Info, &
+       Warning, &
+       Error
   !--------------------------------------------------------------------------!
 
 CONTAINS
 
-  PURE SUBROUTINE InitConstants(this,ut,un)
+  SUBROUTINE InitConstants(this,ut,un)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Constants_TYP) :: this
@@ -101,5 +120,44 @@ CONTAINS
     un = GetName_common(this%units)
   END FUNCTION GetUnitsName
 
+
+  PURE FUNCTION GetConstantsRank(this) RESULT(r)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Constants_TYP), INTENT(IN) :: this
+    INTEGER :: r
+    !------------------------------------------------------------------------!
+    r = GetRank_common(this%units)
+  END FUNCTION GetConstantsRank
+
+
+  SUBROUTINE ConstantsInfo(this,msg)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Constants_TYP), INTENT(IN) :: this
+    CHARACTER(LEN=*),  INTENT(IN) :: msg
+    !------------------------------------------------------------------------!
+    CALL Info_common(this%units,msg)
+  END SUBROUTINE ConstantsInfo
+
+
+  SUBROUTINE ConstantsWarning(this,modproc,msg)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Constants_TYP), INTENT(IN) :: this
+    CHARACTER(LEN=*),  INTENT(IN) :: modproc,msg
+    !------------------------------------------------------------------------!
+    CALL Warning_common(this%units,modproc,msg)
+  END SUBROUTINE ConstantsWarning
+
+
+  SUBROUTINE ConstantsError(this,modproc,msg)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Constants_TYP), INTENT(IN) :: this
+    CHARACTER(LEN=*),  INTENT(IN) :: modproc,msg
+    !------------------------------------------------------------------------!
+    CALL Error_common(this%units,modproc,msg)
+  END SUBROUTINE ConstantsError
 
 END MODULE constants_common

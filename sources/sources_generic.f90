@@ -3,7 +3,8 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: sources_generic.f90                                               #
 !#                                                                           #
-!# Copyright (C) 2007 Tobias Illenseer <tillense@ita.uni-heidelberg.de>      #
+!# Copyright (C) 2007-2008                                                   #
+!# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
 !# it under the terms of the GNU General Public License as published by      #
@@ -28,6 +29,7 @@
 MODULE sources_generic
   USE sources_pointmass, InitSources_all => InitSources
   USE sources_diskthomson
+  USE sources_viscosity
   USE physics_generic, GeometricalSources_Physics => GeometricalSources, &
        ExternalSources_Physics => ExternalSources
   USE fluxes_generic
@@ -35,35 +37,41 @@ MODULE sources_generic
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   PRIVATE
-  INTERFACE InitSources
-     MODULE PROCEDURE InitSources_param1, InitSources_param4
-  END INTERFACE
   ! tempory storage for source terms
   REAL, DIMENSION(:,:,:), ALLOCATABLE, SAVE :: temp_sterm
   ! flags for source terms
   INTEGER, PARAMETER :: POINTMASS    = 1
   INTEGER, PARAMETER :: DISK_THOMSON = 2
+  INTEGER, PARAMETER :: VISCOSITY    = 3
   !--------------------------------------------------------------------------!
   PUBLIC :: &
        ! types
        Sources_TYP, &
        ! constants
-       POINTMASS, DISK_THOMSON, &
+       POINTMASS, DISK_THOMSON, VISCOSITY, &
+       NEWTON, WIITA, &
+       MOLECULAR, ALPHA, BETA, &
        ! methods
        InitSources, &
        MallocSources, &
+       CloseSources, &
        GeometricalSources, &
        ExternalSources, &
+       CalcTimestep, &
+       GetSourcesPointer, &
        GetType, &
        GetName, &
-       GetSourcesTimescale, &
-       GetSourcesPointer, &
-       CloseSources
+       GetRank, &
+       GetNumProcs, &
+       Info, &
+       Warning, &
+       Error
   !--------------------------------------------------------------------------!
 
 CONTAINS
 
-  SUBROUTINE InitSources_param1(list,Mesh,Fluxes,Physics,stype,sparam)
+  SUBROUTINE InitSources(list,Mesh,Fluxes,Physics,stype,potential,vismodel, &
+       mass,mdot,rin,rout,dynconst,bulkconst,cvis)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Sources_TYP), POINTER :: list
@@ -71,9 +79,16 @@ CONTAINS
     TYPE(Fluxes_TYP)  :: Fluxes
     TYPE(Physics_TYP) :: Physics
     INTEGER           :: stype
-    REAL              :: sparam
+    INTEGER, OPTIONAL :: potential,vismodel
+    REAL, OPTIONAL    :: mass,mdot,rin,rout,dynconst,bulkconst,cvis
     !------------------------------------------------------------------------!
-    INTENT(IN)        :: Mesh,Fluxes,Physics,stype,sparam
+    TYPE(Sources_TYP), POINTER :: srcptr
+    INTEGER           :: potential_def,vismodel_def
+    REAL              :: mass_def,mdot_def,rin_def,rout_def,dynconst_def, &
+                         bulkconst_def,cvis_def
+    !------------------------------------------------------------------------!
+    INTENT(IN)        :: Mesh,Fluxes,Physics,stype,potential,vismodel,mass, &
+                         mdot,rin,rout,dynconst,bulkconst,cvis
     !------------------------------------------------------------------------!
     ! allocate common memory for all sources
     IF (.NOT.ALLOCATED(temp_sterm)) THEN
@@ -82,49 +97,77 @@ CONTAINS
 
     SELECT CASE(stype)
     CASE(POINTMASS)
-       CALL InitSources_pointmass(list,Mesh,Physics,stype,sparam)
-    CASE DEFAULT
-       PRINT *, "ERROR in InitSources: unknown source term"
-       STOP
-    END SELECT
-
-    ! print some information
-    IF (ASSOCIATED(list)) THEN
-       PRINT "(A,A)", " SOURCES--> source term:       ", TRIM(GetName(list))
-    END IF
-  END SUBROUTINE InitSources_param1
-
-
-  SUBROUTINE InitSources_param4(list,Mesh,Fluxes,Physics,stype,sp1,sp2,sp3,sp4)
-    IMPLICIT NONE
-    !------------------------------------------------------------------------!
-    TYPE(Sources_TYP), POINTER :: list
-    TYPE(Mesh_TYP)    :: Mesh
-    TYPE(Fluxes_TYP)  :: Fluxes
-    TYPE(Physics_TYP) :: Physics
-    INTEGER           :: stype
-    REAL              :: sp1,sp2,sp3,sp4
-    !------------------------------------------------------------------------!
-    INTENT(IN)        :: Mesh,Fluxes,Physics,stype,sp1,sp2,sp3,sp4
-    !------------------------------------------------------------------------!
-    ! allocate common memory for all sources
-    IF (.NOT.ALLOCATED(temp_sterm)) THEN
-       CALL MallocSources(list,Mesh,Physics)
-    END IF
-
-    SELECT CASE(stype)
+       ! default central mass
+       IF (PRESENT(mass)) THEN
+          mass_def = mass
+       ELSE
+          mass_def = 1.0
+       END IF
+       ! type of the potential
+       IF (PRESENT(potential)) THEN
+          potential_def=potential
+       ELSE
+          potential_def=NEWTON
+       END IF
+       CALL InitSources_pointmass(list,Mesh,Physics,stype,potential_def,mass_def)
     CASE(DISK_THOMSON)
-       CALL InitSources_diskthomson(list,Mesh,Physics,stype,sp1,sp2,sp3,sp4)
+       ! accretion rate
+       IF (PRESENT(mdot)) THEN
+          mdot_def = mdot
+       ELSE
+          mdot_def = 1.0
+       END IF
+       ! inner and outer disk radius
+       IF (PRESENT(rin)) THEN
+          rin_def = rin
+       ELSE
+          rin_def = 1.0
+       END IF
+       IF (PRESENT(rout)) THEN
+          rout_def = rout
+       ELSE
+          rout_def = 2.0
+       END IF
+       CALL InitSources_diskthomson(list,Mesh,Physics,stype,mass_def,mdot_def, &
+            rin_def,rout_def)
+    CASE(VISCOSITY)
+       ! viscosity model
+       IF (PRESENT(vismodel)) THEN
+          vismodel_def = vismodel
+       ELSE
+          vismodel_def = MOLECULAR
+       END IF
+       ! dynamic viscosity constant
+       IF (PRESENT(dynconst)) THEN
+          dynconst_def=dynconst
+       ELSE
+          dynconst_def=0.1
+       END IF
+       ! bulk viscosity constant (disabled by default)
+       IF (PRESENT(bulkconst)) THEN
+          bulkconst_def=bulkconst
+       ELSE
+          bulkconst_def=0.0
+       END IF
+       ! viscous Courant number
+       IF (PRESENT(cvis)) THEN
+          cvis_def=cvis
+       ELSE
+          cvis_def=0.5
+       END IF
+       ! this is necessary for alpha viscosity
+       srcptr => GetSourcesPointer(list,POINTMASS)
+       CALL InitSources_viscosity(list,Mesh,Physics,Fluxes,stype,vismodel_def, &
+            dynconst_def,bulkconst_def,cvis_def,srcptr)
     CASE DEFAULT
-       PRINT *, "ERROR in InitSources: unknown source term"
-       STOP
+       CALL Error(list,"InitSources", "unknown source term")
     END SELECT
 
     ! print some information
     IF (ASSOCIATED(list)) THEN
-       PRINT "(A,A)", " SOURCES--> source term:       ", TRIM(GetName(list))
+       CALL Info(list, " SOURCES--> source term:       " // GetName(list))
     END IF
-  END SUBROUTINE InitSources_param4
+  END SUBROUTINE InitSources
 
 
   SUBROUTINE MallocSources(list,Mesh,Physics)
@@ -141,10 +184,7 @@ CONTAINS
     ! temporay storage
     ALLOCATE(temp_sterm(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum), &
          STAT=err)
-    IF (err.NE.0) THEN
-       PRINT *, "ERROR in MallocSources_generic: Unable allocate memory!"
-       STOP
-    END IF
+    IF (err.NE.0) CALL Error(list, "MallocSources_generic", "Unable allocate memory!")
   END SUBROUTINE MallocSources
 
 
@@ -169,9 +209,6 @@ CONTAINS
     CASE(TRAPEZOIDAL)
        ! use reconstructed corner values for trapezoidal rule
        CALL GeometricalSources_physics(Physics,Mesh,Fluxes%prim,Fluxes%cons,sterm)
-    CASE DEFAULT
-       PRINT *, "ERROR in GeometricalSources: unknown integration rule"
-       STOP
     END SELECT
   END SUBROUTINE GeometricalSources
 
@@ -203,9 +240,10 @@ CONTAINS
           CALL ExternalSources_pointmass(srcptr,Mesh,Physics,pvar,cvar,temp_sterm)
        CASE(DISK_THOMSON)
           CALL ExternalSources_diskthomson(srcptr,Mesh,Physics,pvar,cvar,temp_sterm)
+       CASE(VISCOSITY)
+          CALL ExternalSources_viscosity(srcptr,Mesh,Physics,pvar,cvar,temp_sterm)
        CASE DEFAULT
-          PRINT *, "ERROR in CalculateSources: unknown source term"
-          STOP
+          CALL Error(srcptr,"ExternalSources", "unknown source term")
        END SELECT
        ! add to the sources
        sterm(:,:,:) = sterm(:,:,:) + temp_sterm(:,:,:)
@@ -215,43 +253,39 @@ CONTAINS
   END SUBROUTINE ExternalSources
 
 
-  FUNCTION GetSourcesTimescale(this,dtin) RESULT(dt)
+  SUBROUTINE CalcTimestep(this,Mesh,Physics,pvar,dt)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Sources_TYP), POINTER :: this
-    REAL, INTENT(IN) :: dtin
-    REAL :: dt
+    TYPE(Mesh_TYP)    :: Mesh
+    TYPE(Physics_TYP) :: Physics
+    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum) &
+                      :: pvar
+    REAL              :: dt
     !------------------------------------------------------------------------!
     TYPE(Sources_TYP), POINTER :: srcptr
     !------------------------------------------------------------------------!
+    INTENT(IN)        :: Mesh,Physics,pvar
+    INTENT(OUT)       :: dt
+    !------------------------------------------------------------------------!
+    ! go through all source terms in the list
     srcptr => this
-    dt = dtin
     DO
        IF (.NOT.ASSOCIATED(srcptr)) EXIT
+       ! call specific subroutine
        SELECT CASE(GetType(srcptr))
        CASE(POINTMASS,DISK_THOMSON)
-          dt = MIN(dt,srcptr%dtmin)
+          ! do nothing
+       CASE(VISCOSITY)
+          CALL CalcTimestep_viscosity(srcptr,Mesh,Physics,pvar,dt)
+       CASE DEFAULT
+          CALL Error(srcptr,"CalcTimestep", "unknown source term")
        END SELECT
+       ! next source term
        srcptr => srcptr%next
     END DO    
-  END FUNCTION GetSourcesTimescale
-  
+  END SUBROUTINE CalcTimestep
 
-  FUNCTION GetSourcesPointer(this,stype) RESULT(srcptr)
-    IMPLICIT NONE
-    !------------------------------------------------------------------------!
-    TYPE(Sources_TYP), POINTER :: this
-    INTEGER, INTENT(IN) :: stype
-    TYPE(Sources_TYP), POINTER :: srcptr
-    !------------------------------------------------------------------------!
-    srcptr => this
-    DO
-       IF (.NOT.ASSOCIATED(srcptr)) EXIT
-       IF (GetType(srcptr).EQ.stype) RETURN
-       srcptr => srcptr%next
-    END DO
-  END FUNCTION GetSourcesPointer
-  
 
   SUBROUTINE CloseSources(this,Fluxes)
     IMPLICIT NONE
@@ -272,6 +306,8 @@ CONTAINS
        SELECT CASE(GetType(srcptr))
        CASE(POINTMASS)
           CALL CloseSources_pointmass(srcptr,Fluxes)
+       CASE(VISCOSITY)
+          CALL CloseSources_viscosity(srcptr)
        END SELECT
        ! deallocate source term structure
        DEALLOCATE(srcptr)

@@ -3,7 +3,8 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: geometry_common.f90                                               #
 !#                                                                           #
-!# Copyright (C) 2007 Tobias Illenseer <tillense@ita.uni-heidelberg.de>      #
+!# Copyright (C) 2006-2008                                                   #
+!# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
 !# it under the terms of the GNU General Public License as published by      #
@@ -26,7 +27,9 @@
 ! basic geometry module
 !----------------------------------------------------------------------------!
 MODULE geometry_common
-  USE common_types, GetType_common => GetType, GetName_common => GetName
+  USE common_types, GetType_common => GetType, GetName_common => GetName, &
+       GetRank_common => GetRank, Info_common => Info, &
+       Warning_common => Warning, Error_common => Error
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   PRIVATE
@@ -35,6 +38,18 @@ MODULE geometry_common
   END INTERFACE
   INTERFACE GetName
      MODULE PROCEDURE GetCoordsysName, GetName_common
+  END INTERFACE
+  INTERFACE GetRank
+     MODULE PROCEDURE GetGeometryRank, GetRank_common
+  END INTERFACE
+  INTERFACE Info
+     MODULE PROCEDURE GeometryInfo, Info_common
+  END INTERFACE
+  INTERFACE Warning
+     MODULE PROCEDURE GeometryWarning, Warning_common
+  END INTERFACE
+  INTERFACE Error
+     MODULE PROCEDURE GeometryError, Error_common
   END INTERFACE
   !--------------------------------------------------------------------------!
   TYPE Geometry_TYP
@@ -49,12 +64,16 @@ MODULE geometry_common
        ! methods
        InitGeometry, &
        GetType, &
-       GetName
+       GetName, &
+       GetRank, &
+       Info, &
+       Warning, &
+       Error
   !--------------------------------------------------------------------------!
 
 CONTAINS
 
-  PURE SUBROUTINE InitGeometry(this,cs,cn)
+  SUBROUTINE InitGeometry(this,cs,cn)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Geometry_TYP) :: this
@@ -86,6 +105,46 @@ CONTAINS
     !------------------------------------------------------------------------!
     cn = GetName_common(this%coordsys)
   END FUNCTION GetCoordsysName
+
+
+  PURE FUNCTION GetGeometryRank(this) RESULT(r)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Geometry_TYP), INTENT(IN) :: this
+    INTEGER :: r
+    !------------------------------------------------------------------------!
+    r = GetRank_common(this%coordsys)
+  END FUNCTION GetGeometryRank
+
+
+  SUBROUTINE GeometryInfo(this,msg)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Geometry_TYP), INTENT(IN) :: this
+    CHARACTER(LEN=*),  INTENT(IN) :: msg
+    !------------------------------------------------------------------------!
+    CALL Info_common(this%coordsys,msg)
+  END SUBROUTINE GeometryInfo
+
+
+  SUBROUTINE GeometryWarning(this,modproc,msg)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Geometry_TYP), INTENT(IN) :: this
+    CHARACTER(LEN=*),  INTENT(IN) :: modproc,msg
+    !------------------------------------------------------------------------!
+    CALL Warning_common(this%coordsys,modproc,msg)
+  END SUBROUTINE GeometryWarning
+
+
+  SUBROUTINE GeometryError(this,modproc,msg)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Geometry_TYP), INTENT(IN) :: this
+    CHARACTER(LEN=*),  INTENT(IN) :: modproc,msg
+    !------------------------------------------------------------------------!
+    CALL Error_common(this%coordsys,modproc,msg)
+  END SUBROUTINE GeometryError
 
 
 END MODULE geometry_common

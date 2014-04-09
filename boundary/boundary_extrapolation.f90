@@ -3,7 +3,8 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: boundary_extrapolation.f90                                        #
 !#                                                                           #
-!# Copyright (C) 2007 Tobias Illenseer <tillense@ita.uni-heidelberg.de>      #
+!# Copyright (C) 2006-2008                                                   #
+!# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
 !# it under the terms of the GNU General Public License as published by      #
@@ -26,9 +27,9 @@
 ! boundary module for vanishing gradients (zero order extrapolation)
 !----------------------------------------------------------------------------!
 MODULE boundary_extrapolation
-  USE boundary_common
   USE mesh_common, ONLY : Mesh_TYP
   USE physics_common, ONLY : Physics_TYP
+  USE boundary_nogradients
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   PRIVATE
@@ -41,12 +42,7 @@ MODULE boundary_extrapolation
        WEST, EAST, SOUTH, NORTH, &
        ! methods
        InitBoundary_extrapolation, &
-       GetType, &
-       GetName, &
-       GetDirection, &
-       GetDirectionName, &
-       CenterBoundary_extrapolation, &
-       FaceBoundary_extrapolation
+       CenterBoundary_extrapolation
   !--------------------------------------------------------------------------!
 
 CONTAINS
@@ -91,35 +87,5 @@ CONTAINS
        rvar(:,Mesh%JMAX+2,:) = 2.*rvar(:,Mesh%JMAX+1,:) - rvar(:,Mesh%JMAX,:)
     END SELECT
   END SUBROUTINE CenterBoundary_extrapolation
-
-
-  PURE SUBROUTINE FaceBoundary_extrapolation(this,Mesh,Physics,we,ea,so,no,rstates)
-    IMPLICIT NONE
-    !------------------------------------------------------------------------!
-    TYPE(Boundary_TYP) :: this
-    TYPE(Mesh_TYP)     :: Mesh
-    TYPE(Physics_TYP)  :: Physics
-    INTEGER            :: we,ea,so,no
-    REAL :: rstates(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,4,Physics%vnum)
-    !------------------------------------------------------------------------!
-    INTENT(IN)    :: this,Mesh,Physics,we,ea,so,no
-    INTENT(INOUT) :: rstates
-    !------------------------------------------------------------------------!
-    !************************************************************************!
-    ! Be careful! There is a problem with trapezoidal rule, because          !
-    ! SetFaceBoundary is called twice with different pairs of boundary values!
-    ! (1st call:sw/se,sw/nw; 2nd call:nw/ne,se/ne).                          !
-    !************************************************************************!
-    SELECT CASE(GetDirection(this))
-    CASE(WEST)
-       rstates(Mesh%IMIN-1,:,ea,:) = 2.*rstates(Mesh%IMIN,:,ea,:) - rstates(Mesh%IMIN+1,:,ea,:)
-    CASE(EAST)
-       rstates(Mesh%IMAX+1,:,we,:) = 2.*rstates(Mesh%IMAX,:,we,:) - rstates(Mesh%IMAX-1,:,we,:)
-    CASE(SOUTH)
-       rstates(:,Mesh%JMIN-1,no,:) = 2.*rstates(:,Mesh%JMIN,no,:) - rstates(:,Mesh%JMIN+1,no,:) 
-    CASE(NORTH)
-       rstates(:,Mesh%JMAX+1,so,:) = 2.*rstates(:,Mesh%JMAX,so,:) - rstates(:,Mesh%JMAX-1,so,:)
-    END SELECT
-  END SUBROUTINE FaceBoundary_extrapolation
 
 END MODULE boundary_extrapolation

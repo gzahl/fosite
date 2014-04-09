@@ -8,7 +8,7 @@ OBJECTS=$(SOURCES:.f90=.o)
 .PHONY: clean distclean
 
 %.o : %.f90
-	$(FC) $(FFLAGS) -c $<
+	$(FC) $(FCFLAGS) -c $<
 
 $(TARGET) : $(OBJECTS)
 	$(AR) $(AFLAGS) $@ $(OBJECTS)
@@ -19,7 +19,14 @@ clean :
 distclean :
 	rm -f $(OBJECTS) $(TARGET) *.mod *.bak *~
 
+geometry_cylindrical.o : geometry_cartesian.o
+geometry_polar.o : geometry_cartesian.o
+geometry_logpolar.o : geometry_oblatespheroidal.o
+geometry_spherical.o : geometry_cartesian.o
+geometry_oblatespheroidal.o : geometry_cartesian.o
 geometry_generic.o : geometry_cartesian.o geometry_cylindrical.o \
-	geometry_polar.o geometry_spherical.o \
+	geometry_polar.o geometry_logpolar.o geometry_spherical.o \
 	geometry_oblatespheroidal.o
-mesh_generic.o : geometry_generic.o mesh_midpoint.o mesh_trapezoidal.o
+mesh_midpoint.o : geometry_generic.o
+mesh_trapezoidal.o : mesh_midpoint.o geometry_generic.o
+mesh_generic.o : mesh_midpoint.o mesh_trapezoidal.o
