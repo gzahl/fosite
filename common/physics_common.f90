@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: physics_common.f90                                                #
 !#                                                                           #
-!# Copyright (C) 2006-2008                                                   #
+!# Copyright (C) 2006-2010                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -29,7 +29,8 @@
 MODULE physics_common
   USE common_types, &
        GetType_common => GetType, GetName_common => GetName, &
-       GetRank_common => GetRank, Info_common => Info, &
+       GetRank_common => GetRank, GetNumProcs_common => GetNumProcs, &
+       Initialized_common => Initialized, Info_common => Info, &
        Warning_common => Warning, Error_common => Error
   USE sources_common, ONLY : Sources_TYP
   USE constants_common, ONLY : Constants_TYP
@@ -44,6 +45,12 @@ MODULE physics_common
   END INTERFACE
   INTERFACE GetRank
      MODULE PROCEDURE GetPhysicsRank, GetRank_common
+  END INTERFACE
+  INTERFACE GetNumProcs
+     MODULE PROCEDURE GetPhysicsNumProcs, GetNumProcs_common
+  END INTERFACE
+  INTERFACE Initialized
+     MODULE PROCEDURE PhysicsInitialized, Initialized_common
   END INTERFACE
   INTERFACE Info
      MODULE PROCEDURE PhysicsInfo, Info_common
@@ -104,7 +111,9 @@ MODULE physics_common
        GetType, &
        GetName, &
        GetRank, &
+       GetNumProcs, &
        GetErrorMap, &
+       Initialized, &
        Info, &
        Warning, &
        Error
@@ -162,6 +171,16 @@ CONTAINS
     r = GetRank_common(this%advproblem)
   END FUNCTION GetPhysicsRank
 
+  PURE FUNCTION GetPhysicsNumProcs(this) RESULT(p)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Physics_TYP), INTENT(IN) :: this
+    INTEGER :: p
+    !------------------------------------------------------------------------!
+    p = GetNumProcs_common(this%advproblem)
+  END FUNCTION GetPhysicsNumProcs
+
+
   PURE FUNCTION GetErrorMap(this, error) RESULT(c)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
@@ -172,6 +191,17 @@ CONTAINS
     c = this%errormap(error)
   END FUNCTION GetErrorMap
 
+
+  PURE FUNCTION PhysicsInitialized(this) RESULT(i)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Physics_TYP), INTENT(IN) :: this
+    LOGICAL :: i
+    !------------------------------------------------------------------------!
+    i = Initialized_common(this%advproblem)
+  END FUNCTION PhysicsInitialized
+
+ 
   SUBROUTINE PhysicsInfo(this,msg)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
@@ -180,6 +210,7 @@ CONTAINS
     !------------------------------------------------------------------------!
     CALL Info_common(this%advproblem,msg)
   END SUBROUTINE PhysicsInfo
+
 
   SUBROUTINE PhysicsWarning(this,modproc,msg)
     IMPLICIT NONE

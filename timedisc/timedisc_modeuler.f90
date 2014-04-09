@@ -48,12 +48,13 @@ MODULE timedisc_modeuler
        InitTimedisc_modeuler, &
        CloseTimedisc_modeuler, &
        SolveODE_modeuler, &
-       GetType, &
-       GetName, &
        GetOrder, &
        GetCFL, &
+       GetType, &
+       GetName, &
        GetRank, &
        GetNumProcs, &
+       Initialized, &
        Info, &
        Warning, &
        Error

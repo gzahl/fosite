@@ -58,16 +58,18 @@ MODULE fluxes_midpoint
        ! methods
        InitFluxes, &
        InitFluxes_midpoint, &
+       CalculateFaceData, &
+       CalculateFluxes_midpoint, &
        GetBoundaryFlux, &
+       PrimRecon, &
        GetType, &
        GetName, &
        GetRank, &
+       GetNumProcs, &
+       Initialized, &
        Info, &
        Warning, &
-       Error, &
-       PrimRecon, &
-       CalculateFaceData, &
-       CalculateFluxes_midpoint
+       Error
   !--------------------------------------------------------------------------!
 
 CONTAINS

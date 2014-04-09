@@ -29,8 +29,8 @@
 MODULE reconstruction_generic
   USE reconstruction_constant, InitReconstruction_common => InitReconstruction
   USE reconstruction_linear
-  USE mesh_common, ONLY : Mesh_TYP
-  USE physics_common, ONLY : Physics_TYP
+  USE mesh_common, ONLY : Mesh_TYP, Initialized
+  USE physics_common, ONLY : Physics_TYP, Initialized
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   PRIVATE
@@ -47,11 +47,18 @@ MODULE reconstruction_generic
        ! methods
        InitReconstruction, &
        MallocReconstruction, &
-       PrimRecon, &
-       GetType, &
        CalculateSlopes, &
        CalculateStates, &
-       CloseReconstruction
+       CloseReconstruction, &
+       PrimRecon, &
+       GetType, &
+       GetName, &
+       GetRank, &
+       GetNumProcs, &
+       Initialized, &
+       Info, &
+       Warning, &
+       Error
   !--------------------------------------------------------------------------!
 
 CONTAINS
@@ -122,6 +129,10 @@ CONTAINS
     INTENT(IN)    :: Mesh,Physics
     INTENT(INOUT) :: this
     !------------------------------------------------------------------------!
+    IF (.NOT.Initialized(this)) &
+         CALL Error(this,"MallocReconstruction","fluxes module uninitialized")
+    IF (.NOT.Initialized(Physics).OR..NOT.Initialized(Mesh)) &
+         CALL Error(this,"MallocReconstruction","physics and/or mesh module uninitialized")
     ! allocate memory for reconstruction modules
     SELECT CASE(GetType(this))
     CASE(CONSTANT)

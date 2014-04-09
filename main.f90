@@ -126,7 +126,7 @@ PROGRAM fosite
           Mesh%comm_cart,ierror)
      Timedisc%dt = dt_all
      run_time = MPI_Wtime()
-     CALL MPI_AllReduce(run_time,wall_time,1,MPI_DOUBLE_PRECISION,MPI_MIN, &
+     CALL MPI_Allreduce(run_time,wall_time,1,MPI_DOUBLE_PRECISION,MPI_MIN, &
           Mesh%comm_cart,ierror)
 #else
      CALL CPU_TIME(wall_time)
@@ -145,7 +145,7 @@ PROGRAM fosite
      END IF
 
      ! write output to log file
-     IF (wall_time.GE.log_time) THEN
+     IF (Initialized(Logfile).AND.(wall_time.GE.log_time)) THEN
         CALL WriteDataset(Logfile,Mesh,Physics,Fluxes,Timedisc)
         log_time = wall_time + Logfile%dtwall
      END IF

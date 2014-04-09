@@ -179,10 +179,10 @@ CONTAINS
     CALL InitData(Mesh,Physics,Fluxes,Timedisc)
 
     ! initialize log input/output
-    CALL InitFileIO(Logfile,Mesh,Physics,Timedisc,&
-         fileformat = BINARY, &
-         filename   = TRIM(ODIR) // TRIM(OFNAME) // 'log', &
-         filecycles = 1)                  ! just one log file
+!!$    CALL InitFileIO(Logfile,Mesh,Physics,Timedisc,&
+!!$         fileformat = BINARY, &
+!!$         filename   = TRIM(ODIR) // TRIM(OFNAME) // 'log', &
+!!$         filecycles = 1)                  ! just one log file
 
     ! initialize data input/output
     CALL InitFileIO(Datafile,Mesh,Physics,Timedisc, &

@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: boundary_common.f90                                               #
 !#                                                                           #
-!# Copyright (C) 2006-2008                                                   #
+!# Copyright (C) 2006-2010                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -30,7 +30,8 @@ MODULE boundary_common
   USE common_types, &
        GetType_common => GetType, GetName_common => GetName, &
        GetRank_common => GetRank, GetNumProcs_common => GetNumProcs, &
-       Info_common => Info, Warning_common => Warning, Error_common => Error
+       Initialized_common => Initialized, Info_common => Info, &
+       Warning_common => Warning, Error_common => Error
   IMPLICIT NONE
 #ifdef PARALLEL
 #ifdef HAVE_MPIF_H
@@ -50,6 +51,9 @@ MODULE boundary_common
   END INTERFACE
   INTERFACE GetNumProcs
      MODULE PROCEDURE GetBoundaryNumProcs, GetNumProcs_common
+  END INTERFACE
+  INTERFACE Initialized
+     MODULE PROCEDURE BoundaryInitialized, Initialized_common
   END INTERFACE
   INTERFACE Info
      MODULE PROCEDURE BoundaryInfo_rank0, BoundaryInfo_rankX, Info_common
@@ -112,6 +116,7 @@ MODULE boundary_common
        GetDirectionName, &
        GetRank, &
        GetNumProcs, &
+       Initialized, &
        Info, &
        Warning, &
        Error
@@ -183,6 +188,16 @@ CONTAINS
   END FUNCTION GetDirectionName
 
 
+  PURE FUNCTION BoundaryInitialized(this) RESULT(i)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Boundary_TYP), INTENT(IN) :: this
+    LOGICAL :: i
+    !------------------------------------------------------------------------!
+    i = Initialized_common(this%condition)
+  END FUNCTION BoundaryInitialized
+
+ 
   PURE FUNCTION GetBoundaryRank(this) RESULT(r)
     IMPLICIT NONE
     !------------------------------------------------------------------------!

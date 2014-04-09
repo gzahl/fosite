@@ -56,6 +56,7 @@ MODULE boundary_nogradients
        GetDirectionName, &
        GetRank, &
        GetNumProcs, &
+       Initialized, &
        Info, &
        Warning, &
        Error

@@ -184,16 +184,15 @@ CONTAINS
     CALL InitData(Mesh,Physics,Timedisc)
 
     ! initialize log input/output
-    CALL InitFileIO(Logfile,Mesh,Physics,Timedisc,&
-         fileformat = BINARY, &
-         filename   = TRIM(ODIR) // TRIM(OFNAME) // 'log', &
-         filecycles = 1)
+!!$    CALL InitFileIO(Logfile,Mesh,Physics,Timedisc,&
+!!$         fileformat = BINARY, &
+!!$         filename   = TRIM(ODIR) // TRIM(OFNAME) // 'log', &
+!!$         filecycles = 1)
 
     ! initialize data input/output
     CALL InitFileIO(Datafile,Mesh,Physics,Timedisc, &
-         fileformat = VTK, &
-!!$         fileformat = GNUPLOT, &
-!!$         filecycles = 0, &
+!!$         fileformat = VTK, &
+         fileformat = GNUPLOT, filecycles = 0, &
          filename   = TRIM(ODIR) // TRIM(OFNAME), &
          count      = ONUM)
 

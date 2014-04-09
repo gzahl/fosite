@@ -50,13 +50,14 @@ MODULE timedisc_generic
        CalcTimestep, &
        SolveODE, &
        CloseTimedisc, &
-       GetType, &
-       GetName, &
+       Print_Checkdata, &
        GetOrder, &
        GetCFL, &
+       GetType, &
+       GetName, &
        GetRank, &
        GetNumProcs, &
-       Print_Checkdata, &
+       Initialized, &
        Info, &
        Warning, &
        Error
@@ -82,6 +83,8 @@ CONTAINS
     INTENT(IN)         :: Mesh,Physics,method,order,stoptime,cfl,dtlimit,maxiter
     INTENT(INOUT)      :: this
     !------------------------------------------------------------------------!
+    IF (.NOT.Initialized(Physics).OR..NOT.Initialized(Mesh)) &
+         CALL Error(this,"InitTimedisc","physics and/or mesh module uninitialized")
     ! set default values
     IF (PRESENT(cfl)) THEN
        cfl_def = cfl

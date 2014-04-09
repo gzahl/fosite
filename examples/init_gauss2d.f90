@@ -56,7 +56,7 @@ MODULE Init
 !!$  INTEGER, PARAMETER :: MGEO = TANPOLAR
 !!$  INTEGER, PARAMETER :: MGEO = SINHPOLAR
   INTEGER, PARAMETER :: XRES = 100         ! resolution
-  INTEGER, PARAMETER :: YRES = 100
+  INTEGER, PARAMETER :: YRES = 100 
   REAL, PARAMETER    :: RMIN = 1.0E-2      ! inner radius for polar grids
   REAL, PARAMETER    :: RMAX = 0.3         ! outer radius
   REAL, PARAMETER    :: GPAR = 0.2         ! geometry scaling parameter
@@ -206,16 +206,15 @@ CONTAINS
     CALL InitData(Mesh,Physics,Timedisc)
 
     ! initialize log input/output
-    CALL InitFileIO(Logfile,Mesh,Physics,Timedisc,&
-         fileformat = BINARY, &
-         filename   = TRIM(ODIR) // TRIM(OFNAME) // 'log', &
-         filecycles = 1)
+!!$    CALL InitFileIO(Logfile,Mesh,Physics,Timedisc,&
+!!$         fileformat = BINARY, &
+!!$         filename   = TRIM(ODIR) // TRIM(OFNAME) // 'log', &
+!!$         filecycles = 1)
 
     ! initialize data input/output
     CALL InitFileIO(Datafile,Mesh,Physics,Timedisc, &
-         fileformat = VTK, &
-!!$         fileformat = GNUPLOT, &
-!!$         filecycles = 0, &
+!!$         fileformat = VTK, &
+         fileformat = GNUPLOT, filecycles = 0, &
          filename   = TRIM(ODIR) // TRIM(OFNAME), &
          count      = ONUM)
   END SUBROUTINE InitProgram

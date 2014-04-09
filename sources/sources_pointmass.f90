@@ -66,6 +66,7 @@ MODULE sources_pointmass
        GetName, &
        GetRank, &
        GetNumProcs, &
+       Initialized, &
        Info, &
        Warning, &
        Error

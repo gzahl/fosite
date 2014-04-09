@@ -72,12 +72,18 @@ MODULE geometry_generic
        OBLATE_SPHEROIDAL, &
        ! methods
        InitGeometry, &
+       Convert2Cartesian, &
+       Convert2Curvilinear, &
+       ScaleFactors, &
+       GetScale, &
        GetType, &
        GetName, &
-       GetScale, &
-       ScaleFactors, &
-       Convert2Cartesian, &
-       Convert2Curvilinear
+       GetRank, &
+       GetNumProcs, &
+       Initialized, &
+       Info, &
+       Warning, &
+       Error
   !--------------------------------------------------------------------------!
 
 CONTAINS

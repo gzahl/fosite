@@ -50,7 +50,10 @@ MODULE mesh_generic
        Convert2Cartesian, &
        Convert2Curvilinear, &
        GetType, &
+       GetName, &
        GetRank, &
+       GetNumProcs, &
+       Initialized, &
        Info, &
        Warning, &
        Error, &
@@ -75,7 +78,9 @@ CONTAINS
     INTENT(IN)        :: geometry,inum,jnum,xmin,xmax,ymin,ymax,gparam
     INTENT(INOUT)     :: this
     !------------------------------------------------------------------------!
-
+    IF (.NOT.Initialized(Fluxes)) &
+         CALL Error(this,"InitMesh","fluxes module uninitialized")
+         
     ! default geometry parameter
     IF (PRESENT(gparam)) THEN
        gparam_default = gparam
@@ -107,6 +112,11 @@ CONTAINS
     WRITE (yres, '(ES9.2,A,ES9.2)') this%ymin, " ..", this%ymax
     CALL Info(this, "            computat. domain:  x=" // TRIM(xres) // ACHAR(10)  &
                  // "                               y="  // TRIM(yres))
+#ifdef PARALLEL
+    WRITE (xres, '(I0)') this%dims(1)
+    WRITE (yres, '(I0)') this%dims(2)
+    CALL Info(this, "            MPI partition:     " // TRIM(xres) // " x " // TRIM(yres))
+#endif
   END SUBROUTINE InitMesh
 
 

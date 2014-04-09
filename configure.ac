@@ -27,7 +27,7 @@
 #############################################################################
 
 AC_PREREQ(2.62)
-AC_INIT(fosite, 0.3.2, tillense@astrophysik.uni-kiel.de)
+AC_INIT(fosite, 0.3.3, tillense@astrophysik.uni-kiel.de)
 
 # ===========================================================================
 # define command line arguments 
@@ -159,10 +159,10 @@ AC_ARG_ENABLE([inlining],
 
 AC_ARG_ENABLE([mpi-module],
    AC_HELP_STRING([--enable-mpi-module],
-      [use Fortran 90 module file for MPI;@<:@DEFAULT=yes@:>@ ]),[dnl
+      [use Fortran 90 module file for MPI;@<:@DEFAULT=no@:>@ ]),[dnl
    arg_mpi_module=$enableval
 ],[dnl
-   arg_mpi_module=yes
+   arg_mpi_module=no
 ])
 
 AC_ARG_VAR([PREP],[preprocessor command for parallel profiling])

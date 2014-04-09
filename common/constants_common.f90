@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: constants_common.f90                                              #
 !#                                                                           #
-!# Copyright (C) 2006-2008                                                   #
+!# Copyright (C) 2006-2010                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -27,8 +27,10 @@
 ! basic physical constants module
 !----------------------------------------------------------------------------!
 MODULE constants_common
-  USE common_types, GetType_common => GetType, GetName_common => GetName, &
-       GetRank_common => GetRank, Info_common => Info, &
+  USE common_types, &
+       GetType_common => GetType, GetName_common => GetName, &
+       GetRank_common => GetRank, GetNumProcs_common => GetNumProcs, &
+       Initialized_common => Initialized, Info_common => Info, &
        Warning_common => Warning, Error_common => Error
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
@@ -41,6 +43,12 @@ MODULE constants_common
   END INTERFACE
   INTERFACE GetRank
      MODULE PROCEDURE GetConstantsRank, GetRank_common
+  END INTERFACE
+  INTERFACE GetNumProcs
+     MODULE PROCEDURE GetConstantsNumProcs, GetNumProcs_common
+  END INTERFACE
+  INTERFACE Initialized
+     MODULE PROCEDURE ConstantsInitialized, Initialized_common
   END INTERFACE
   INTERFACE Info
      MODULE PROCEDURE ConstantsInfo, Info_common
@@ -80,6 +88,8 @@ MODULE constants_common
        GetType, &
        GetName, &
        GetRank, &
+       GetNumProcs, &
+       Initialized, &
        Info, &
        Warning, &
        Error
@@ -131,6 +141,26 @@ CONTAINS
   END FUNCTION GetConstantsRank
 
 
+  PURE FUNCTION GetConstantsNumProcs(this) RESULT(p)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Constants_TYP), INTENT(IN) :: this
+    INTEGER :: p
+    !------------------------------------------------------------------------!
+    p = GetNumProcs_common(this%units)
+  END FUNCTION GetConstantsNumProcs
+
+
+  PURE FUNCTION ConstantsInitialized(this) RESULT(i)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Constants_TYP), INTENT(IN) :: this
+    LOGICAL :: i
+    !------------------------------------------------------------------------!
+    i = Initialized_common(this%units)
+  END FUNCTION ConstantsInitialized
+
+ 
   SUBROUTINE ConstantsInfo(this,msg)
     IMPLICIT NONE
     !------------------------------------------------------------------------!

@@ -43,7 +43,7 @@ parallel mode. Since MPI-IO on NFS file systems is pretty slow one should
 avoid these and use PVFS (see http://www.pvfs.org) instead.
 
 
-2. MAKE & COMPILING
+2. CONFIGURATION & COMPILATION
 
 Although all source files have the extension .f90 the code uses some
 FORTRAN 95 extensions and therefore only compiles with a Fortran 95
@@ -83,7 +83,7 @@ the program aborts immediately after initialization with a segmentation fault,
 try to increase the stack size (ulimit -s unlimited).
 
 
-3. COMPILING PARALLEL VERSION (optional)
+3. COMPILING THE PARALLEL VERSION
 
 The parallel version of fosite uses the message passing interface version 2
 (MPI2). To compile the parallelized code you have to install an implementation

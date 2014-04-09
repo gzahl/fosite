@@ -27,9 +27,11 @@
 ! basic sources module
 !----------------------------------------------------------------------------!
 MODULE sources_common
-  USE common_types, GetType_common => GetType, GetName_common => GetName, &
+  USE common_types, &
+       GetType_common => GetType, GetName_common => GetName, &
        GetRank_common => GetRank, GetNumProcs_common => GetNumProcs, &
-       Info_common => Info, Warning_common => Warning, Error_common => Error
+       Initialized_common => Initialized, Info_common => Info, &
+       Warning_common => Warning, Error_common => Error
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   PRIVATE
@@ -44,6 +46,9 @@ MODULE sources_common
   END INTERFACE
   INTERFACE GetNumProcs
      MODULE PROCEDURE GetSourcesNumProcs, GetNumProcs_common
+  END INTERFACE
+  INTERFACE Initialized
+     MODULE PROCEDURE SourcesInitialized, Initialized_common
   END INTERFACE
   INTERFACE Info
      MODULE PROCEDURE SourcesInfo, Info_common
@@ -106,6 +111,7 @@ MODULE sources_common
        GetName, &
        GetRank, &
        GetNumProcs, &
+       Initialized, &
        Info, &
        Warning, &
        Error
@@ -181,6 +187,16 @@ CONTAINS
     !------------------------------------------------------------------------!
     sn = GetName_common(this%sourcetype)
   END FUNCTION GetSourceTypeName
+
+
+  PURE FUNCTION SourcesInitialized(this) RESULT(i)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Sources_TYP), INTENT(IN) :: this
+    LOGICAL :: i
+    !------------------------------------------------------------------------!
+    i = Initialized_common(this%sourcetype)
+  END FUNCTION SourcesInitialized
 
 
   SUBROUTINE SourcesInfo(this,msg)

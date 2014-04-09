@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: mesh_common.f90                                                   #
 !#                                                                           #
-!# Copyright (C) 2006-2009                                                   #
+!# Copyright (C) 2006-2010                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -27,8 +27,11 @@
 ! basic mesh module
 !----------------------------------------------------------------------------!
 MODULE mesh_common
-  USE common_types, GetRank_common => GetRank, GetNumProcs_common => GetNumProcs, &
-       Info_common => Info, Warning_common => Warning, Error_common => Error
+  USE common_types, &
+       GetType_common => GetType, GetName_common => GetName, &
+       GetRank_common => GetRank, GetNumProcs_common => GetNumProcs, &
+       Initialized_common => Initialized, Info_common => Info, &
+       Warning_common => Warning, Error_common => Error
   USE geometry_common, ONLY : Geometry_TYP
 #ifdef PARALLEL
 #ifdef HAVE_MPI_MOD
@@ -43,20 +46,28 @@ MODULE mesh_common
 #endif
   !--------------------------------------------------------------------------!
   PRIVATE
-  INTEGER, PARAMETER :: NDIMS = 2
-  ! vector length of specific (vector) CPUs
-  INTEGER, PARAMETER :: VECLEN = &
+  INTEGER, PARAMETER :: NDIMS = 2          ! dimensions of cartesian topology
+  INTEGER, PARAMETER :: VECLEN = &         ! vector length ..
 #if defined(NECSX8) || defined(NECSX9)
-  256
+  256                                      ! .. of NEC SX8/SX9 CPUs 
 #else
-  1
+  1                                        ! .. of everthing else 
 #endif
   !--------------------------------------------------------------------------!
+  INTERFACE GetType
+     MODULE PROCEDURE GetMesh, GetType_common
+  END INTERFACE
+  INTERFACE GetName
+     MODULE PROCEDURE GetMeshName, GetName_common
+  END INTERFACE
   INTERFACE GetRank
      MODULE PROCEDURE GetMeshRank, GetRank_common
   END INTERFACE
   INTERFACE GetNumProcs
      MODULE PROCEDURE GetMeshNumProcs, GetNumProcs_common
+  END INTERFACE
+  INTERFACE Initialized
+     MODULE PROCEDURE MeshInitialized, Initialized_common
   END INTERFACE
   INTERFACE Info
      MODULE PROCEDURE MeshInfo, Info_common
@@ -132,8 +143,11 @@ MODULE mesh_common
 #endif
        ! methods
        InitMesh, &
+       GetType, &
+       GetName, &
        GetRank, &
        GetNumProcs, &
+       Initialized, &
        Info, &
        Warning, &
        Error, &
@@ -283,8 +297,8 @@ CONTAINS
     ! 1. balance number of processes per direction
     this%dims(1)=GetNumProcs(this)
     this%dims(2)=1
-    ! account for vector length of vector CPUs in the fast (first) dimension
-    CALL CalculateDecomposition((this%INUM+2*this%GNUM-1)/VECLEN+1,this%JNUM,&
+    ! FIXME: account for vector length of vector CPUs
+    CALL CalculateDecomposition(this%INUM,this%JNUM,this%GNUM, &
          this%dims(1),this%dims(2))
     IF (this%dims(2).LE.0) THEN
        CALL Error(this,"InitMesh_parallel","Domain decomposition algorithm failed.")
@@ -384,77 +398,148 @@ CONTAINS
 
 
   ! return the best partitioning of processes
-  ! pj x pk for a given mesh with resolution nj x nk
-  ! pj : total number of processes (<10000)
+  ! pj x pk for a given mesh with resolution nj x nk with
+  ! ghost number of ghost cells GNUM
+  ! pj : total number of processes (<MAXNUM  see module "factors")
   ! pk = 1 initially
   ! pk return 0, for erroneous input
-  SUBROUTINE CalculateDecomposition(nj,nk,pj,pk)
+  SUBROUTINE CalculateDecomposition(nj,nk,gnum,pj,pk)
     USE factors
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    INTEGER, INTENT(IN)    :: nj,nk
+    INTEGER, INTENT(IN)    :: nj,nk,gnum
     INTEGER, INTENT(INOUT) :: pj,pk
     !------------------------------------------------------------------------!
-    INTEGER :: pf,p1,p2,pp,pn,tmp,bl,bl1
+    INTEGER :: p1,p2
     !------------------------------------------------------------------------!
     ! return immediatly for malformed input
-    IF (((pj.LT.2).AND.(pk.NE.1)).OR.(pj.GT.10000) &
+    IF (((pj.LT.2).AND.(pk.NE.1)).OR.(pj.GT.MAXNUM) &
         .OR.(nj*nk.LT.pj)) THEN
-        pk = 0
-        RETURN
+       pk = 0
+       RETURN
     END IF
-    p1=pj
-    p2=pk
-    pp=pj
-    pn=pj
-    pf=1
-    tmp=0
-    bl1=MAX(nj*pk+nk*pj,nj*pj+nk*pk)
-    DO
-       IF (pf.GT.tmp) THEN
-          tmp=pf
-          p1=pn/pf
-          p2=pf
-          bl = Balance(nj,nk,p1,p2)
-          IF (bl.LT.bl1) THEN
-             bl1 = bl
-             pj = p1
-             pk = p2
-          END IF
-       END IF
-       IF (pp.EQ.1) EXIT
-       pf=Reduce(pp)
-    END DO
+    p1=Decompose(nj,nk,pj,pk)
+    p2=pj/p1
+    pj=p1
+    pk=p2
 
   CONTAINS
     
-    RECURSIVE FUNCTION Balance(nj,nk,pj,pk) RESULT(bl)
+    ! searches for the best domain decomposition accounting
+    ! for the costs due to MPI communication (internal boundaries)
+    ! and optimize for a given vector length (VECLEN) on vector computers;
+    ! parameters:
+    !   nj : number of grid cells in first dimension
+    !   nk : number of grid cells in second dimension
+    !   pj : number of processes  in first dimension (=NumProcs first call)
+    !   pk : number of processes  in second dimension (=1 at first call)
+    RECURSIVE FUNCTION Decompose(nj,nk,pj,pk) RESULT(pjres)
+      IMPLICIT NONE
+      !-------------------------------------------------------------------!
+      INTEGER, INTENT(IN)    :: nj,nk,pj,pk
+      INTEGER :: pjres
+      !-------------------------------------------------------------------!
+      INTEGER :: pp,ptot
+      INTEGER :: p1,p2,pjnew,pknew,pjold,pkold
+      INTEGER :: pfmin,pfnew,pfold
+      INTEGER :: bl,vl,blnew,vlnew
+      REAL    :: bl_gain,vl_gain
+      !-------------------------------------------------------------------!
+      ! measure the costs of the given configuration
+      CALL GetCosts(nj,nk,pj,pk,bl,vl)
+!PRINT '(A,2(I7),I12,I4)'," costs: ",pj,pk,bl,vl
+      ! save the configuration
+      pjold=pj
+      pkold=pk
+      p1 = pj
+      p2 = pk
+      ! compute the total number of processes
+      ptot = pj*pk
+      pfmin = GetFactor(pk)      ! get smallest prime factor of pk
+      pfold = 1
+      pp = pj
+      DO ! loop over all prime factors of pj which are larger than
+         ! the smallest prime factor of pk
+         IF (pp.LE.1) EXIT       ! if pj has been reduced to 1
+         ! get smallest prime factor of pp, i.e. pj
+         pfnew = GetFactor(pp)
+         IF ((pfnew.GT.pfmin).AND.(pfmin.NE.1)) EXIT
+         pp = pp/pfnew
+         ! skip multiple prime factors 
+         IF (pfnew.NE.pfold) THEN
+            ! create new configuration
+            p1 = p1*pfold/pfnew
+            p2 = p2/pfold*pfnew
+            pfold = pfnew
+            ! get the best configuration possible with p1 x p2 processes
+            ! by reducing p1 => recursion
+            pjnew = Decompose(nj,nk,p1,p2)
+            pknew = ptot/pjnew  ! compute the second factor using the
+                                ! total number of processes
+            CALL GetCosts(nj,nk,pjnew,pknew,blnew,vlnew)
+            bl_gain = bl*(1.0/blnew)             ! smaller is better
+            vl_gain = vlnew*(1.0/vl)             ! larger is better
+!!$PRINT '(4I7)',pjold,pkold,bl,vl
+!!$PRINT '(4I7)',pjnew,pknew,blnew,vlnew
+!!$PRINT *,"--------------------------------------------"
+!!$PRINT '(A,3F7.1)',"              ",bl_gain,vl_gain,bl_gain*vl_gain
+            ! compare new with old configuration
+            IF (vl_gain*bl_gain.GT.1.0) THEN
+               ! new configuration is better
+               pjold = pjnew
+               pkold = pknew
+               bl = blnew
+               vl = vlnew
+            END IF
+         END IF
+      END DO
+      ! return optimized number of processes in the first dimension
+      ! (for the initial configuration pj x pk)
+      pjres=pjold
+    END FUNCTION Decompose
+    
+    ! computes the sum of the length of all internal boundaries (bl)
+    ! and the maximal vector length (vl)
+    PURE SUBROUTINE GetCosts(n1,n2,p1,p2,bl,vl)
       IMPLICIT NONE
       !------------------------------------------------------------------------!
-      INTEGER, INTENT(IN)    :: nj,nk
-      INTEGER, INTENT(INOUT) :: pj,pk
-      INTEGER :: bl
+      INTEGER, INTENT(IN)  :: n1,n2,p1,p2
+      INTEGER, INTENT(OUT) :: bl,vl
       !------------------------------------------------------------------------!
-      INTEGER :: n1,n2,p1,p2,boundlen
-      INTEGER :: primfac,bl1
+      INTEGER :: num,rem
       !------------------------------------------------------------------------!
-      boundlen(n1,n2,p1,p2) = n1*(p2-1) + n2*(p1-1)
-      !------------------------------------------------------------------------!
-      bl = boundlen(nj,nk,pj,pk)
-      IF (pj.EQ.1) RETURN
-      primfac = GetFactor(pj)
-      p1 = pj/primfac
-      p2 = pk*primfac
-      bl1 = Balance(nj,nk,p1,p2)
-      IF (bl.GT.bl1) THEN
-         pj = p1
-         pk = p2
-         bl = bl1
-      END IF
-    END FUNCTION Balance
-    
+      ! length of internal boundaries
+      bl = n1*(p2-1) + n2*(p1-1)
+      ! maximal possible vector length (first array dimension)
+      ! if n1 > VECLEN return the length of the remainder
+      rem = MOD(n1,p1)
+      num = (n1-rem) / p1 + MIN(rem,1) + 2*gnum  ! account for ghost cells
+      IF (num.GT.VECLEN) num=MOD(num,VECLEN)
+      vl  = VECLEN-MOD(ABS(num-VECLEN),VECLEN)
+    END SUBROUTINE GetCosts
+
   END SUBROUTINE CalculateDecomposition
 #endif
+
+
+  PURE FUNCTION GetMesh(this) RESULT(mt)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Mesh_TYP), INTENT(IN) :: this
+    INTEGER :: mt
+    !------------------------------------------------------------------------!
+    mt=GetType_common(this%mtype)
+  END FUNCTION GetMesh
+
+
+  PURE FUNCTION GetMeshName(this) RESULT(mn)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Mesh_TYP), INTENT(IN) :: this
+    CHARACTER(LEN=32) :: mn
+    !------------------------------------------------------------------------!
+    mn=GetName_common(this%mtype)
+  END FUNCTION GetMeshName
 
 
   PURE FUNCTION GetMeshRank(this) RESULT(r)
@@ -477,6 +562,16 @@ CONTAINS
   END FUNCTION GetMeshNumProcs
 
 
+  PURE FUNCTION MeshInitialized(this) RESULT(i)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Mesh_TYP), INTENT(IN) :: this
+    LOGICAL :: i
+    !------------------------------------------------------------------------!
+    i = Initialized_common(this%mtype)
+  END FUNCTION MeshInitialized
+
+ 
   SUBROUTINE MeshInfo(this,msg)
     IMPLICIT NONE
     !------------------------------------------------------------------------!

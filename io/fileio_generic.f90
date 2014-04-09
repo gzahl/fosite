@@ -71,6 +71,7 @@ MODULE fileio_generic
        GetName, &
        GetRank, &
        GetNumProcs, &
+       Initialized, &
        Info, &
        Warning, &
        Error
@@ -220,6 +221,8 @@ CONTAINS
     INTENT(IN)       :: action
     INTENT(INOUT)    :: this
     !------------------------------------------------------------------------!
+    IF (.NOT.Initialized(this)) &
+         CALL Error(this,"OpenFile","file module uninitialized")
     SELECT CASE(GetType(this))
     CASE(BINARY)
        CALL OpenFile_binary(this,action)
@@ -242,6 +245,8 @@ CONTAINS
     !------------------------------------------------------------------------!
     INTENT(INOUT)    :: this
     !------------------------------------------------------------------------!
+    IF (.NOT.Initialized(this)) &
+         CALL Error(this,"CloseFile","file module uninitialized")
     SELECT CASE(GetType(this))
     CASE(BINARY)
        CALL CloseFile_binary(this)

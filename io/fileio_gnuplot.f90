@@ -3,7 +3,8 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: fileio_gnuplot.f90                                                #
 !#                                                                           #
-!# Copyright (C) 2008 Tobias Illenseer <tillense@astrophysik.uni-kiel.de>    #
+!# Copyright (C) 2008-2010                                                   #
+!# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
 !# it under the terms of the GNU General Public License as published by      #
@@ -91,6 +92,7 @@ MODULE fileio_gnuplot
        GetName, &
        GetRank, &
        GetNumProcs, &
+       Initialized, &
        Info, &
        Warning, &
        Error
@@ -546,7 +548,8 @@ CONTAINS
     TYPE(FileIO_TYP), INTENT(INOUT) :: this
     CHARACTER(LEN=*),  INTENT(IN) :: modproc,msg
     !------------------------------------------------------------------------!
-    CALL CloseFile_gnuplot(this)
+    IF (Initialized(this)) &
+         CALL CloseFile_gnuplot(this)
     CALL Error_fileio(this,modproc,msg)
   END SUBROUTINE Error_gnuplot
 

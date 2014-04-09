@@ -48,6 +48,8 @@ MODULE reconstruction_constant
        GetType, &
        GetName, &
        GetRank, &
+       GetNumProcs, &
+       Initialized, &
        Info, &
        Warning, &
        Error

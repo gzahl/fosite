@@ -41,6 +41,8 @@ MODULE constants_SI
        GetType, &
        GetName, &
        GetRank, &
+       GetNumProcs, &
+       Initialized, &
        Info, &
        Warning, &
        Error

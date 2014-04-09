@@ -46,16 +46,17 @@ MODULE fluxes_generic
        ! methods
        InitFluxes, &
        MallocFluxes, &
+       CalculateFluxes, &
+       CloseFluxes, &
+       PrimRecon, &
        GetBoundaryFlux, &
        GetType, &
        GetName, &
        GetRank, &
+       Initialized, &
        Info, &
        Warning, &
-       Error, &
-       PrimRecon, &
-       CalculateFluxes, &
-       CloseFluxes
+       Error
   !--------------------------------------------------------------------------!
 
 CONTAINS
@@ -97,6 +98,10 @@ CONTAINS
     INTENT(IN)        :: Mesh,Physics
     INTENT(INOUT)     :: this
     !------------------------------------------------------------------------!
+    IF (.NOT.Initialized(this)) &
+         CALL Error(this,"MallocFluxes","fluxes module uninitialized")
+    IF (.NOT.Initialized(Physics).OR..NOT.Initialized(Mesh)) &
+         CALL Error(this,"MallocFluxes","physics and/or mesh module uninitialized")
     ! allocate memory for reconstruction object
     CALL MallocReconstruction(this%Reconstruction,Mesh,Physics)
 

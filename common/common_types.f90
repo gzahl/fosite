@@ -166,21 +166,40 @@ CONTAINS
   END FUNCTION Initialized
 
 
-  SUBROUTINE Info(this,msg,rank)
+  SUBROUTINE Info(this,msg,rank,node_info)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Common_TYP), INTENT(IN)  :: this
     CHARACTER(LEN=*),  INTENT(IN) :: msg
     INTEGER, OPTIONAL, INTENT(IN) :: rank
+    LOGICAL, OPTIONAL, INTENT(IN) :: node_info
     !------------------------------------------------------------------------!
+#ifdef PARALLEL
+    INTEGER :: ierr
+#endif
     INTEGER :: print_rank
+    LOGICAL :: print_node_info
     !------------------------------------------------------------------------!
     IF (PRESENT(rank)) THEN
        print_rank = rank
     ELSE
        print_rank = 0
     END IF
-    IF (this%myrank.EQ.print_rank) THEN
+    IF (PRESENT(node_info)) THEN
+       print_node_info = node_info
+    ELSE
+       print_node_info = .FALSE.
+    END IF
+#ifdef PARALLEL 
+    IF (.NOT.parinit) CALL MPI_Comm_rank(mpi_comm_world,myrank,ierr)
+#endif
+    ! use "myrank" here instead of "this%myrank" 
+    ! because "this" might be uninitialized
+    IF (myrank.EQ.print_rank) THEN
+#ifdef PARALLEL
+       IF (print_node_info) &
+            WRITE (0,'(A,I4.4,A)',ADVANCE='NO') "NODE [", myrank, "] "
+#endif
        WRITE (*,'(A)') TRIM(msg)
     END IF
   END SUBROUTINE Info
@@ -192,11 +211,8 @@ CONTAINS
     TYPE(Common_TYP), INTENT(IN) :: this
     CHARACTER(LEN=*),  INTENT(IN) :: modproc,msg
     !------------------------------------------------------------------------!
-    WRITE (0,'(2A)',ADVANCE='NO') "WARNING in ", TRIM(modproc)
-#ifdef PARALLEL
-    WRITE (0,'(A,I3)',ADVANCE='NO') ", node ", this%myrank
-#endif
-    WRITE (0,'(2A)') ": ", TRIM(msg)
+    CALL Info(this,"WARNING in " // TRIM(modproc) // ": " // TRIM(msg),&
+         myrank,.TRUE.)
   END SUBROUTINE Warning
 
 
@@ -207,23 +223,12 @@ CONTAINS
     CHARACTER(LEN=*),  INTENT(IN) :: modproc,msg
     INTEGER, OPTIONAL, INTENT(IN) :: rank
     !------------------------------------------------------------------------!
-    INTEGER :: print_rank
 #ifdef PARALLEL
     INTEGER :: ierr
 #endif
     !------------------------------------------------------------------------!
-    IF (PRESENT(rank)) THEN
-       print_rank = rank
-    ELSE
-       print_rank = 0
-    END IF
-    IF (this%myrank.EQ.print_rank) THEN
-       WRITE (0,'(2A)',ADVANCE='NO') "ERROR in ", TRIM(modproc)
-#ifdef PARALLEL
-       WRITE (0,'(A,I3)',ADVANCE='NO') ", node ", this%myrank
-#endif
-       WRITE (0,'(2A)') ": ", TRIM(msg)
-    END IF
+    CALL Info(this,"ERROR in " // TRIM(modproc) // ": " // TRIM(msg),&
+         rank,.TRUE.)
     ! abort execution
 #ifdef PARALLEL
     CALL MPI_Abort(MPI_COMM_WORLD,1,ierr)

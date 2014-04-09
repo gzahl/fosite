@@ -184,10 +184,10 @@ CONTAINS
          northern = NO_GRADIENTS)
 
     ! initialize log input/output
-    CALL InitFileIO(Logfile,Mesh,Physics,Timedisc,&
-         fileformat = BINARY, &
-         filename   = TRIM(ODIR) // TRIM(OFNAME) // 'log', &
-         filecycles = 1)
+!!$    CALL InitFileIO(Logfile,Mesh,Physics,Timedisc,&
+!!$         fileformat = BINARY, &
+!!$         filename   = TRIM(ODIR) // TRIM(OFNAME) // 'log', &
+!!$         filecycles = 1)
 
     ! initialize data input/output
     CALL InitFileIO(Datafile,Mesh,Physics,Timedisc, &

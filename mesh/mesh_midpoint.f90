@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: mesh_midpoint.f90                                                 #
 !#                                                                           #
-!# Copyright (C) 2006-2009                                                   #
+!# Copyright (C) 2006-2010                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -45,7 +45,11 @@ MODULE mesh_midpoint
        ! methods
        InitMesh, &
        InitMesh_midpoint, &
+       GetType, &
+       GetName, &
        GetRank, &
+       GetNumProcs, &
+       Initialized, &
        Info, &
        Warning, &
        Error, &

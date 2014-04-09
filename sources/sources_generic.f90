@@ -75,6 +75,7 @@ MODULE sources_generic
        GetName, &
        GetRank, &
        GetNumProcs, &
+       Initialized, &
        Info, &
        Warning, &
        Error
@@ -107,6 +108,8 @@ CONTAINS
                          mass,mdot,rin,rout,dynconst,bulkconst,cvis,xaccel,yaccel, &
                          maxresidnorm,maxagmnorm,maxmult,bndrytype,MGminlevel
     !------------------------------------------------------------------------!
+    IF (.NOT.Initialized(Physics).OR..NOT.Initialized(Mesh)) &
+         CALL Error(list,"InitSources","physics and/or mesh module uninitialized")
     ! allocate common memory for all sources
     IF (.NOT.ALLOCATED(temp_sterm)) THEN
        CALL MallocSources(list,Mesh,Physics)

@@ -73,6 +73,9 @@ CONTAINS
     !------------------------------------------------------------------------!
     INTENT(IN)        :: Mesh,Physics,Fluxes,stype,model,dynconst,bulkconst,cvis
     !------------------------------------------------------------------------!
+    IF (.NOT.Initialized(Fluxes)) &
+         CALL Error(this,"InitSources_viscosity","fluxes module uninitialized")
+
     CALL InitSources(this,stype,source_name)
 
     ! check mesh

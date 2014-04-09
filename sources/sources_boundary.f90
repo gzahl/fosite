@@ -71,6 +71,11 @@ Contains
     !------------------------------------------------------------------------!
     INTENT(IN)                 :: Mesh,Boundary,maxmult,bndrytype
     !------------------------------------------------------------------------!
+    DO i=1,4
+       IF (.NOT.Initialized(Boundary(i))) &
+            CALL Error(this,"InitSources_boundary", &
+            TRIM(GetDirectionName(Boundary(i)))//" boundary module uninitialized")
+    END DO
     SELECT CASE(bndrytype)
     CASE(SPHERMULTEXPAN)
        ! initialize geometry

@@ -85,6 +85,8 @@ MODULE physics_euler2D
        GetType, &
        GetName, &
        GetRank, &
+       GetNumProcs, &
+       Initialized, &
        Info, &
        Warning, &
        Error

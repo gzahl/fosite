@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: timedisc_common.f90                                               #
 !#                                                                           #
-!# Copyright (C) 2006-2008                                                   #
+!# Copyright (C) 2006-2010                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -27,9 +27,11 @@
 ! basic module for time dicretization
 !----------------------------------------------------------------------------!
 MODULE timedisc_common
-  USE common_types, GetType_common => GetType, GetName_common => GetName, &
+  USE common_types, &
+       GetType_common => GetType, GetName_common => GetName, &
        GetRank_common => GetRank, GetNumProcs_common => GetNumProcs, &
-       Info_common => Info, Warning_common => Warning, Error_common => Error
+       Initialized_common => Initialized, Info_common => Info, &
+       Warning_common => Warning, Error_common => Error
   USE boundary_common, ONLY : Boundary_TYP
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
@@ -45,6 +47,9 @@ MODULE timedisc_common
   END INTERFACE
   INTERFACE GetNumProcs
      MODULE PROCEDURE GetTimediscNumProcs, GetNumProcs_common
+  END INTERFACE
+  INTERFACE Initialized
+     MODULE PROCEDURE TimediscInitialized, Initialized_common
   END INTERFACE
   INTERFACE Info
      MODULE PROCEDURE TimediscInfo, Info_common
@@ -89,6 +94,7 @@ MODULE timedisc_common
        GetCFL, &
        GetRank, &
        GetNumProcs, &
+       Initialized, &
        Info, &
        Warning, &
        Error
@@ -180,6 +186,16 @@ CONTAINS
     !------------------------------------------------------------------------!
     p = GetNumProcs_common(this%odesolver)
   END FUNCTION GetTimediscNumProcs
+
+
+  PURE FUNCTION TimediscInitialized(this) RESULT(i)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Timedisc_TYP), INTENT(IN) :: this
+    LOGICAL :: i
+    !------------------------------------------------------------------------!
+    i = Initialized_common(this%odesolver)
+  END FUNCTION TimediscInitialized
 
 
   SUBROUTINE TimediscInfo(this,msg)

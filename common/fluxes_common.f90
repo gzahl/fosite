@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: fluxes_common.f90                                                 #
 !#                                                                           #
-!# Copyright (C) 2006-2008                                                   #
+!# Copyright (C) 2006-2010                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -27,8 +27,10 @@
 ! basic fluxes module
 !----------------------------------------------------------------------------!
 MODULE fluxes_common
-  USE common_types, GetType_common => GetType, GetName_common => GetName, &
-       GetRank_common => GetRank, Info_common => Info, &
+  USE common_types, &
+       GetType_common => GetType, GetName_common => GetName, &
+       GetRank_common => GetRank, GetNumProcs_common => GetNumProcs, &
+       Initialized_common => Initialized, Info_common => Info, &
        Warning_common => Warning, Error_common => Error
   USE reconstruction_common, ONLY : Reconstruction_TYP
   IMPLICIT NONE
@@ -42,6 +44,12 @@ MODULE fluxes_common
   END INTERFACE
   INTERFACE GetRank
      MODULE PROCEDURE GetFluxesRank, GetRank_common
+  END INTERFACE
+  INTERFACE GetNumProcs
+     MODULE PROCEDURE GetFluxesNumProcs, GetNumProcs_common
+  END INTERFACE
+  INTERFACE Initialized
+     MODULE PROCEDURE FluxesInitialized, Initialized_common
   END INTERFACE
   INTERFACE Info
      MODULE PROCEDURE FluxesInfo, Info_common
@@ -78,6 +86,8 @@ MODULE fluxes_common
        GetType, &
        GetName, &
        GetRank, &
+       GetNumProcs, &
+       Initialized, &
        Info, &
        Warning, &
        Error
@@ -127,6 +137,26 @@ CONTAINS
     !------------------------------------------------------------------------!
     r = GetRank_common(this%quadrule)
   END FUNCTION GetFluxesRank
+
+
+  PURE FUNCTION GetFluxesNumProcs(this) RESULT(p)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Fluxes_TYP), INTENT(IN) :: this
+    INTEGER :: p
+    !------------------------------------------------------------------------!
+    p = GetNumProcs_common(this%quadrule)
+  END FUNCTION GetFluxesNumProcs
+
+
+  PURE FUNCTION FluxesInitialized(this) RESULT(i)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Fluxes_TYP), INTENT(IN) :: this
+    LOGICAL :: i
+    !------------------------------------------------------------------------!
+    i = Initialized_common(this%quadrule)
+  END FUNCTION FluxesInitialized
 
 
   SUBROUTINE FluxesInfo(this,msg)

@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: fileio_common.f90                                                 #
 !#                                                                           #
-!# Copyright (C) 2006-2008                                                   #
+!# Copyright (C) 2006-2010                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -27,9 +27,11 @@
 ! basic module for file I/O
 !----------------------------------------------------------------------------!
 MODULE fileio_common
-  USE common_types, GetType_common => GetType, GetName_common => GetName, &
+  USE common_types, &
+       GetType_common => GetType, GetName_common => GetName, &
        GetRank_common => GetRank, GetNumProcs_common => GetNumProcs, &
-       Info_common => Info, Warning_common => Warning, Error_common => Error
+       Initialized_common => Initialized, Info_common => Info, &
+       Warning_common => Warning, Error_common => Error
   USE mesh_common, ONLY : Mesh_TYP
   USE physics_common, ONLY : Physics_TYP
 #ifdef PARALLEL
@@ -56,6 +58,9 @@ MODULE fileio_common
   END INTERFACE
   INTERFACE GetNumProcs
      MODULE PROCEDURE GetFileIONumProcs, GetNumProcs_common
+  END INTERFACE
+  INTERFACE Initialized
+     MODULE PROCEDURE FileIOInitialized, Initialized_common
   END INTERFACE
   INTERFACE Info
      MODULE PROCEDURE FileIOInfo, Info_common
@@ -155,6 +160,7 @@ MODULE fileio_common
        GetName, &
        GetRank, &
        GetNumProcs, &
+       Initialized, &
        Info, &
        Warning, &
        Error
@@ -299,6 +305,16 @@ CONTAINS
     !------------------------------------------------------------------------!
     p = GetNumProcs_common(this%format)
   END FUNCTION GetFileIONumProcs
+
+
+  PURE FUNCTION FileIOInitialized(this) RESULT(i)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(FileIO_TYP), INTENT(IN) :: this
+    LOGICAL :: i
+    !------------------------------------------------------------------------!
+    i = Initialized_common(this%format)
+  END FUNCTION FileIOInitialized
 
 
   SUBROUTINE FileIOInfo(this,msg)

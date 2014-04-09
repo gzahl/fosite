@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: geometry_common.f90                                               #
 !#                                                                           #
-!# Copyright (C) 2006-2008                                                   #
+!# Copyright (C) 2006-2010                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -27,8 +27,10 @@
 ! basic geometry module
 !----------------------------------------------------------------------------!
 MODULE geometry_common
-  USE common_types, GetType_common => GetType, GetName_common => GetName, &
-       GetRank_common => GetRank, Info_common => Info, &
+  USE common_types, &
+       GetType_common => GetType, GetName_common => GetName, &
+       GetRank_common => GetRank, GetNumProcs_common => GetNumProcs, &
+       Initialized_common => Initialized, Info_common => Info, &
        Warning_common => Warning, Error_common => Error
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
@@ -44,6 +46,12 @@ MODULE geometry_common
   END INTERFACE
   INTERFACE GetRank
      MODULE PROCEDURE GetGeometryRank, GetRank_common
+  END INTERFACE
+  INTERFACE GetNumProcs
+     MODULE PROCEDURE GetGeometryNumProcs, GetNumProcs_common
+  END INTERFACE
+  INTERFACE Initialized
+     MODULE PROCEDURE GeometryInitialized, Initialized_common
   END INTERFACE
   INTERFACE Info
      MODULE PROCEDURE GeometryInfo, Info_common
@@ -72,8 +80,10 @@ MODULE geometry_common
        GetType, &
        GetName, &
        GetRank, &
+       GetNumProcs, &
        GetScale, &
        LikeSpherical, &
+       Initialized, &
        Info, &
        Warning, &
        Error
@@ -127,6 +137,16 @@ CONTAINS
   END FUNCTION GetGeometryRank
 
 
+  PURE FUNCTION GetGeometryNumProcs(this) RESULT(p)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Geometry_TYP), INTENT(IN) :: this
+    INTEGER :: p
+    !------------------------------------------------------------------------!
+    p = GetNumProcs_common(this%coordsys)
+  END FUNCTION GetGeometryNumProcs
+
+
   PURE FUNCTION GetScale(this) RESULT(gp)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
@@ -147,6 +167,16 @@ CONTAINS
   END FUNCTION LikeSpherical
 
 
+  PURE FUNCTION GeometryInitialized(this) RESULT(i)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Geometry_TYP), INTENT(IN) :: this
+    LOGICAL :: i
+    !------------------------------------------------------------------------!
+    i = Initialized_common(this%coordsys)
+  END FUNCTION GeometryInitialized
+
+ 
   SUBROUTINE GeometryInfo(this,msg)
     IMPLICIT NONE
     !------------------------------------------------------------------------!

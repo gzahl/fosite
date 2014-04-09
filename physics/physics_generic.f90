@@ -34,7 +34,7 @@ MODULE physics_generic
   USE physics_euler3Drotamt
   USE constants_generic
   USE sources_common, ONLY : Sources_TYP
-  USE mesh_common, ONLY : Mesh_TYP
+  USE mesh_common, ONLY : Mesh_TYP, Initialized
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   PRIVATE
@@ -85,13 +85,15 @@ MODULE physics_generic
        ReflectionMasks, &
        AxisMasks, &
        GetSoundSpeed_adiabatic, &
+       ClosePhysics, &
        GetType, &
        GetName, &
        GetRank, &
+       GetNumProcs, &
+       Initialized, &
        Info, &
        Warning, &
-       Error, &
-       ClosePhysics
+       Error
   !--------------------------------------------------------------------------!
 
 CONTAINS
@@ -108,10 +110,12 @@ CONTAINS
     INTENT(INOUT)     :: this
     !------------------------------------------------------------------------!
     ! units
-    IF (PRESENT(units)) THEN
-       CALL InitConstants(this%constants,units)
-    ELSE
-       CALL InitConstants(this%constants,SI)
+    IF (.NOT.Initialized(this%constants)) THEN
+       IF (PRESENT(units)) THEN
+          CALL InitConstants(this%constants,units)
+       ELSE
+          CALL InitConstants(this%constants,SI)
+       END IF
     END IF
 
     ! ratio of specific heats
@@ -187,6 +191,9 @@ CONTAINS
     INTENT(IN)        :: Mesh
     INTENT(INOUT)     :: this
     !------------------------------------------------------------------------!
+    IF (.NOT.Initialized(this).OR..NOT.Initialized(Mesh)) &
+         CALL Error(this,"MallocPhysics","physics and/or mesh module uninitialized")
+
     ! allocate memory for arrays common to all physics
     ALLOCATE(this%amin(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX), &
          this%amax(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX), &
@@ -195,9 +202,9 @@ CONTAINS
          this%tmin(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,4), &
          this%tmax(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,4), &
          STAT = err)
-    IF (err.NE.0) THEN
-       CALL Error(this, "MallocPhysics", "Unable to allocate memory.")
-    END IF
+    IF (err.NE.0) &
+         CALL Error(this, "MallocPhysics", "Unable to allocate memory.")
+
     ! call specific allocation procedures
     SELECT CASE(GetType(this))
     CASE(EULER2D)
@@ -394,9 +401,9 @@ CONTAINS
     CASE(EULER3D_ROTSYM)
        CALL CalculateStresses_euler3Drs(this,Mesh,pvar,dynvis,bulkvis, &
             btxx,btxy,btxz,btyy,btyz,btzz)
+    CASE(EULER3D_ROTAMT)
 ! ***************************************************************************!
 ! FIXME: not implemented yet
-!    CASE(EULER3D_ROTAMT)
 !       CALL CalculateStresses_euler3Dra(this,Mesh,nmin,nmax,prim,cons,yfluxes)
 ! ***************************************************************************!
     END SELECT
@@ -510,9 +517,9 @@ CONTAINS
     CASE(EULER3D_ROTSYM)
        CALL ViscositySources_euler3Drs(this,Mesh,pvar,btxx,btxy,btxz, &
        btyy,btyz,btzz,ftxx,ftxy,ftxz,ftyy,ftyz,ftzz,sterm)
+    CASE(EULER3D_ROTAMT)
 ! ***************************************************************************!
 ! FIXME: not implemented yet
-!    CASE(EULER3D_ROTAMT)
 !       CALL ExternalSources_euler3Dra(this,Mesh,accel,pvar,cvar,sterm)
 ! ***************************************************************************!
     END SELECT

@@ -45,7 +45,7 @@ MODULE Init
   !--------------------------------------------------------------------------!
   PRIVATE
   ! simulation parameter
-  INTEGER, PARAMETER :: ICNUM = 6          ! initial condition (see ref. [3])
+  INTEGER, PARAMETER :: ICNUM = 1          ! initial condition (see ref. [3])
   REAL, PARAMETER    :: GAMMA = 1.4        ! ratio of specific heats
   ! mesh settings
   INTEGER, PARAMETER :: MGEO = CARTESIAN   ! geometry of the mesh
@@ -57,7 +57,7 @@ MODULE Init
   INTEGER, PARAMETER :: YRES = 100 
   REAL, PARAMETER    :: RMIN = 1.0E-4      ! inner radius for polar grids
   ! output file parameter
-  INTEGER, PARAMETER :: ONUM = 10          ! number of output data sets
+  INTEGER, PARAMETER :: ONUM = 1           ! number of output data sets
   CHARACTER(LEN=256), PARAMETER &          ! output data dir
                      :: ODIR = './'
   CHARACTER(LEN=256), PARAMETER &          ! output data file name
@@ -189,9 +189,25 @@ CONTAINS
        test_stoptime = 0.23
     CASE(6)  ! Riemann problem no. 6
        test_stoptime = 0.3
+    CASE(7)  ! Riemann problem no. 7
+       test_stoptime = 0.25
+    CASE(8)  ! Riemann problem no. 8
+       test_stoptime = 0.25
+    CASE(9)  ! Riemann problem no. 9
+       test_stoptime = 0.3
+    CASE(10)  ! Riemann problem no. 10
+       test_stoptime = 0.15
+    CASE(11)  ! Riemann problem no. 11
+       test_stoptime = 0.3
     CASE(12) ! Riemann problem no. 12
        test_stoptime = 0.25
+    CASE(13)  ! Riemann problem no. 13
+       test_stoptime = 0.3
+    CASE(14)  ! Riemann problem no. 14
+       test_stoptime = 0.1
     CASE(15) ! Riemann problem no. 15
+       test_stoptime = 0.2
+    CASE(16)  ! Riemann problem no. 16
        test_stoptime = 0.2
     CASE(17) ! Riemann problem no. 17
        test_stoptime = 0.3
@@ -211,7 +227,7 @@ CONTAINS
          cfl      = 0.4, &
          stoptime = test_stoptime, &
          dtlimit  = 1.0E-10, &
-         maxiter  = 100000)
+         maxiter  = 10000000)
 
     ! set initial condition
     CALL InitData(Mesh,Physics,Timedisc)
@@ -225,17 +241,16 @@ CONTAINS
 
     ! initialize log input/output
     WRITE (fext, '(A,I2.2)') "_", ICNUM
-    CALL InitFileIO(Logfile,Mesh,Physics,Timedisc,&
-         fileformat = BINARY, &
-         filename   = TRIM(ODIR) // TRIM(OFNAME) // TRIM(fext) // "log", &
-         dtwall     = 1800, &
-         filecycles = 1)
+!!$    CALL InitFileIO(Logfile,Mesh,Physics,Timedisc,&
+!!$         fileformat = BINARY, &
+!!$         filename   = TRIM(ODIR) // TRIM(OFNAME) // TRIM(fext) // "log", &
+!!$         dtwall     = 1800, &
+!!$         filecycles = 1)
 
     ! initialize data input/output
     CALL InitFileIO(Datafile,Mesh,Physics,Timedisc,&
-         fileformat = VTK, &
-!!$         fileformat = GNUPLOT, &
-!!$         filecycles = 0, &
+!!$         fileformat = VTK, &
+         fileformat = GNUPLOT, filecycles = 0, &
          filename   = TRIM(ODIR) // TRIM(OFNAME) // TRIM(fext), &
          count      = ONUM)
   END SUBROUTINE InitProgram
@@ -443,7 +458,141 @@ CONTAINS
           vxy(:,:,2) = -0.5
           Timedisc%pvar(:,:,Physics%PRESSURE) = 1.
        END WHERE
-       
+    CASE(7)
+       teststr = "2D Riemann problem no. 7" 
+       WHERE ( (Mesh%bccart(:,:,1).GT.x0).AND.(Mesh%bccart(:,:,2).GT.y0) )
+          ! no. 1
+          Timedisc%pvar(:,:,Physics%DENSITY) = 1.
+          vxy(:,:,1) = 0.1
+          vxy(:,:,2) = 0.1
+          Timedisc%pvar(:,:,Physics%PRESSURE) = 1.
+       ELSEWHERE ( (Mesh%bccart(:,:,1).LT.x0).AND.(Mesh%bccart(:,:,2).GT.y0) )
+          ! no. 2
+          Timedisc%pvar(:,:,Physics%DENSITY) = 0.5197
+          vxy(:,:,1) = -0.6259
+          vxy(:,:,2) = 0.1
+          Timedisc%pvar(:,:,Physics%PRESSURE) = 0.4
+       ELSEWHERE ( (Mesh%bccart(:,:,1).LT.x0).AND.(Mesh%bccart(:,:,2).LT.y0) )
+          ! no. 3
+          Timedisc%pvar(:,:,Physics%DENSITY) = 0.8
+          vxy(:,:,1) = 0.1
+          vxy(:,:,2) = 0.1
+          Timedisc%pvar(:,:,Physics%PRESSURE) = 0.4
+       ELSEWHERE ( (Mesh%bccart(:,:,1).GT.x0).AND.(Mesh%bccart(:,:,2).LT.y0) )
+          ! no. 4
+          Timedisc%pvar(:,:,Physics%DENSITY) = 0.5197
+          vxy(:,:,1) = 0.1
+          vxy(:,:,2) = -0.6259
+          Timedisc%pvar(:,:,Physics%PRESSURE) = 0.4
+       END WHERE
+    CASE(8)
+       teststr = "2D Riemann problem no. 8" 
+       WHERE ( (Mesh%bccart(:,:,1).GT.x0).AND.(Mesh%bccart(:,:,2).GT.y0) )
+          ! no. 1
+          Timedisc%pvar(:,:,Physics%DENSITY) = 0.5197
+          vxy(:,:,1) = 0.1
+          vxy(:,:,2) = 0.1
+          Timedisc%pvar(:,:,Physics%PRESSURE) = 0.4
+       ELSEWHERE ( (Mesh%bccart(:,:,1).LT.x0).AND.(Mesh%bccart(:,:,2).GT.y0) )
+          ! no. 2
+          Timedisc%pvar(:,:,Physics%DENSITY) = 1.
+          vxy(:,:,1) = -0.6259
+          vxy(:,:,2) = 0.1
+          Timedisc%pvar(:,:,Physics%PRESSURE) = 1.
+       ELSEWHERE ( (Mesh%bccart(:,:,1).LT.x0).AND.(Mesh%bccart(:,:,2).LT.y0) )
+          ! no. 3
+          Timedisc%pvar(:,:,Physics%DENSITY) = 0.8
+          vxy(:,:,1) = 0.1
+          vxy(:,:,2) = 0.1
+          Timedisc%pvar(:,:,Physics%PRESSURE) = 1.
+       ELSEWHERE ( (Mesh%bccart(:,:,1).GT.x0).AND.(Mesh%bccart(:,:,2).LT.y0) )
+          ! no. 4
+          Timedisc%pvar(:,:,Physics%DENSITY) = 1.
+          vxy(:,:,1) = 0.1
+          vxy(:,:,2) = -0.6259
+          Timedisc%pvar(:,:,Physics%PRESSURE) = 1.
+       END WHERE
+    CASE(9)
+       teststr = "2D Riemann problem no. 9" 
+       WHERE ( (Mesh%bccart(:,:,1).GT.x0).AND.(Mesh%bccart(:,:,2).GT.y0) )
+          ! no. 1
+          Timedisc%pvar(:,:,Physics%DENSITY) = 1.
+          vxy(:,:,1) = 0.
+          vxy(:,:,2) = 0.3
+          Timedisc%pvar(:,:,Physics%PRESSURE) = 1.
+       ELSEWHERE ( (Mesh%bccart(:,:,1).LT.x0).AND.(Mesh%bccart(:,:,2).GT.y0) )
+          ! no. 2
+          Timedisc%pvar(:,:,Physics%DENSITY) = 2.
+          vxy(:,:,1) = 0.
+          vxy(:,:,2) = -0.3
+          Timedisc%pvar(:,:,Physics%PRESSURE) = 1.
+       ELSEWHERE ( (Mesh%bccart(:,:,1).LT.x0).AND.(Mesh%bccart(:,:,2).LT.y0) )
+          ! no. 3
+          Timedisc%pvar(:,:,Physics%DENSITY) = 1.039
+          vxy(:,:,1) = 0.
+          vxy(:,:,2) = -0.8133
+          Timedisc%pvar(:,:,Physics%PRESSURE) = 0.4
+       ELSEWHERE ( (Mesh%bccart(:,:,1).GT.x0).AND.(Mesh%bccart(:,:,2).LT.y0) )
+          ! no. 4
+          Timedisc%pvar(:,:,Physics%DENSITY) = 0.5197
+          vxy(:,:,1) = 0.
+          vxy(:,:,2) = -0.4259
+          Timedisc%pvar(:,:,Physics%PRESSURE) = 0.4
+       END WHERE
+    CASE(10)
+       teststr = "2D Riemann problem no. 10" 
+       WHERE ( (Mesh%bccart(:,:,1).GT.x0).AND.(Mesh%bccart(:,:,2).GT.y0) )
+          ! no. 1
+          Timedisc%pvar(:,:,Physics%DENSITY) = 1.
+          vxy(:,:,1) = 0.
+          vxy(:,:,2) = 0.4297
+          Timedisc%pvar(:,:,Physics%PRESSURE) = 1.
+       ELSEWHERE ( (Mesh%bccart(:,:,1).LT.x0).AND.(Mesh%bccart(:,:,2).GT.y0) )
+          ! no. 2
+          Timedisc%pvar(:,:,Physics%DENSITY) = 0.5
+          vxy(:,:,1) = 0.
+          vxy(:,:,2) = 0.6076
+          Timedisc%pvar(:,:,Physics%PRESSURE) = 1.
+       ELSEWHERE ( (Mesh%bccart(:,:,1).LT.x0).AND.(Mesh%bccart(:,:,2).LT.y0) )
+          ! no. 3
+          Timedisc%pvar(:,:,Physics%DENSITY) = 0.2281
+          vxy(:,:,1) = 0.
+          vxy(:,:,2) = -0.6076
+          Timedisc%pvar(:,:,Physics%PRESSURE) = 0.3333
+       ELSEWHERE ( (Mesh%bccart(:,:,1).GT.x0).AND.(Mesh%bccart(:,:,2).LT.y0) )
+          ! no. 4
+          Timedisc%pvar(:,:,Physics%DENSITY) = 0.4562
+          vxy(:,:,1) = 0.
+          vxy(:,:,2) = -0.4297
+          Timedisc%pvar(:,:,Physics%PRESSURE) = 0.3333
+       END WHERE
+    CASE(11)
+       teststr = "2D Riemann problem no. 11" 
+       WHERE ( (Mesh%bccart(:,:,1).GT.x0).AND.(Mesh%bccart(:,:,2).GT.y0) )
+          ! no. 1
+          Timedisc%pvar(:,:,Physics%DENSITY) = 1.
+          vxy(:,:,1) = 0.1
+          vxy(:,:,2) = 0.
+          Timedisc%pvar(:,:,Physics%PRESSURE) = 1.
+       ELSEWHERE ( (Mesh%bccart(:,:,1).LT.x0).AND.(Mesh%bccart(:,:,2).GT.y0) )
+          ! no. 2
+          Timedisc%pvar(:,:,Physics%DENSITY) = 0.5313
+          vxy(:,:,1) = 0.8276
+          vxy(:,:,2) = 0.
+          Timedisc%pvar(:,:,Physics%PRESSURE) = 0.4
+       ELSEWHERE ( (Mesh%bccart(:,:,1).LT.x0).AND.(Mesh%bccart(:,:,2).LT.y0) )
+          ! no. 3
+          Timedisc%pvar(:,:,Physics%DENSITY) = 0.8
+          vxy(:,:,1) = 0.1
+          vxy(:,:,2) = 0.
+          Timedisc%pvar(:,:,Physics%PRESSURE) = 0.4
+       ELSEWHERE ( (Mesh%bccart(:,:,1).GT.x0).AND.(Mesh%bccart(:,:,2).LT.y0) )
+          ! no. 4
+          Timedisc%pvar(:,:,Physics%DENSITY) = 0.5313
+          vxy(:,:,1) = 0.1
+          vxy(:,:,2) = 0.7276
+          Timedisc%pvar(:,:,Physics%PRESSURE) = 0.4
+       END WHERE          
     CASE(12)
        teststr = "2D Riemann problem no. 12" 
        WHERE ( (Mesh%bccart(:,:,1).GT.x0).AND.(Mesh%bccart(:,:,2).GT.y0) )
@@ -471,7 +620,60 @@ CONTAINS
           vxy(:,:,2) = 0.7276
           Timedisc%pvar(:,:,Physics%PRESSURE) = 1.
        END WHERE
-       
+    CASE(13)
+       teststr = "2D Riemann problem no. 13" 
+       WHERE ( (Mesh%bccart(:,:,1).GT.x0).AND.(Mesh%bccart(:,:,2).GT.y0) )
+          ! no. 1
+          Timedisc%pvar(:,:,Physics%DENSITY) = 1.
+          vxy(:,:,1) = 0.
+          vxy(:,:,2) = -0.3
+          Timedisc%pvar(:,:,Physics%PRESSURE) = 1.
+       ELSEWHERE ( (Mesh%bccart(:,:,1).LT.x0).AND.(Mesh%bccart(:,:,2).GT.y0) )
+          ! no. 2
+          Timedisc%pvar(:,:,Physics%DENSITY) = 2.
+          vxy(:,:,1) = 0.
+          vxy(:,:,2) = 0.3
+          Timedisc%pvar(:,:,Physics%PRESSURE) = 1.
+       ELSEWHERE ( (Mesh%bccart(:,:,1).LT.x0).AND.(Mesh%bccart(:,:,2).LT.y0) )
+          ! no. 3
+          Timedisc%pvar(:,:,Physics%DENSITY) = 1.0625
+          vxy(:,:,1) = 0.
+          vxy(:,:,2) = 0.8145
+          Timedisc%pvar(:,:,Physics%PRESSURE) = 0.4
+       ELSEWHERE ( (Mesh%bccart(:,:,1).GT.x0).AND.(Mesh%bccart(:,:,2).LT.y0) )
+          ! no. 4
+          Timedisc%pvar(:,:,Physics%DENSITY) = 0.5313
+          vxy(:,:,1) = 0.
+          vxy(:,:,2) = 0.4276
+          Timedisc%pvar(:,:,Physics%PRESSURE) = 0.4
+       END WHERE
+    CASE(14)
+       teststr = "2D Riemann problem no. 14" 
+       WHERE ( (Mesh%bccart(:,:,1).GT.x0).AND.(Mesh%bccart(:,:,2).GT.y0) )
+          ! no. 1
+          Timedisc%pvar(:,:,Physics%DENSITY) = 2.
+          vxy(:,:,1) = 0.
+          vxy(:,:,2) = -0.5606
+          Timedisc%pvar(:,:,Physics%PRESSURE) = 8.
+       ELSEWHERE ( (Mesh%bccart(:,:,1).LT.x0).AND.(Mesh%bccart(:,:,2).GT.y0) )
+          ! no. 2
+          Timedisc%pvar(:,:,Physics%DENSITY) = 1.
+          vxy(:,:,1) = 0.
+          vxy(:,:,2) = -1.2172
+          Timedisc%pvar(:,:,Physics%PRESSURE) = 8.
+       ELSEWHERE ( (Mesh%bccart(:,:,1).LT.x0).AND.(Mesh%bccart(:,:,2).LT.y0) )
+          ! no. 3
+          Timedisc%pvar(:,:,Physics%DENSITY) = 0.4736
+          vxy(:,:,1) = 0.
+          vxy(:,:,2) = 1.2172
+          Timedisc%pvar(:,:,Physics%PRESSURE) = 2.6667
+       ELSEWHERE ( (Mesh%bccart(:,:,1).GT.x0).AND.(Mesh%bccart(:,:,2).LT.y0) )
+          ! no. 4
+          Timedisc%pvar(:,:,Physics%DENSITY) = 0.9474
+          vxy(:,:,1) = 0.
+          vxy(:,:,2) = 1.1606
+          Timedisc%pvar(:,:,Physics%PRESSURE) = 2.6667
+       END WHERE       
     CASE(15)
        teststr = "2D Riemann problem no. 15"
        WHERE ( (Mesh%bccart(:,:,1).GT.x0).AND.(Mesh%bccart(:,:,2).GT.y0) )
@@ -499,7 +701,33 @@ CONTAINS
           vxy(:,:,2) = 0.4276
           Timedisc%pvar(:,:,Physics%PRESSURE) = 0.4
        END WHERE
-       
+    CASE(16)
+       teststr = "2D Riemann problem no. 16"
+       WHERE ( (Mesh%bccart(:,:,1).GT.x0).AND.(Mesh%bccart(:,:,2).GT.y0) )
+          ! no. 1
+          Timedisc%pvar(:,:,Physics%DENSITY) = 0.5313
+          vxy(:,:,1) = 0.1
+          vxy(:,:,2) = 0.1
+          Timedisc%pvar(:,:,Physics%PRESSURE) = 0.4
+       ELSEWHERE ( (Mesh%bccart(:,:,1).LT.x0).AND.(Mesh%bccart(:,:,2).GT.y0) )
+          ! no. 2
+          Timedisc%pvar(:,:,Physics%DENSITY) = 1.02222
+          vxy(:,:,1) = -0.6179
+          vxy(:,:,2) = 0.1
+          Timedisc%pvar(:,:,Physics%PRESSURE) = 1.
+       ELSEWHERE ( (Mesh%bccart(:,:,1).LT.x0).AND.(Mesh%bccart(:,:,2).LT.y0) )
+          ! no. 3
+          Timedisc%pvar(:,:,Physics%DENSITY) = 0.8
+          vxy(:,:,1) = 0.1
+          vxy(:,:,2) = 0.1
+          Timedisc%pvar(:,:,Physics%PRESSURE) = 1.
+       ELSEWHERE ( (Mesh%bccart(:,:,1).GT.x0).AND.(Mesh%bccart(:,:,2).LT.y0) )
+          ! no. 4
+          Timedisc%pvar(:,:,Physics%DENSITY) = 1.
+          vxy(:,:,1) = 0.1
+          vxy(:,:,2) = 0.8276
+          Timedisc%pvar(:,:,Physics%PRESSURE) = 1.
+       END WHERE       
     CASE(17)
        teststr = "2D Riemann problem no. 17"
        WHERE ( (Mesh%bccart(:,:,1).GT.x0).AND.(Mesh%bccart(:,:,2).GT.y0) )

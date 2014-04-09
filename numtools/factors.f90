@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: factors.f90                                                       #
 !#                                                                           #
-!# Copyright (C) 2006-2008                                                   #
+!# Copyright (C) 2006-2010                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -24,7 +24,7 @@
 !#############################################################################
 
 !----------------------------------------------------------------------------!
-! module for prime factorization and reduction
+! module for prime factorization
 !----------------------------------------------------------------------------!
 MODULE Factors
   IMPLICIT NONE
@@ -49,35 +49,13 @@ MODULE Factors
   INTEGER, PARAMETER :: MAXNUM = 299208
   !--------------------------------------------------------------------------!
   PUBLIC :: &
-       Reduce, &
+       ! some constants
+       NUMPRIMS, MAXNUM, &
+       ! methods
        GetFactor
   !--------------------------------------------------------------------------!
 
 CONTAINS
-
-  ! return the smallest prime factor "p" of "number" and
-  ! return number / p**n where "n" denotes the multiplicity
-  ! of prime factor p;
-  ! p=0 for erroneous execution
-  FUNCTION Reduce(number) RESULT(p)
-    IMPLICIT NONE
-    !------------------------------------------------------------------------!
-    INTEGER, INTENT(INOUT) :: number
-    INTEGER :: p
-    !------------------------------------------------------------------------!
-    INTEGER :: q
-    !------------------------------------------------------------------------!
-    p=0
-    IF (number.LT.1) RETURN
-    p=GetFactor(number)
-    q=p
-    DO
-       number = number / q
-       q=GetFactor(number)
-       IF (q.NE.p) RETURN
-    END DO
-  END FUNCTION Reduce
-
 
   ! return the smallest prime factor of "number"
   ! p=0 for erroneous input
@@ -89,7 +67,7 @@ CONTAINS
     !------------------------------------------------------------------------!
     INTEGER :: i
     !------------------------------------------------------------------------!
-    p = 0
+    p = 0 ! for errornous input return 0
     IF ((number.GT.MAXNUM).OR.(number.LT.1)) RETURN
     DO i=1,NUMPRIMS
        p = MOD(number,PRIMS(i))
@@ -98,6 +76,8 @@ CONTAINS
           RETURN
        END IF
     END DO
+    p = number ! if there is no prim factor in the list, the number is
+               ! (a pretty large) prime number itself
   END FUNCTION GetFactor
 
 END MODULE Factors

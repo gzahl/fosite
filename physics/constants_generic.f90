@@ -46,7 +46,15 @@ MODULE constants_generic
        SI, CGS, GEOMETRICAL, &
        PI, &
        ! methods
-       InitConstants
+       InitConstants, &
+       GetType, &
+       GetName, &
+       GetRank, &
+       GetNumProcs, &
+       Initialized, &
+       Info, &
+       Warning, &
+       Error
   !--------------------------------------------------------------------------!
 
 CONTAINS
