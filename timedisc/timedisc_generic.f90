@@ -48,6 +48,7 @@ MODULE timedisc_generic
        CalcTimestep, &
        SolveODE, &
        SetBoundaries, &
+       GetBoundaryFlux, &
        CloseTimedisc, &
        GetType, &
        GetName, &
@@ -106,14 +107,16 @@ CONTAINS
          this%cvar(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum), &
          this%pold(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum), &
          this%cold(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum), &
-         this%pnew(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum), &
-         this%cnew(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum), &
          this%geo_src(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum), &
          this%src(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum), &
          this%xflux(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum), &
          this%yflux(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum), &
          this%dxflux(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum), &
          this%dyflux(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum), &
+         this%bxflux(Mesh%JGMIN:Mesh%JGMAX,2,Physics%vnum), &
+         this%byflux(Mesh%IGMIN:Mesh%IGMAX,2,Physics%vnum), &
+         this%bxfold(Mesh%JGMIN:Mesh%JGMAX,2,Physics%vnum), &
+         this%byfold(Mesh%IGMIN:Mesh%IGMAX,2,Physics%vnum), &
          this%amax(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,2), &
          STAT = err)
     IF (err.NE.0) THEN
@@ -129,6 +132,8 @@ CONTAINS
     this%geo_src = 0.
     this%xflux = 0.
     this%yflux = 0.
+    this%bxflux = 0.
+    this%byflux = 0.
     this%amax = 0.
 
     ! print some information
@@ -156,6 +161,8 @@ CONTAINS
     ! store old values
     this%cold(:,:,:) = this%cvar(:,:,:)
     this%pold(:,:,:) = this%pvar(:,:,:)
+    this%bxfold(:,:,:) = this%bxflux(:,:,:)
+    this%byfold(:,:,:) = this%byflux(:,:,:)
 
     ! CFL condition:
     ! maximal wave speeds in each direction
@@ -235,6 +242,8 @@ CONTAINS
           ! set data to old values
           this%cvar(:,:,:) = this%cold(:,:,:)
           this%pvar(:,:,:) = this%pold(:,:,:)
+          this%bxflux(:,:,:) = this%bxfold(:,:,:)
+          this%byflux(:,:,:) = this%byfold(:,:,:)
        ELSE
           ! just for information
           this%dtmin = MIN(this%dt,this%dtmin)
@@ -262,9 +271,10 @@ CONTAINS
        CALL CloseTimedisc_modeuler(this)
     END SELECT
 
-    DEALLOCATE(this%pvar,this%cvar,this%pold,this%cold,this%pnew,this%cnew, &
-         this%geo_src,this%src,this%xflux,this%yflux, &
-         this%dxflux,this%dyflux,this%amax)
+    DEALLOCATE(this%pvar,this%cvar,this%pold,this%cold, &
+         this%geo_src,this%src,this%xflux,this%yflux,this%dxflux,this%dyflux, &
+         this%bxflux,this%byflux,this%bxfold,this%byfold,&
+         this%amax)
   END SUBROUTINE CloseTimedisc
 
 END MODULE timedisc_generic

@@ -29,6 +29,7 @@
 MODULE boundary_generic
   USE mesh_common, ONLY : Mesh_TYP, GetRank, Error
   USE physics_common, ONLY : Physics_TYP
+  USE fluxes_common, ONLY : Fluxes_TYP
   USE boundary_nogradients, InitBoundary_common => InitBoundary
   USE boundary_periodic
   USE boundary_reflecting, InitBoundary_common1 => InitBoundary
@@ -37,6 +38,7 @@ MODULE boundary_generic
   USE boundary_fixed
   USE boundary_extrapolation
   USE boundary_noh
+  USE boundary_moving_wall, InitBoundary_common2 => InitBoundary
   IMPLICIT NONE
 #ifdef PARALLEL
     include 'mpif.h'
@@ -59,6 +61,7 @@ MODULE boundary_generic
   INTEGER, PARAMETER :: EXTRAPOLATION = 7
   INTEGER, PARAMETER :: NOH2D         = 8
   INTEGER, PARAMETER :: NOH3D         = 9
+  INTEGER, PARAMETER :: MOVING_WALL   = 10
   !--------------------------------------------------------------------------!
   PUBLIC :: &
        ! types
@@ -66,7 +69,7 @@ MODULE boundary_generic
        ! constants
        WEST, EAST, SOUTH, NORTH, &
        NO_GRADIENTS, PERIODIC, REFLECTING, AXIS, FOLDED, FIXED, EXTRAPOLATION, &
-       NOH2D, NOH3D, &
+       NOH2D, NOH3D, MOVING_WALL, &
        ! methods
        InitBoundary, &
        CenterBoundary, &
@@ -92,8 +95,14 @@ CONTAINS
     TYPE(Physics_TYP)  :: Physics
     INTEGER            :: btype,dir
     !------------------------------------------------------------------------!
-    LOGICAL            :: doprint
+#ifdef PARALLEL
+    INTEGER, PARAMETER :: strlen = 32
+    CHARACTER(LEN=strlen) :: sendbuf
+    CHARACTER(LEN=strlen) :: recvbuf
+    INTEGER            :: status(MPI_STATUS_SIZE)
     INTEGER            :: ierror
+    INTEGER            :: i
+#endif
     !------------------------------------------------------------------------!
     INTENT(IN)    :: Mesh,Physics,btype,dir
     INTENT(INOUT) :: this
@@ -122,41 +131,34 @@ CONTAINS
        CALL InitBoundary_noh(this,Mesh,Physics,btype,dir,2)
     CASE(NOH3D)
        CALL InitBoundary_noh(this,Mesh,Physics,btype,dir,3)
+    CASE(MOVING_WALL)
+       CALL InitBoundary_moving_wall(this,Mesh,Physics,btype,dir)
     CASE DEFAULT
        CALL Error(this, "InitBoundary_one", "Unknown boundary condition.")
     END SELECT
 
-#ifdef PARALLEL
-    ! print info, if we are not connected to
-    ! other processes and ...
-    doprint = .FALSE.
-    IF (GetType(this).NE.NONE) THEN
-       ! ... only for south-western and north-eastern
-       ! corner of the computational domain
-       SELECT CASE(GetDirection(this))
-       CASE(WEST,SOUTH)
-          IF ((Mesh%mycoords(1).EQ.0).AND.(Mesh%mycoords(2).EQ.0)) &
-               doprint = .TRUE.
-       CASE(EAST,NORTH)
-          IF((Mesh%mycoords(1).EQ.Mesh%dims(1)-1) &
-               .AND.(Mesh%mycoords(2).EQ.Mesh%dims(2)-1)) &
-               doprint = .TRUE.
-       END SELECT
-    END IF
-#else
-    doprint = .TRUE.
-#endif
-
     ! print some information
-    IF (doprint) THEN
+#ifdef PARALLEL
+    ! send boundary information to the rank 0 process;
+    ! we only need this to synchronize the output
+    IF (GetRank(this) .EQ. 0 .AND. GetRank(this).EQ.Mesh%rank0_boundaries(dir)) THEN
+       !print output without communication 
+#endif
        CALL Info(this, " BOUNDARY-> condition:         " //  TRIM(GetDirectionName(this)) &
             // " " // TRIM(GetName(this)), GetRank(this))
-    END IF
-
 #ifdef PARALLEL
-    ! wait for other processes to finish initialization
-    ! of the boundary conditions
-    CALL MPI_Barrier(MPI_COMM_WORLD,ierror)
+    ELSE IF (GetRank(this).EQ.Mesh%rank0_boundaries(dir)) THEN
+       !send info to root
+       !WRITE (sendbuf,*) TRIM(GetDirectionName(this)), " ", TRIM(GetName(this))
+       sendbuf = TRIM(GetDirectionName(this))//" "//TRIM(GetName(this))
+       CALL MPI_SEND(sendbuf,strlen,MPI_CHARACTER,0, &
+                     0,MPI_COMM_WORLD,ierror)
+    ELSE IF (GetRank(this).EQ.0) THEN
+       !receive input from rank0_boundaries(dir)
+       CALL MPI_RECV(recvbuf,strlen,MPI_CHARACTER,Mesh%rank0_boundaries(dir),&
+                     MPI_ANY_TAG,MPI_COMM_WORLD,status,ierror)
+       CALL Info(this, " BOUNDARY-> condition:         " // TRIM(recvbuf),GetRank(this))
+    END IF
 #endif
   END SUBROUTINE InitBoundary_one
 
@@ -267,7 +269,7 @@ CONTAINS
   END SUBROUTINE InitBoundary
 
 
-  SUBROUTINE CenterBoundary(this,Mesh,Physics,time,rvar)
+  SUBROUTINE CenterBoundary(this,Mesh,Fluxes,Physics,time,rvar)
     IMPLICIT NONE
 #ifdef PARALLEL
     include 'mpif.h'
@@ -275,6 +277,7 @@ CONTAINS
     !------------------------------------------------------------------------!
     TYPE(Boundary_TYP), DIMENSION(4) :: this
     TYPE(Mesh_TYP)     :: Mesh
+    TYPE(Fluxes_TYP)   :: Fluxes
     TYPE(Physics_TYP)  :: Physics
     REAL               :: time
     REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum) &
@@ -287,7 +290,7 @@ CONTAINS
     INTEGER       :: status(MPI_STATUS_SIZE)
 #endif
     !------------------------------------------------------------------------!
-    INTENT(IN)    :: Mesh,Physics,time
+    INTENT(IN)    :: Mesh,Physics,Fluxes,time
     INTENT(INOUT) :: this,rvar   
     !------------------------------------------------------------------------!
 #ifdef PARALLEL
@@ -390,6 +393,8 @@ CONTAINS
              CALL CenterBoundary_extrapolation(this(i),Mesh,Physics,rvar)
           CASE(NOH2D,NOH3D)
              CALL CenterBoundary_noh(this(i),Mesh,Physics,time,rvar)
+          CASE(MOVING_WALL)
+             CALL CenterBoundary_moving_wall(this(i),Mesh,Fluxes,Physics,rvar)
           END SELECT
        END DO
     END IF
@@ -416,6 +421,8 @@ CONTAINS
              CALL CenterBoundary_extrapolation(this(i),Mesh,Physics,rvar)
           CASE(NOH2D,NOH3D)
              CALL CenterBoundary_noh(this(i),Mesh,Physics,time,rvar)
+          CASE(MOVING_WALL)
+             CALL CenterBoundary_moving_wall(this(i),Mesh,Fluxes,Physics,rvar)
           END SELECT
        END DO
     END IF
@@ -440,6 +447,8 @@ CONTAINS
        CALL CloseBoundary_folded(this)
     CASE(FIXED)
        CALL CloseBoundary_fixed(this)
+    CASE(MOVING_WALL)
+       CALL CloseBoundary_moving_wall(this)
     END SELECT
   END SUBROUTINE CloseBoundary_one
 

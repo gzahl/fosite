@@ -28,6 +28,7 @@
 !----------------------------------------------------------------------------!
 MODULE physics_generic
   USE physics_euler2D
+  USE physics_euler2Disothm
   USE physics_euler3Drotsym
   USE physics_euler3Drotamt
   USE constants_generic
@@ -51,18 +52,16 @@ MODULE physics_generic
   !--------------------------------------------------------------------------!
   ! flags for advection problems
   INTEGER, PARAMETER :: EULER2D          = 1
-  INTEGER, PARAMETER :: EULER3D_ROTSYM   = 2
-  INTEGER, PARAMETER :: EULER3D_ROTAMT   = 3
-  !--------------------------------------------------------------------------!
-  ! basic numerical constants
-  REAL, PARAMETER :: PI = 3.141592653589792
+  INTEGER, PARAMETER :: EULER2D_ISOTHERM = 2
+  INTEGER, PARAMETER :: EULER3D_ROTSYM   = 3
+  INTEGER, PARAMETER :: EULER3D_ROTAMT   = 4
   !--------------------------------------------------------------------------!
   PUBLIC :: &
        ! types
        Physics_TYP, &
        ! constants
        PI, &
-       EULER2D, EULER3D_ROTSYM, EULER3D_ROTAMT, &
+       EULER2D, EULER2D_ISOTHERM, EULER3D_ROTSYM, EULER3D_ROTAMT, &
        SI, CGS, GEOMETRICAL, &
        ! methods
        InitPhysics, &
@@ -90,13 +89,13 @@ MODULE physics_generic
 
 CONTAINS
 
-  SUBROUTINE InitPhysics(this,problem,units,gamma,mu,rhomin,pmin,dpmax)
+  SUBROUTINE InitPhysics(this,problem,units,gamma,mu,cs,rhomin,pmin,dpmax)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Physics_TYP) :: this
     INTEGER           :: problem
     INTEGER, OPTIONAL :: units
-    REAL, OPTIONAL    :: gamma,mu,rhomin,pmin,dpmax
+    REAL, OPTIONAL    :: gamma,mu,cs,rhomin,pmin,dpmax
     !------------------------------------------------------------------------!
     INTENT(IN)        :: problem,units,gamma,mu,rhomin,pmin,dpmax
     INTENT(INOUT)     :: this
@@ -120,6 +119,13 @@ CONTAINS
        this%mu = mu
     ELSE
        this%mu = 0.029 ! air
+    END IF
+
+    ! isothermal sound speed
+    IF (PRESENT(cs)) THEN
+       this%csiso = cs
+    ELSE
+       this%csiso = 343.0 ! air at 293 K
     END IF
 
     ! density minimum, i.e. vacuum
@@ -146,6 +152,8 @@ CONTAINS
     SELECT CASE(problem)
     CASE(EULER2D)
        CALL InitPhysics_euler2D(this,problem)
+    CASE(EULER2D_ISOTHERM)
+       CALL InitPhysics_euler2Dit(this,problem)
     CASE(EULER3D_ROTSYM)
        CALL InitPhysics_euler3Drs(this,problem)
     CASE(EULER3D_ROTAMT)
@@ -187,6 +195,8 @@ CONTAINS
     SELECT CASE(GetType(this))
     CASE(EULER2D)
        CALL MallocPhysics_euler2D(this,Mesh)
+    CASE(EULER2D_ISOTHERM)
+       ! do nothing
     CASE(EULER3D_ROTSYM)
        CALL MallocPhysics_euler3Drs(this,Mesh)
     CASE(EULER3D_ROTAMT)
@@ -207,6 +217,8 @@ CONTAINS
     SELECT CASE(GetType(this))
     CASE(EULER2D)
        CALL AxisMasks_euler2D(this,reflX,reflY)
+    CASE(EULER2D_ISOTHERM)
+       CALL AxisMasks_euler2Dit(this,reflX,reflY)
     CASE(EULER3D_ROTSYM)
        CALL AxisMasks_euler3Drs(this,reflX,reflY)
     CASE(EULER3D_ROTAMT)
@@ -229,6 +241,8 @@ CONTAINS
     SELECT CASE(GetType(this))
     CASE(EULER2D)
        bad_data = CheckData_euler2D(this,Mesh,pvar,pold)
+    CASE(EULER2D_ISOTHERM)
+       bad_data = CheckData_euler2Dit(this,Mesh,pvar,pold)
     CASE(EULER3D_ROTSYM)
        bad_data = CheckData_euler3Drs(this,Mesh,pvar,pold)
     CASE(EULER3D_ROTAMT)
@@ -251,6 +265,8 @@ CONTAINS
     SELECT CASE(GetType(this))
     CASE(EULER2D)
        CALL CalculateWaveSpeeds_euler2D(this,Mesh,prim)
+    CASE(EULER2D_ISOTHERM)
+       CALL CalculateWaveSpeeds_euler2Dit(this,Mesh,prim)
     CASE(EULER3D_ROTSYM)
        CALL CalculateWaveSpeeds_euler3Drs(this,Mesh,prim)
     CASE(EULER3D_ROTAMT)
@@ -276,6 +292,8 @@ CONTAINS
     SELECT CASE(GetType(this))
     CASE(EULER2D)
        CALL CalculateWaveSpeeds_euler2D(this,Mesh,pvar)
+    CASE(EULER2D_ISOTHERM)
+       CALL CalculateWaveSpeeds_euler2Dit(this,Mesh,pvar)
     CASE(EULER3D_ROTSYM)
        CALL CalculateWaveSpeeds_euler3Drs(this,Mesh,pvar)
     CASE(EULER3D_ROTAMT)
@@ -301,6 +319,8 @@ CONTAINS
     SELECT CASE(GetType(this))
     CASE(EULER2D)
        CALL CalculateFluxesX_euler2D(this,Mesh,nmin,nmax,prim,cons,xfluxes)
+    CASE(EULER2D_ISOTHERM)
+       CALL CalculateFluxesX_euler2Dit(this,Mesh,nmin,nmax,prim,cons,xfluxes)
     CASE(EULER3D_ROTSYM)
        CALL CalculateFluxesX_euler3Drs(this,Mesh,nmin,nmax,prim,cons,xfluxes)
     CASE(EULER3D_ROTAMT)
@@ -324,6 +344,8 @@ CONTAINS
     SELECT CASE(GetType(this))
     CASE(EULER2D)
        CALL CalculateFluxesY_euler2D(this,Mesh,nmin,nmax,prim,cons,yfluxes)
+    CASE(EULER2D_ISOTHERM)
+       CALL CalculateFluxesY_euler2Dit(this,Mesh,nmin,nmax,prim,cons,yfluxes)
     CASE(EULER3D_ROTSYM)
        CALL CalculateFluxesY_euler3Drs(this,Mesh,nmin,nmax,prim,cons,yfluxes)
     CASE(EULER3D_ROTAMT)
@@ -348,6 +370,8 @@ CONTAINS
     SELECT CASE(GetType(this))
     CASE(EULER2D)
        CALL GeometricalSources_euler2D(this,Mesh,pvar,cvar,sterm)
+    CASE(EULER2D_ISOTHERM)
+       CALL GeometricalSources_euler2Dit(this,Mesh,pvar,cvar,sterm)
     CASE(EULER3D_ROTSYM)
        CALL GeometricalSources_euler3Drs(this,Mesh,pvar,cvar,sterm)
     CASE(EULER3D_ROTAMT)
@@ -374,6 +398,8 @@ CONTAINS
     SELECT CASE(GetType(this))
     CASE(EULER2D)
        CALL GeometricalSources_euler2D(this,Mesh,prim,cons,sterm)
+    CASE(EULER2D_ISOTHERM)
+       CALL GeometricalSources_euler2Dit(this,Mesh,prim,cons,sterm)
     CASE(EULER3D_ROTSYM)
        CALL GeometricalSources_euler3Drs(this,Mesh,prim,cons,sterm)
     CASE(EULER3D_ROTAMT)
@@ -398,6 +424,8 @@ CONTAINS
     SELECT CASE(GetType(this))
     CASE(EULER2D)
        CALL ExternalSources_euler2D(this,Mesh,accel,pvar,cvar,sterm)
+    CASE(EULER2D_ISOTHERM)
+       CALL ExternalSources_euler2Dit(this,Mesh,accel,pvar,cvar,sterm)
     CASE(EULER3D_ROTSYM)
        CALL ExternalSources_euler3Drs(this,Mesh,accel,pvar,cvar,sterm)
     CASE(EULER3D_ROTAMT)
@@ -422,10 +450,15 @@ CONTAINS
     SELECT CASE(GetType(this))
     CASE(EULER2D)
        CALL ViscositySources_euler2D(this,Mesh,Sources,pvar,cvar,sterm)
+    CASE(EULER2D_ISOTHERM)
+       CALL ViscositySources_euler2Dit(this,Mesh,Sources,pvar,cvar,sterm)
     CASE(EULER3D_ROTSYM)
        CALL ViscositySources_euler3Drs(this,Mesh,Sources,pvar,cvar,sterm)
+! ***************************************************************************!
+! FIXME: not implemented yet
 !    CASE(EULER3D_ROTAMT)
 !       CALL ExternalSources_euler3Dra(this,Mesh,accel,pvar,cvar,sterm)
+! ***************************************************************************!
     END SELECT
   END SUBROUTINE ViscositySources
 
@@ -445,6 +478,8 @@ CONTAINS
     SELECT CASE(GetType(this))
     CASE(EULER2D)
        CALL Convert2Primitive_euler2D(this,Mesh,cvar,pvar)
+    CASE(EULER2D_ISOTHERM)
+       CALL Convert2Primitive_euler2Dit(this,Mesh,cvar,pvar)
     CASE(EULER3D_ROTSYM)
        CALL Convert2Primitive_euler3Drs(this,Mesh,cvar,pvar)
     CASE(EULER3D_ROTAMT)
@@ -467,6 +502,8 @@ CONTAINS
     SELECT CASE(GetType(this))
     CASE(EULER2D)
        CALL Convert2Primitive_euler2D(this,Mesh,cons,prim)
+    CASE(EULER2D_ISOTHERM)
+       CALL Convert2Primitive_euler2Dit(this,Mesh,cons,prim)
     CASE(EULER3D_ROTSYM)
        CALL Convert2Primitive_euler3Drs(this,Mesh,cons,prim)
     CASE(EULER3D_ROTAMT)
@@ -489,6 +526,8 @@ CONTAINS
     SELECT CASE(GetType(this))
     CASE(EULER2D)
        CALL Convert2Conservative_euler2D(this,Mesh,pvar,cvar)
+    CASE(EULER2D_ISOTHERM)
+       CALL Convert2Conservative_euler2Dit(this,Mesh,pvar,cvar)
     CASE(EULER3D_ROTSYM)
        CALL Convert2Conservative_euler3Drs(this,Mesh,pvar,cvar)
     CASE(EULER3D_ROTAMT)
@@ -511,6 +550,8 @@ CONTAINS
     SELECT CASE(GetType(this))
     CASE(EULER2D)
        CALL Convert2Conservative_euler2D(this,Mesh,prim,cons)
+    CASE(EULER2D_ISOTHERM)
+       CALL Convert2Conservative_euler2Dit(this,Mesh,prim,cons)
     CASE(EULER3D_ROTSYM)
        CALL Convert2Conservative_euler3Drs(this,Mesh,prim,cons)
     CASE(EULER3D_ROTAMT)
@@ -531,6 +572,8 @@ CONTAINS
     SELECT CASE(GetType(this))
     CASE(EULER2D)
        CALL ReflectionMasks_euler2D(this,reflX,reflY)
+    CASE(EULER2D_ISOTHERM)
+       CALL ReflectionMasks_euler2Dit(this,reflX,reflY)
     CASE(EULER3D_ROTSYM)
        CALL ReflectionMasks_euler3Drs(this,reflX,reflY)
     CASE(EULER3D_ROTAMT)
@@ -550,6 +593,8 @@ CONTAINS
     SELECT CASE(GetType(this))
     CASE(EULER2D)
        CALL ClosePhysics_euler2D(this)
+    CASE(EULER2D_ISOTHERM)
+       CALL ClosePhysics_euler2Dit(this)
     CASE(EULER3D_ROTSYM)
        CALL ClosePhysics_euler3Drs(this)
     CASE(EULER3D_ROTAMT)

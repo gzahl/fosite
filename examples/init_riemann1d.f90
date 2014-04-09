@@ -60,7 +60,7 @@ CONTAINS
     ! Local variable declaration
     CHARACTER(LEN=256):: ofname,lfname
     INTEGER           :: ierror
-    REAL              :: test_stoptime, test_gamma
+    REAL              :: test_stoptime, test_gamma, test_cs
     !------------------------------------------------------------------------!
     INTENT(OUT)       :: Mesh,Physics,Fluxes,Timedisc,Datafile,Logfile
     !------------------------------------------------------------------------!
@@ -71,6 +71,7 @@ CONTAINS
     !   3: Toro test no. 3
     !   4: Sod problem
     !   5: Noh problem
+    !   6: simple isothermal Riemann problem
     testnum = 4
 
     SELECT CASE(testnum)
@@ -99,15 +100,26 @@ CONTAINS
        lfname  = "nohlog"
        test_gamma    = 5./3.
        test_stoptime = 1.0
+    CASE(6) ! isothermal shock tube
+       ofname  = "isotherm"
+       lfname  = "isothermlog"
+       test_cs = 1.0       ! isothermal sound speed
+       test_stoptime = 0.25
     CASE DEFAULT
-       CALL Error(Mesh,"InitProgram", "Test problem number should be 1,2,3,4 or 5")
+       CALL Error(Mesh,"InitProgram", "Test problem number should be 1,2,3,4,5 or 6")
     END SELECT
 
     ! physics settings
-    CALL InitPhysics(Physics, &
-         problem = EULER2D, &
-         gamma   = test_gamma, &    ! ratio of specific heats        !
-         dpmax   = 1.0E+06)         ! for advanced time step control !
+    IF (testnum.EQ.6) THEN
+       CALL InitPhysics(Physics, &
+            problem = EULER2D_ISOTHERM, &
+            cs      = test_cs)
+    ELSE   
+       CALL InitPhysics(Physics, &
+            problem = EULER2D, &
+            gamma   = test_gamma, &    ! ratio of specific heats        !
+            dpmax   = 1.0E+06)         ! for advanced time step control !
+    END IF
 
     ! numerical scheme for flux calculation
     CALL InitFluxes(Fluxes, &
@@ -137,7 +149,7 @@ CONTAINS
          cfl      = 0.4, &
          stoptime = test_stoptime, &
          dtlimit  = 1.0E-10, &
-         maxiter  = 10000)
+         maxiter  = 100000)
 
     ! set initial condition
     CALL InitData(Mesh,Physics,Timedisc)
@@ -168,7 +180,7 @@ CONTAINS
          filename   = TRIM(ofname), &
 #endif
          filecycles = 0, &
-         count      = 1)
+         count      = 10)
   END SUBROUTINE InitProgram
 
 
@@ -233,6 +245,13 @@ CONTAINS
        u_r   = -1.0
        p_l   = 1.0E-05
        p_r   = 1.0E-05
+    CASE(6)
+       teststr = "1D Riemannn problem: isothermal shock tube"
+       x0    = 0.5
+       rho_l = 1.0
+       rho_r = 0.125
+       u_l   = 0.0
+       u_r   = 0.0
     CASE DEFAULT
        CALL Error(Mesh,"InitData", "Test problem should be 1,2,3,4, or 5")
     END SELECT
@@ -242,25 +261,37 @@ CONTAINS
           Timedisc%pvar(:,:,Physics%DENSITY)   = rho_l
           Timedisc%pvar(:,:,Physics%XVELOCITY) = u_l
           Timedisc%pvar(:,:,Physics%YVELOCITY) = 0.
-          Timedisc%pvar(:,:,Physics%PRESSURE)  = p_l
        ELSEWHERE
           Timedisc%pvar(:,:,Physics%DENSITY)   = rho_r
           Timedisc%pvar(:,:,Physics%XVELOCITY) = u_r
           Timedisc%pvar(:,:,Physics%YVELOCITY) = 0.
-          Timedisc%pvar(:,:,Physics%PRESSURE)  = p_r
        END WHERE
     ELSE
         WHERE (Mesh%bcenter(:,:,2).LT.x0)
           Timedisc%pvar(:,:,Physics%DENSITY)   = rho_l
           Timedisc%pvar(:,:,Physics%XVELOCITY) = 0.
           Timedisc%pvar(:,:,Physics%YVELOCITY) = u_l
-          Timedisc%pvar(:,:,Physics%PRESSURE)  = p_l
        ELSEWHERE
           Timedisc%pvar(:,:,Physics%DENSITY)   = rho_r
           Timedisc%pvar(:,:,Physics%XVELOCITY) = 0. 
           Timedisc%pvar(:,:,Physics%YVELOCITY) = u_r
-          Timedisc%pvar(:,:,Physics%PRESSURE)  = p_r
        END WHERE
+    END IF
+    
+    IF (GetType(Physics).EQ.EULER2D) THEN
+       IF (Mesh%INUM.GT.Mesh%JNUM) THEN
+          WHERE (Mesh%bcenter(:,:,1).LT.x0)
+             Timedisc%pvar(:,:,Physics%PRESSURE)  = p_l
+          ELSEWHERE
+             Timedisc%pvar(:,:,Physics%PRESSURE)  = p_r
+          END WHERE
+       ELSE
+          WHERE (Mesh%bcenter(:,:,2).LT.x0)
+             Timedisc%pvar(:,:,Physics%PRESSURE)  = p_l
+          ELSEWHERE
+             Timedisc%pvar(:,:,Physics%PRESSURE)  = p_r
+          END WHERE
+       END IF
     END IF
 
     CALL Convert2Conservative(Physics,Mesh,Timedisc%pvar,Timedisc%cvar)

@@ -20,6 +20,7 @@ distclean :
 	rm -f $(OBJECTS) $(TARGET) *.mod *.bak *~
 
 boundary_periodic.o : boundary_nogradients.o
+boundary_moving_wall.o : boundary_nogradients.o
 boundary_fixed.o : boundary_nogradients.o
 boundary_noh.o : boundary_nogradients.o boundary_fixed.o
 boundary_extrapolation.o : boundary_nogradients.o
@@ -28,4 +29,5 @@ boundary_axis.o : boundary_reflecting.o
 boundary_folded.o : boundary_reflecting.o
 boundary_generic.o : boundary_nogradients.o boundary_periodic.o \
 	boundary_reflecting.o boundary_folded.o boundary_axis.o \
-	boundary_fixed.o boundary_extrapolation.o boundary_noh.o
+	boundary_fixed.o boundary_extrapolation.o boundary_noh.o\
+        boundary_moving_wall.o

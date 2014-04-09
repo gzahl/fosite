@@ -21,7 +21,6 @@
 !# Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.                 #
 !#                                                                           #
 !#############################################################################
-
 !----------------------------------------------------------------------------!
 ! module for GNUPLOT readable tabular file I/O
 !----------------------------------------------------------------------------!
@@ -434,8 +433,8 @@ CONTAINS
     INTEGER          :: request
 #endif
     !------------------------------------------------------------------------!
-    INTENT(IN)       :: Mesh,Physics,Timedisc
-    INTENT(INOUT)    :: this
+    INTENT(IN)       :: Mesh,Physics
+    INTENT(INOUT)    :: this,Timedisc
     !------------------------------------------------------------------------!
 #ifdef PARALLEL
     ! be sure to write at the end by getting the offset from the file's size
@@ -456,6 +455,10 @@ CONTAINS
     ! write _one_ line feed at the beginning of each time step
     WRITE (this%unit,FMT='(A)',ADVANCE='NO') LF
 #endif
+    ! trim the data for gnuplot output
+    WHERE (ABS(Timedisc%pvar(:,:,:)).LT.(MAX(TINY(1.0),1.0D-99)))
+       Timedisc%pvar(:,:,:) = 0.0E+00
+    END WHERE
     DO i=Mesh%IMIN,Mesh%IMAX
        DO j=Mesh%JMIN,Mesh%JMAX
           ! write positions to line buffer

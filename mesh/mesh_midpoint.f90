@@ -31,7 +31,6 @@ MODULE mesh_midpoint
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   PRIVATE
-  REAL, PARAMETER :: TINY = 1.0E-30              ! to avoid division by 0    !
   ! dummy settings, only one kind of mesh is currently available
   INTEGER, PARAMETER :: REGULAR2D    = 1
   CHARACTER(LEN=32), PARAMETER :: mesh_name = "regular 2D"
@@ -119,17 +118,25 @@ CONTAINS
     this%volume(:,:) = this%bhx(:,:)*this%bhy(:,:)*this%bhz(:,:)*this%dx*this%dy
 
     ! inverse volume elements multiplied by dx or dy
-    this%dxdV(:,:) = 1./(this%bhx(:,:)*this%bhy(:,:)*this%bhz(:,:)*this%dy + TINY)
-    this%dydV(:,:) = 1./(this%bhx(:,:)*this%bhy(:,:)*this%bhz(:,:)*this%dx + TINY)
+    this%dxdV(:,:) = 1./(this%bhx(:,:)*this%bhy(:,:)*this%bhz(:,:)*this%dy + TINY(1.0))
+    this%dydV(:,:) = 1./(this%bhx(:,:)*this%bhy(:,:)*this%bhz(:,:)*this%dx + TINY(1.0))
 
     ! cell bary centers
     this%bcenter(:,:,:)  = this%center(:,:,:)
 
     ! commutator coefficients at cell centers
-    this%cyxy(:,:,1) = this%bhz(:,:)*(this%fhy(:,:,2)-this%fhy(:,:,1)) * this%dydV(:,:)
-    this%cxyx(:,:,1) = this%bhz(:,:)*(this%fhx(:,:,4)-this%fhx(:,:,3)) * this%dxdV(:,:)
-    this%czxz(:,:,1) = this%bhy(:,:)*(this%fhz(:,:,2)-this%fhz(:,:,1)) * this%dydV(:,:)
-    this%czyz(:,:,1) = this%bhx(:,:)*(this%fhz(:,:,4)-this%fhz(:,:,3)) * this%dxdV(:,:)
+!!$    this%cyxy(:,:,1) = this%bhz(:,:)*(this%fhy(:,:,2)-this%fhy(:,:,1)) * this%dydV(:,:)
+!!$    this%cxyx(:,:,1) = this%bhz(:,:)*(this%fhx(:,:,4)-this%fhx(:,:,3)) * this%dxdV(:,:)
+!!$    this%czxz(:,:,1) = this%bhy(:,:)*(this%fhz(:,:,2)-this%fhz(:,:,1)) * this%dydV(:,:)
+!!$    this%czyz(:,:,1) = this%bhx(:,:)*(this%fhz(:,:,4)-this%fhz(:,:,3)) * this%dxdV(:,:)
+    this%cyxy(:,:,1) = 0.5*(this%fhz(:,:,2)+this%fhz(:,:,1)) &
+         * (this%fhy(:,:,2)-this%fhy(:,:,1)) * this%dydV(:,:)
+    this%cxyx(:,:,1) = 0.5*(this%fhz(:,:,4)+this%fhz(:,:,3)) &
+         * (this%fhx(:,:,4)-this%fhx(:,:,3)) * this%dxdV(:,:)
+    this%czxz(:,:,1) = 0.5*(this%fhy(:,:,2)+this%fhy(:,:,1)) &
+         * (this%fhz(:,:,2)-this%fhz(:,:,1)) * this%dydV(:,:)
+    this%czyz(:,:,1) = 0.5*(this%fhx(:,:,4)+this%fhx(:,:,3)) &
+         * (this%fhz(:,:,4)-this%fhz(:,:,3)) * this%dxdV(:,:)
 
     ! center line elements
     this%dlx(:,:) = this%bhx(:,:)*this%dx

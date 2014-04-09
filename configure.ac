@@ -26,7 +26,7 @@
 #############################################################################
 
 AC_PREREQ(2.61)
-AC_INIT(fosite, 0.2.1, tillense@astrophysik.uni-kiel.de)
+AC_INIT(fosite, 0.2.2, tillense@astrophysik.uni-kiel.de)
 
 # set up configure switches.
 linkClibs="no"
@@ -90,7 +90,7 @@ AC_ARG_ENABLE([fast],
 	arg_fast=""])
 
 AC_ARG_ENABLE([inlining],
-	AC_HELP_STRING([--enable-inline],
+	AC_HELP_STRING([--enable-inlining],
 		[turn on inline expansion of functions;
                  @<:@DEFAULT=no@:>@ ]),
  		[arg_inline=$enableval])

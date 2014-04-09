@@ -36,11 +36,15 @@ MODULE constants_generic
   INTEGER, PARAMETER :: CGS         = 2
   INTEGER, PARAMETER :: GEOMETRICAL = 3
   !--------------------------------------------------------------------------!
+  ! basic numerical constants
+  REAL, PARAMETER :: PI = 3.14159265358979323846
+  !--------------------------------------------------------------------------!
   PUBLIC :: &
        ! types
        Constants_TYP, &
        ! constant flags
        SI, CGS, GEOMETRICAL, &
+       PI, &
        ! methods
        InitConstants
   !--------------------------------------------------------------------------!

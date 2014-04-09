@@ -62,6 +62,7 @@ MODULE physics_common
                             :: sources               ! list of source terms  !
      REAL                   :: gamma                 ! ratio of spec. heats  !
      REAL                   :: mu                    ! mean molecular weight !
+     REAL                   :: csiso                 ! isothermal sound speed!
      REAL                   :: rhomin                ! density minimum       !
      REAL                   :: pmin                  ! pressure minimum      !
      REAL                   :: dpmax                 ! for time step control !
@@ -189,8 +190,6 @@ CONTAINS
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Physics_TYP) :: this
-    !------------------------------------------------------------------------!
-    INTENT(IN)        :: this
     !------------------------------------------------------------------------!
     DEALLOCATE(this%pvarname,this%cvarname)
   END SUBROUTINE ClosePhysics

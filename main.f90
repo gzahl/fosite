@@ -141,9 +141,7 @@ PROGRAM fosite
      ! write output to data file
      IF (ABS(Datafile%time-Timedisc%time).LE.1.0E-5*Datafile%time) THEN
         CALL WriteDataset(Datafile,Mesh,Physics,Timedisc)
-        IF (myrank.EQ.0) THEN
-           CALL PrintInfo(n,Timedisc%time,Timedisc%dtmin,Timedisc%n_adj)
-        END IF
+        CALL PrintInfo(n,Timedisc%time,Timedisc%dtmin,Timedisc%n_adj)
         ! reset dt_min and n_adj
         Timedisc%dtmin = Timedisc%stoptime
         Timedisc%n_adj = 0
@@ -165,16 +163,8 @@ PROGRAM fosite
   CALL CPU_TIME(end_time)
 #endif
 
-  IF (myrank.EQ.0) THEN
-     PRINT *, "==================================================================="
-     IF (n.LT.Timedisc%maxiter) THEN
-        PRINT *, "calculation finished correctly."
-     ELSE
-        PRINT *, "too many iterations, aborting!"
-     END IF
-     run_time = end_time - start_time
-     PRINT "(A,F10.2,A)", " main loop runtime: ", run_time, " sec."
-  END IF
+  CALL PrintBoundaryFluxes(Physics)
+  CALL PrintSummary
 
   CALL CloseFileIO(Datafile)
   CALL CloseFileIO(Logfile)
@@ -200,9 +190,48 @@ CONTAINS
     !------------------------------------------------------------------------!
     INTENT(IN)  :: i,t,d
     !------------------------------------------------------------------------!
-    PRINT "(A,I8,A,ES11.3,A,ES11.3,A,I5)", " Iteration ", i, &
-         "  time ", t, "  min dt ", d, "  adj ", na
+    IF (myrank.EQ.0) THEN
+       PRINT "(A,I8,A,ES11.3,A,ES11.3,A,I5)", " Iteration ", i, &
+            "  time ", t, "  min dt ", d, "  adj ", na
+    END IF
   END SUBROUTINE PrintInfo
 
+  SUBROUTINE PrintBoundaryFluxes(Physics)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Physics_TYP) :: Physics
+    INTEGER :: k
+    REAL, DIMENSION(Physics%VNUM,4) :: bflux
+    !------------------------------------------------------------------------!
+    bflux(:,:) = 0.0
+    bflux(:,WEST)  = GetBoundaryFlux(Timedisc,Mesh,Physics,WEST)
+    bflux(:,EAST)  = GetBoundaryFlux(Timedisc,Mesh,Physics,EAST)
+    bflux(:,SOUTH) = GetBoundaryFlux(Timedisc,Mesh,Physics,SOUTH)
+    bflux(:,NORTH) = GetBoundaryFlux(Timedisc,Mesh,Physics,NORTH)
+    IF (myrank.EQ.0) THEN
+       PRINT *, "-------------------------------------------------------------------"
+       PRINT *, "total boundary fluxes:"
+       PRINT *, "                      west        east        south       north"
+       DO k=1,Physics%VNUM
+          PRINT "(T2,A,T21,4(ES12.3))", TRIM(Physics%cvarname(k)), &
+               bflux(k,WEST), bflux(k,EAST), bflux(k,SOUTH), bflux(k,NORTH)   
+       END DO
+    END IF
+  END SUBROUTINE PrintBoundaryFluxes
+
+  SUBROUTINE PrintSummary
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    IF (myrank.EQ.0) THEN
+       PRINT *, "==================================================================="
+       IF (n.LT.Timedisc%maxiter) THEN
+          PRINT *, "calculation finished correctly."
+       ELSE
+          PRINT *, "too many iterations, aborting!"
+       END IF
+       run_time = end_time - start_time
+       PRINT "(A,F10.2,A)", " main loop runtime: ", run_time, " sec."
+    END IF
+  END SUBROUTINE PrintSummary
 
 END PROGRAM fosite

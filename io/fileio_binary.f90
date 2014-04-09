@@ -387,7 +387,7 @@ CONTAINS
     TYPE(Physics_TYP) :: Physics
     TYPE(Timedisc_TYP):: Timedisc
     !------------------------------------------------------------------------!
-    INTEGER          :: i,j,k
+    INTEGER          :: i,j,kx,ky
 #ifdef PARALLEL
     INTEGER(KIND=4)  :: size  ! force 4 byte integer
     INTEGER(KIND=MPI_OFFSET_KIND) :: offset
@@ -397,21 +397,25 @@ CONTAINS
     INTENT(IN)       :: Mesh,Physics,Timedisc
     INTENT(INOUT)    :: this
     !------------------------------------------------------------------------!
-    ! copy coordinates
-    k=0
     IF (Mesh%INUM.GT.1) THEN
-       k=k+1
-       FORALL (i=Mesh%IMIN:Mesh%IMAX,j=Mesh%JMIN:Mesh%JMAX) &
-            this%binout(k,i,j) = Mesh%bcenter(i,j,1)
+       kx=1
+    ELSE
+       kx=0
     END IF
     IF (Mesh%JNUM.GT.1) THEN
-       k=k+1
-       FORALL (i=Mesh%IMIN:Mesh%IMAX,j=Mesh%JMIN:Mesh%JMAX) &
-            this%binout(k,i,j) = Mesh%bcenter(i,j,2)
+       ky=kx+1
+    ELSE
+       ky=kx
     END IF
-    ! copy data
-    FORALL (i=Mesh%IMIN:Mesh%IMAX,j=Mesh%JMIN:Mesh%JMAX) &
-       this%binout(k+1:k+Physics%vnum,i,j) = Timedisc%pvar(i,j,1:Physics%vnum)
+    DO j=Mesh%JMIN,Mesh%JMAX
+       DO i=Mesh%IMIN,Mesh%IMAX
+          ! copy coordinates
+          IF (kx.GT.0) this%binout(kx,i,j) = Mesh%bcenter(i,j,1)
+          IF (ky.GT.kx) this%binout(ky,i,j) = Mesh%bcenter(i,j,2)
+          ! copy data
+          this%binout(ky+1:ky+Physics%vnum,i,j) = Timedisc%pvar(i,j,1:Physics%vnum)
+       END DO
+    END DO
 
     ! write data
 #ifdef PARALLEL
@@ -446,7 +450,7 @@ CONTAINS
             this%status,this%error)
     END IF
 #else
-    WRITE (this%unit) this%binout
+    WRITE (this%unit) this%binout(:,:,:)
 #endif
   END SUBROUTINE WriteDataset_binary
 
@@ -495,7 +499,7 @@ CONTAINS
             request,this%error)
        CALL MPI_Wait(request,this%status,this%error)
 #else
-       READ (this%unit,IOSTAT=this%error) this%binout
+       READ (this%unit,IOSTAT=this%error) this%binout(:,:,:)
 #endif
     END IF
     IF (this%error.NE.0) CALL Error(this,"ReadDataset_binary",&

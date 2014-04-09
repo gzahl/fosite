@@ -41,12 +41,13 @@ MODULE sources_viscosity
   INTEGER, PARAMETER :: MOLECULAR = 1
   INTEGER, PARAMETER :: ALPHA     = 2
   INTEGER, PARAMETER :: BETA      = 3
+  INTEGER, PARAMETER :: PRINGLE   = 4
   !--------------------------------------------------------------------------!
   PUBLIC :: &
        ! types
        Sources_TYP, &
        ! constants
-       MOLECULAR, ALPHA, BETA, &
+       MOLECULAR, ALPHA, BETA, PRINGLE, &
        ! methods
        InitSources_viscosity, &
        ExternalSources_viscosity, &
@@ -135,6 +136,8 @@ CONTAINS
        END DO
     CASE(BETA)
        CALL InitCommon(this%viscosity,BETA,"beta")
+    CASE(PRINGLE)
+       CALL InitCommon(this%viscosity,PRINGLE,"Pringle is const. kin. vis")
     END SELECT
 
     ! set viscous courant number
@@ -179,6 +182,8 @@ CONTAINS
     CASE(ALPHA)
        this%dynvis(:,:) = etafkt_alpha(this%dynconst,Physics%gamma,this%omega(:,:),&
             pvar(:,:,Physics%PRESSURE))
+    CASE(PRINGLE)
+       this%dynvis(:,:) = etafkt_pringle(pvar(:,:,Physics%DENSITY))
     END SELECT
 
   CONTAINS
@@ -210,6 +215,16 @@ CONTAINS
       !----------------------------------------------------------------------!
       eta = alpha * SQRT(gamma) * p / omega
     END FUNCTION etafkt_alpha
+
+    ! Pringle disk (kinematic viscosity is constant)
+    ELEMENTAL FUNCTION etafkt_pringle(rho) RESULT(eta)
+      IMPLICIT NONE
+      !----------------------------------------------------------------------!
+      REAL, INTENT(IN) :: rho
+      REAL :: eta
+      !----------------------------------------------------------------------!
+      eta = this%dynconst * rho   !here: dynconst is kinematic...
+    END FUNCTION etafkt_pringle
 
   END SUBROUTINE UpdateViscosity
 
@@ -271,7 +286,7 @@ CONTAINS
     INTENT(INOUT)     :: this
     INTENT(OUT)       :: dt
     !------------------------------------------------------------------------!
-    ! FIXME: this call necessary, but its inefficient, since we call it
+    ! FIXME: this call is necessary, but its inefficient, since we call it
     !        again, when computing the viscous source term
     CALL UpdateViscosity(this,Mesh,Physics,pvar)
 

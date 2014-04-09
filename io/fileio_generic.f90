@@ -21,7 +21,6 @@
 !# Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.                 #
 !#                                                                           #
 !#############################################################################
-
 !----------------------------------------------------------------------------!
 ! generic module for file I/O 
 !----------------------------------------------------------------------------!
@@ -45,6 +44,13 @@ MODULE fileio_generic
        FileIO_TYP, &
        ! constants
        BINARY, GNUPLOT, NETCDF, &
+#ifdef HAVE_NETCDF
+#ifdef HAVE_HDF5
+       NF90_CLASSIC_MODEL, NF90_NETCDF4, &
+#else
+       NF90_FORMAT_CLASSIC, NF90_FORMAT_64BIT, &       
+#endif
+#endif
        ! methods
        InitFileIO, &
        WriteHeader, &
@@ -143,7 +149,11 @@ CONTAINS
        IF (PRESENT(ncfmt)) THEN
           ncfmt_def = ncfmt
        ELSE
+#ifdef HAVE_HDF5
+          ncfmt_def = NF90_NETCDF4
+#else
           ncfmt_def = NF90_FORMAT_CLASSIC
+#endif
        END IF
 #endif
        CALL InitFileIO_netcdf(this,Mesh,Physics,fileformat,filename,stoptime_def,&
@@ -353,8 +363,8 @@ CONTAINS
     TYPE(Physics_TYP) :: Physics
     TYPE(Timedisc_TYP):: Timedisc
     !------------------------------------------------------------------------!
-    INTENT(IN)        :: Mesh,Physics,Timedisc
-    INTENT(INOUT)     :: this
+    INTENT(IN)        :: Mesh,Physics
+    INTENT(INOUT)     :: this,Timedisc
     !------------------------------------------------------------------------!
     ! write the header if either this is the first data set we write or
     ! each data set is written into a new file

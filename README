@@ -103,9 +103,11 @@ To compile the parallel version of Fosite type
 
    make parallel
 
+Sometimes gfortran buffers output to screen in parallel mode. To prevent it type
+   export GFORTRAN_UNBUFFERED_ALL=Y
+before compile fosite.
 The parallel code of Fosite has been verified to compile with the mpich2
 (version 1.0.6) implementation of MPI others may work too.
-
 
 4. SIMPLE CUSTOMIZATION
 
@@ -163,8 +165,41 @@ The code is distributed under the GNU General Public License - see the
 accompanying LICENSE file for more details. So feel free to experiment
 with this.
 
+6. Output Format - binary
 
-Copyright (C) 2006-2008 Tobias Illenseer <tillense@astrophysik.uni-kiel.de>
+ Specification: header - data - timestamp - data - timestamp - ....
+  header   : (4 + 10 * sizeof(INTEGER) + 10 * sizeof(REAL) + 4) bytes
+  data     : (4 + sizeof(REAL) * INUM * JNUM * VNUM + 4) bytes
+  timestamp: (4 + sizeof(REAL) + 4) bytes
+  the leading and trailing 4 bytes are caused by the Fortran output
+
+ Example: 
+  Physics: Euler3D -> VNUM=7; Mesh: 200x350;
+  compiled with AUTODOUBLE -> sizeof(REAL)=8, sizeof(INTEGER)=4
+   -> header   : 4+40+80+4 = 128 bytes
+   -> data     : 4+8*200*350*7+4=3920008 bytes
+                 first data set starts at 128+4 = 132 bytes
+   -> timestamp: 4+8+4 = 16 bytes
+
+6.1 How to plot binary data with Gnuplot
+
+ to plot Z over X and Y
+ 
+    (s)plot "FILENAME" binary \
+       skip=sizeof(HEADER+4)+timestep*sizeof(DATA+TIMESTAMP) \
+       record=INUMxJNUM format="FORMATSTRING" using X:Y(:Z)
+
+ FORMATSTRING is %f*VNUM or %lf*VNUM
+
+ Example:
+  to plot 23. timestep of example above
+  
+     iter = 23
+     splot "tci-ta3800-nl.bin" binary skip=132 + iter * (3920008+16) \
+        record=200x350 format="%lf%lf%lf%lf%lf%lf%lf" u 1:2:3
+
+
+Copyright (C) 2006-2009 Tobias Illenseer <tillense@astrophysik.uni-kiel.de>
 
 
 

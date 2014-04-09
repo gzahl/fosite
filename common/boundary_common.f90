@@ -65,7 +65,7 @@ MODULE boundary_common
      INTEGER           :: IMID, JMID        ! indices of cells in the middle !
      INTEGER           :: nohdim            ! dimension of Noh problem       !
      REAL, DIMENSION(:,:,:), POINTER &
-                       :: data              ! boundary data for fixed bc     !
+                       :: data              ! boundary data for fixed/reflec. bc     !
      REAL, DIMENSION(:,:), POINTER &        ! inverse distance to center     !
                        :: invr              !   used for Noh boundary        !
      LOGICAL, DIMENSION(:), POINTER  &      ! masks for reflecting or fixed  !

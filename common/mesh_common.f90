@@ -67,6 +67,8 @@ MODULE mesh_common
 #ifdef PARALLEL
      INTEGER                    :: MAXINUM,MAXJNUM ! max. of local INUM,JNUM !
      INTEGER                    :: comm_cart       ! cartesian communicator  !
+     INTEGER, DIMENSION(4)      :: comm_boundaries ! comm. for bound. procs. !
+     INTEGER, DIMENSION(4)      :: rank0_boundaries! map rank0 -> world rank !
      INTEGER, DIMENSION(4)      :: neighbor        ! ranks of neighbor proc. !
      INTEGER, DIMENSION(NDIMS)  :: dims            ! dimensions of cart comm !
      INTEGER, DIMENSION(NDIMS)  :: mycoords        ! par. proc coordinates   !
@@ -238,6 +240,10 @@ CONTAINS
     LOGICAL, DIMENSION(NDIMS), PARAMETER :: periods = .FALSE.
     INTEGER        :: num,rem
     INTEGER        :: ierror
+    INTEGER        :: i,j
+    INTEGER        :: worldgroup,newgroup
+    INTEGER, DIMENSION(NDIMS) :: coords
+    INTEGER, ALLOCATABLE, DIMENSION(:) :: ranks
     !------------------------------------------------------------------------!
     INTENT(INOUT)  :: this
     !------------------------------------------------------------------------!
@@ -283,6 +289,60 @@ CONTAINS
        this%JMAX = this%JMIN + num - 1
     END IF
 
+    ! create communicators for all boundaries
+    ALLOCATE(ranks(MAX(this%dims(1),this%dims(2))))
+    ranks = 0
+    CALL MPI_Comm_group(MPI_COMM_WORLD,worldgroup,ierror)
+    ! western boundary
+    coords(1) = 0
+    DO j=0,this%dims(2)-1
+       coords(2) = j
+       CALL MPI_Cart_rank(this%comm_cart,coords,i,ierror)
+       ranks(j+1)=i
+    END DO
+    CALL MPI_Group_incl(worldgroup,this%dims(2),ranks,newgroup,ierror)
+    CALL MPI_Comm_create(this%comm_cart,newgroup,this%comm_boundaries(1),ierror)
+    CALL MPI_Group_translate_ranks(newgroup,1,0,worldgroup,&
+         this%rank0_boundaries(1),ierror)
+    CALL MPI_Group_free(newgroup,ierror)
+    ! eastern boundary
+    coords(1) = this%dims(1)-1
+    DO j=0,this%dims(2)-1
+       coords(2) = j
+       CALL MPI_Cart_rank(this%comm_cart,coords,i,ierror)
+       ranks(j+1)=i
+    END DO
+    CALL MPI_Group_incl(worldgroup,this%dims(2),ranks,newgroup,ierror)
+    CALL MPI_Comm_create(this%comm_cart,newgroup,this%comm_boundaries(2),ierror)
+    CALL MPI_Group_translate_ranks(newgroup,1,0,worldgroup,&
+         this%rank0_boundaries(2),ierror)
+    CALL MPI_Group_free(newgroup,ierror)
+    ! southern boundary
+    coords(2) = 0
+    DO i=0,this%dims(1)-1
+       coords(1) = i
+       CALL MPI_Cart_rank(this%comm_cart,coords,j,ierror)
+       ranks(i+1)=j
+    END DO
+    CALL MPI_Group_incl(worldgroup,this%dims(1),ranks,newgroup,ierror)
+    CALL MPI_Comm_create(this%comm_cart,newgroup,this%comm_boundaries(3),ierror)
+    CALL MPI_Group_translate_ranks(newgroup,1,0,worldgroup, &
+         this%rank0_boundaries(3),ierror)
+    CALL MPI_Group_free(newgroup,ierror)
+    ! northern boundary
+    coords(2) = this%dims(2)-1
+    DO i=0,this%dims(1)-1
+       coords(1) = i
+       CALL MPI_Cart_rank(this%comm_cart,coords,j,ierror)
+       ranks(i+1)=j
+    END DO
+    CALL MPI_Group_incl(worldgroup,this%dims(1),ranks,newgroup,ierror)
+    CALL MPI_Comm_create(this%comm_cart,newgroup,this%comm_boundaries(4),ierror)
+    CALL MPI_Group_translate_ranks(newgroup,1,0,worldgroup, &
+         this%rank0_boundaries(4),ierror)
+    CALL MPI_Group_free(newgroup,ierror)
+    CALL MPI_Group_free(worldgroup,ierror)
+    DEALLOCATE(ranks)
   END SUBROUTINE InitMesh_parallel
 
 

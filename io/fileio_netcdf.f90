@@ -60,13 +60,10 @@ MODULE fileio_netcdf
        ! types
        FileIO_TYP, &
        ! constants
-#ifdef PARALLEL
+#ifdef HAVE_HDF5
        NF90_CLASSIC_MODEL, NF90_NETCDF4, &
 #else
        NF90_FORMAT_CLASSIC, NF90_FORMAT_64BIT, &       
-#ifdef HAVE_HDF5
-       NF90_FORMAT_NETCDF4, &
-#endif
 #endif
        ! methods
        InitFileio_netcdf, &
@@ -105,9 +102,6 @@ CONTAINS
     !------------------------------------------------------------------------!
     CALL InitFileIO(this,Mesh,Physics,fmt,"NetCDF",filename,"nc",stoptime,&
          dtwall,count,fcycles)
-!!$#ifdef PARALLEL
-!!$    CALL Error(this,"InitFileIO_netcdf","parallel NetCDF i/o not supported")
-!!$#endif
     this%ncfmt = ncfmt
     ! determine the default netCDF data type for real numbers
     SELECT CASE (SELECTED_REAL_KIND(PRECISION(dummy)))

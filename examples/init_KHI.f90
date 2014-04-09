@@ -32,6 +32,7 @@ MODULE Init
   USE mesh_generic
   USE reconstruction_generic
   USE boundary_generic
+  USE sources_generic
   USE fileio_generic
   USE timedisc_generic
   IMPLICIT NONE
@@ -57,9 +58,13 @@ CONTAINS
     TYPE(FILEIO_TYP)  :: Logfile
     !------------------------------------------------------------------------!
     ! Local variable declaration
+    INTEGER           :: testnum
     !------------------------------------------------------------------------!
     INTENT(OUT)       :: Mesh,Physics,Fluxes,Timedisc,Datafile,Logfile
     !------------------------------------------------------------------------!
+
+    !viscosity: without=1 / with=2 
+    testnum = 2
 
     ! physics settings
     CALL InitPhysics(Physics, &
@@ -94,6 +99,16 @@ CONTAINS
          eastern  = PERIODIC, &
          southern = PERIODIC, &
          northern = PERIODIC)
+
+    IF (testnum .eq. 2) then
+    ! viscosity source term
+    CALL InitSources(Physics%sources,Mesh,Fluxes,Physics, &
+         stype    = VISCOSITY, &
+         vismodel = MOLECULAR, &
+         dynconst = 1E-3, &
+         bulkconst = -6.67E-4)
+    ENDIF 
+
 
     ! time discretization settings
     CALL InitTimedisc(Timedisc,Mesh,Physics,&

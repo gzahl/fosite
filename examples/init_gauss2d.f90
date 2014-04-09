@@ -76,6 +76,9 @@ CONTAINS
          problem   = EULER2D, &
          gamma     = 1.4, &         ! ratio of specific heats        !
          dpmax     = 1.0)           ! for advanced time step control !
+!!$    CALL InitPhysics(Physics, &
+!!$         problem = EULER2D_ISOTHERM, &
+!!$         cs      = 1.0)           ! isothermal sound speed  !
 
     ! numerical scheme for flux calculation
     CALL InitFluxes(Fluxes, &
@@ -174,7 +177,8 @@ CONTAINS
 
     ! initialize data input/output
     CALL InitFileIO(Datafile,Mesh,Physics,Timedisc, &
-         fileformat = BINARY, &
+         fileformat = GNUPLOT, &
+!         ncfmt      = NF90_CLASSIC_MODEL, &
 #ifdef PARALLEL
          filename   = "/tmp/gauss2d", &
 #else
@@ -196,44 +200,43 @@ CONTAINS
     !------------------------------------------------------------------------!
     ! Local variable declaration
     INTEGER           :: i,j
-    REAL              :: amplitude, hwidth, rho0, P0
-#ifdef PARALLEL
-    REAL              :: hwidth_all
-    INTEGER           :: ierror
-#endif
-    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,2) :: cart
+    REAL              :: amplitude, hwidth, rho0, P0, x0, y0
     !------------------------------------------------------------------------!
     INTENT(IN)        :: Mesh,Physics
     INTENT(OUT)       :: pvar,cvar
     !------------------------------------------------------------------------!
-
-    CALL Convert2Cartesian(Mesh%geometry,Mesh%bcenter,cart)
-    
     ! 2D gaussian pressure pulse
     rho0      = 1.0
     P0        = 1.0
     amplitude = 1.0
-    hwidth    = 0.06*MAXVAL(cart(:,:,:))
+    ! centered at cartesian position:
+    x0        = 0.0
+    y0        = 0.0
+    ! half width of the pulse
+    hwidth    = 0.06
 
-#ifdef PARALLEL
-    CALL MPI_Allreduce(hwidth,hwidth_all,1,DEFAULT_MPI_REAL,MPI_MAX, &
-         Mesh%comm_cart,ierror)
-    hwidth = hwidth_all
-#endif
-
-    pvar(:,:,Physics%DENSITY)   = rho0
     pvar(:,:,Physics%XVELOCITY) = 0.
     pvar(:,:,Physics%YVELOCITY) = 0.
 
-    FORALL (i=Mesh%IGMIN:Mesh%IGMAX,j=Mesh%JGMIN:Mesh%JGMAX)
-       pvar(i,j,Physics%PRESSURE) = P0 + amplitude*EXP(-LOG(2.0) * &
-            (cart(i,j,1)**2+cart(i,j,2)**2)/hwidth**2)
-    END FORALL
+    SELECT CASE(GetType(Physics))
+    CASE(EULER2D_ISOTHERM)
+       FORALL (i=Mesh%IGMIN:Mesh%IGMAX,j=Mesh%JGMIN:Mesh%JGMAX)
+          pvar(i,j,Physics%DENSITY) = rho0 + amplitude*EXP(-LOG(2.0) * &
+               ((Mesh%bccart(i,j,1)-x0)**2+(Mesh%bccart(i,j,2)-y0)**2)/hwidth**2)
+       END FORALL
+       CALL Info(Mesh, " DATA-----> initial condition: " // &
+            "2D gaussian density pulse")       
+    CASE(EULER2D)
+       pvar(:,:,Physics%DENSITY)   = rho0
+       FORALL (i=Mesh%IGMIN:Mesh%IGMAX,j=Mesh%JGMIN:Mesh%JGMAX)
+          pvar(i,j,Physics%PRESSURE) = P0 + amplitude*EXP(-LOG(2.0) * &
+               ((Mesh%bccart(i,j,1)-x0)**2+(Mesh%bccart(i,j,2)-y0)**2)/hwidth**2)
+       END FORALL
+       CALL Info(Mesh, " DATA-----> initial condition: " // &
+            "2D gaussian pressure pulse")
+    END SELECT
 
     CALL Convert2Conservative(Physics,Mesh,pvar,cvar)
-    CALL Info(Mesh, " DATA-----> initial condition: " // &
-         "2D gaussian pressure pulse")
-
   END SUBROUTINE InitData
 
 END MODULE Init

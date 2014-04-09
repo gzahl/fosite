@@ -74,8 +74,9 @@ MODULE timedisc_common
      REAL, DIMENSION(:,:,:), POINTER :: src,geo_src    ! source terms        !
      REAL, DIMENSION(:,:,:), POINTER :: xflux, yflux   ! num. flux func.     !
      REAL, DIMENSION(:,:,:), POINTER :: dxflux,dyflux  ! flux differences    !
+     REAL, DIMENSION(:,:,:), POINTER :: bxflux,byflux,&! boundary fluxes     !
+                                        bxfold,byfold
      REAL, DIMENSION(:,:,:), POINTER :: amax           ! max. wave speeds    !
-     REAL, POINTER    :: eta(:,:)                      ! parameter for rk    !
   END TYPE Timedisc_TYP
   SAVE
   !--------------------------------------------------------------------------!

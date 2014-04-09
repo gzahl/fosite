@@ -56,7 +56,6 @@ MODULE physics_euler3Drotamt
   !--------------------------------------------------------------------------!
   PRIVATE
   INTEGER, PARAMETER :: num_var = 5
-  REAL, PARAMETER :: TINY = 1.0E-30              ! to avoid division by 0    !
   CHARACTER(LEN=32), PARAMETER :: problem_name = "Euler 3D w/ ang. momentum"
   !--------------------------------------------------------------------------!
   PUBLIC :: &
@@ -257,7 +256,7 @@ CONTAINS
     !------------------------------------------------------------------------!
     REAL :: tmp2
     !------------------------------------------------------------------------!
-    tmp2 = rho*(l/(r + TINY))**2
+    tmp2 = rho*(l/(r + TINY(1.0)))**2
     fcx  = tmp2 * czxz
     fcy  = tmp2 * czyz
   END SUBROUTINE CentrifugalForces

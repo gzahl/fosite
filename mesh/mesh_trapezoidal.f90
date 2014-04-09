@@ -33,7 +33,6 @@ MODULE mesh_trapezoidal
   PRIVATE
   ! precision for Newton-Raphson (see CalculateWeights)
   REAL, PARAMETER :: EPS  = 1.0D-04
-  REAL, PARAMETER :: TINY = 1.0E-30              ! to avoid division by 0    !
   !--------------------------------------------------------------------------!
   PUBLIC :: &
        InitMesh_trapezoidal, &
@@ -116,9 +115,9 @@ CONTAINS
     
     ! inverse volume elements multiplied by dx or dy
     this%dxdV(:,:) = 1./(0.25*this%dy*SUM(this%chx(:,:,:) &
-         *this%chy(:,:,:)*this%chz(:,:,:),DIM=3) + TINY)
+         *this%chy(:,:,:)*this%chz(:,:,:),DIM=3) + TINY(1.0))
     this%dydV(:,:) = 1./(0.25*this%dx*SUM(this%chx(:,:,:) &
-         *this%chy(:,:,:)*this%chz(:,:,:),DIM=3) + TINY)
+         *this%chy(:,:,:)*this%chz(:,:,:),DIM=3) + TINY(1.0))
 
     ! cell bary centers
     this%bcenter(:,:,1)  = 0.25*this%dx * this%dydV(:,:) * (&

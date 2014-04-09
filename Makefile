@@ -23,16 +23,16 @@ AFLAGS=rcv
 PREP=
 
 # compiler dependent variables
-FCFLAGS_ALL= -x f95-cpp-input -I/astro/home/tillense/lib/netcdf/include  -DHAVE_HDF5 -DHAVE_NETCDF $(INCDIRS)
-FCFLAGS_OPT= -O3 
+FCFLAGS_ALL= -x f95-cpp-input -fdefault-real-8 -finline-functions  $(INCDIRS)
+FCFLAGS_OPT= -O3 -finline-functions
 FCFLAGS_DBG= -g -O2
 FCFLAGS_PROF=
 FCFLAGS_MPI= -DPARALLEL
-LDFLAGS_ALL= -L/astro/home/tillense/lib/netcdf/lib -L/astro/home/tillense/lib/hdf//lib -lnetcdf -lhdf5_hl -lz  -lhdf5
+LDFLAGS_ALL= 
 LDFLAGS_OPT=
 LDFLAGS_DBG= -g
 LDFLAGS_PROF=
-LDFLAGS_MPI=   -lpthread -lrt
+LDFLAGS_MPI=  
 
 # default compiler flags for target "all"
 FCFLAGS=$(FCFLAGS_ALL) $(FCFLAGS_OPT)
@@ -91,7 +91,7 @@ distclean :
 	for dir in $(SUBDIRS); do \
 	  $(MAKE) distclean -C $$dir; \
 	done
-	rm -f $(OBJECTS) $(TARGET) *.mod *.bak *.dat *.bin *.nc *~
+	rm -f $(OBJECTS) $(TARGET) *.mod *.bak *.dat *.bin *.nc *.log *~
 	rm -rf epik*
 
 .SUFFIXES:

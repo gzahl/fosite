@@ -52,7 +52,7 @@ MODULE sources_generic
        ! constants
        POINTMASS, DISK_THOMSON, VISCOSITY, C_ACCEL, &
        NEWTON, WIITA, &
-       MOLECULAR, ALPHA, BETA, &
+       MOLECULAR, ALPHA, BETA, PRINGLE, &
        ! methods
        InitSources, &
        MallocSources, &

@@ -51,7 +51,6 @@ MODULE physics_euler2D
   !--------------------------------------------------------------------------!
   PRIVATE
   INTEGER, PARAMETER :: num_var = 4              ! number of variables       !
-  REAL, PARAMETER :: TINY = 1.0E-30              ! to avoid division by 0    !
   CHARACTER(LEN=32), PARAMETER :: problem_name = "Euler 2D"
   CHARACTER(LEN=16), PARAMETER, DIMENSION(num_var) :: varname &
        = (/ "density         ", &
@@ -109,6 +108,8 @@ CONTAINS
     this%XMOMENTUM = 2                                 ! x-momentum          !
     this%YVELOCITY = 3                                 ! y-velocity          !
     this%YMOMENTUM = 3                                 ! y-momentum          !
+    this%ZVELOCITY = 0                                 ! no z-velocity          !
+    this%ZMOMENTUM = 0                                 ! no z-momentum          !
     ! set names for primitive and conservative variables
     this%pvarname(this%DENSITY)   = "density"
     this%pvarname(this%XVELOCITY) = "x-velocity"
@@ -434,6 +435,8 @@ CONTAINS
     END DO
 
     ! viscosity source terms
+    sterm(:,:,this%DENSITY) = 0.0 
+
     ! (a) momentum sources
     sterm(:,:,this%XMOMENTUM) = Mesh%dydV(:,:) * &
          ( Mesh%fhy(:,:,2) * Sources%ftxx(:,:,2) - Mesh%fhy(:,:,1) * Sources%ftxx(:,:,1) &
@@ -580,7 +583,7 @@ CONTAINS
     REAL, INTENT(IN)  :: gamma,density,pressure
     REAL :: cs
     !------------------------------------------------------------------------!
-    cs = SQRT(MAX(TINY,gamma*pressure/density))
+    cs = SQRT(MAX(TINY(1.0),gamma*pressure/density))
   END FUNCTION GetSoundSpeed_adiabatic
 
   

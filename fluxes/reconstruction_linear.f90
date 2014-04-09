@@ -42,7 +42,6 @@ MODULE reconstruction_linear
   CHARACTER(LEN=32), PARAMETER  :: recontype_name = "linear"  
   CHARACTER(LEN=32), DIMENSION(5), PARAMETER :: limitertype_name = (/ &
          "minmod  ", "mc      ", "sweby   ", "superbee", "ospre   " /)
-  REAL, PARAMETER :: TINY = 1.0E-30 
   !--------------------------------------------------------------------------!
   PUBLIC :: &
        ! constants
@@ -334,7 +333,7 @@ CONTAINS
         REAL, INTENT(IN) :: arg1, arg2
         !--------------------------------------------------------------------!
         limarg = 1.5*arg1*arg2*(arg1 + arg2) / (arg1*(arg1 + 0.5*arg2) &
-             + arg2*(arg2 + 0.5*arg1) + TINY)
+             + arg2*(arg2 + 0.5*arg1) + TINY(1.0))
       END FUNCTION ospre_limiter
       
   END SUBROUTINE CalculateSlopes_linear

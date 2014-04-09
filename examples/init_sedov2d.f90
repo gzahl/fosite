@@ -34,6 +34,7 @@ MODULE Init
   USE boundary_generic
   USE fileio_generic
   USE timedisc_generic
+  USE sources_generic
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   PRIVATE
@@ -57,7 +58,7 @@ CONTAINS
     TYPE(FILEIO_TYP)  :: Logfile
     !------------------------------------------------------------------------!
     ! Local variable declaration
-    INTEGER           :: geometry
+    INTEGER           :: geometry, testnum
     !------------------------------------------------------------------------!
     INTENT(OUT)       :: Mesh,Physics,Fluxes,Timedisc,Datafile,Logfile
     !------------------------------------------------------------------------!
@@ -65,6 +66,9 @@ CONTAINS
     ! set the geometry
     geometry = CARTESIAN
 !    geometry = POLAR
+
+    ! 1: no viscosity, 2: only dyn. vis 3: only bulk vis. 4: both vis.
+    testnum = 1
 
     ! physics settings
     CALL InitPhysics(Physics, &
@@ -120,6 +124,33 @@ CONTAINS
        CALL Error(Physics,"InitProgram",&
             "geometry should be either cartesian or polar")
     END SELECT
+
+    IF (testnum .eq. 2) then
+    ! viscosity source term
+    CALL InitSources(Physics%sources,Mesh,Fluxes,Physics, &
+         stype    = VISCOSITY, &
+         vismodel = MOLECULAR, &
+         dynconst = 1E-3)
+    ENDIF
+
+    IF (testnum .eq. 3) then
+    ! viscosity source term
+    CALL InitSources(Physics%sources,Mesh,Fluxes,Physics, &
+         stype    = VISCOSITY, &
+         vismodel = MOLECULAR, &
+         dynconst = 0., &
+         bulkconst = -6.67E-4)
+    ENDIF
+    
+    IF (testnum .eq. 4) then
+    ! viscosity source term
+    CALL InitSources(Physics%sources,Mesh,Fluxes,Physics, &
+         stype    = VISCOSITY, &
+         vismodel = MOLECULAR, &
+         dynconst = 1E-3, &
+         bulkconst = -6.67E-4)
+    ENDIF
+
 
     ! time discretization settings
     CALL InitTimedisc(Timedisc,Mesh,Physics,&
