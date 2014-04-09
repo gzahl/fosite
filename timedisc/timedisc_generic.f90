@@ -189,9 +189,16 @@ CONTAINS
 
 
   SUBROUTINE SolveODE(this,Mesh,Physics,Fluxes)
-    IMPLICIT NONE
 #ifdef PARALLEL
-    include 'mpif.h'
+#ifdef HAVE_MPI_MOD
+  USE mpi
+#endif
+#endif
+  IMPLICIT NONE
+#ifdef PARALLEL
+#ifdef HAVE_MPIF_H
+  include 'mpif.h'
+#endif
 #endif
     !------------------------------------------------------------------------!
     TYPE(Timedisc_TYP) :: this

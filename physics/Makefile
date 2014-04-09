@@ -1,5 +1,7 @@
 # some files
-TARGET=libphysics.a
+WORKDIR=$(shell pwd | $(SED) -e 's/.*\///')
+TARGET=lib$(WORKDIR).a
+DEPFILE=Makefile.dep
 SOURCES=$(wildcard *.f90)
 OBJECTS=$(SOURCES:.f90=.o)
 
@@ -8,10 +10,15 @@ OBJECTS=$(SOURCES:.f90=.o)
 .PHONY: clean distclean
 
 %.o : %.f90
-	$(FC) $(FCFLAGS) -c $<
+	$(PREP) $(FC) $(FCFLAGS) -c $<
 
 $(TARGET) : $(OBJECTS)
 	$(AR) $(AFLAGS) $@ $(OBJECTS)
+
+$(DEPFILE) : $(SOURCES)
+	$(AWK) -f ../makedeps -v objfiles="$(OBJECTS)" $(SOURCES) > $@
+
+-include $(DEPFILE)
 
 clean :
 	rm -f $(OBJECTS) $(TARGET) *.mod
@@ -19,10 +26,4 @@ clean :
 distclean :
 	rm -f $(OBJECTS) $(TARGET) *.mod *.bak *~
 
-physics_euler2D.o : ../common/physics_common.o
-physics_euler2Disothm.o : physics_euler2D.o
-physics_euler3Drotsym.o : physics_euler2D.o
-physics_euler3Drotamt.o : physics_euler2D.o physics_euler3Drotsym.o
-physics_generic.o : physics_euler2D.o physics_euler3Drotsym.o \
-	physics_euler3Drotamt.o constants_generic.o
-constants_generic.o : constants_SI.o constants_geometrical.o
+

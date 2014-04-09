@@ -36,9 +36,16 @@ MODULE fluxes_midpoint
        WEST, EAST, SOUTH, NORTH
   USE physics_generic
   USE reconstruction_generic
+#ifdef PARALLEL
+#ifdef HAVE_MPI_MOD
+  USE mpi
+#endif
+#endif
   IMPLICIT NONE
 #ifdef PARALLEL
+#ifdef HAVE_MPIF_H
   include 'mpif.h'
+#endif
 #endif
   !--------------------------------------------------------------------------!
   PRIVATE
@@ -193,7 +200,7 @@ CONTAINS
 #ifdef PARALLEL
     INTEGER, DIMENSION(2) :: coords
     REAL, DIMENSION(Physics%VNUM) :: bflux_all,bflux_local
-    INTEGER :: sender_rank,dest_ranks(1)
+    INTEGER :: sender_rank(1),dest_ranks(1),rank0(1)
     INTEGER :: dest_comm,union_comm
     INTEGER :: world_group,dest_group,union_group,sender_group
     INTEGER :: ierror
@@ -263,29 +270,30 @@ CONTAINS
 #ifdef PARALLEL
     ! collect and sum up the result in process with rank 0 with respect to the
     ! subset of MPI processes at the boundary under consideration
-    sender_rank = 0              ! with respect to Mesh%comm_boundaries(direction)
     IF (Mesh%comm_boundaries(direction).NE.MPI_COMM_NULL) THEN
        CALL MPI_Reduce(bflux_local,bflux,Physics%VNUM,DEFAULT_MPI_REAL, &
-            MPI_SUM,sender_rank,Mesh%comm_boundaries(direction),ierror)
+            MPI_SUM,0,Mesh%comm_boundaries(direction),ierror)
     ELSE
        bflux(:) = 0.0
     END IF
     ! get sender group
-    CALL MPI_Group_incl(world_group,1,Mesh%rank0_boundaries(direction),sender_group,ierror)
+    rank0(1) = Mesh%rank0_boundaries(direction)
+    CALL MPI_Group_incl(world_group,1,rank0,sender_group,ierror)
     ! merge sender with destination
     CALL MPI_Group_union(sender_group,dest_group,union_group,ierror)
     ! create a communicator for the union group
     CALL MPI_Comm_create(MPI_COMM_WORLD,union_group,union_comm,ierror)
     IF (union_comm.NE.MPI_COMM_NULL) THEN
        ! get rank of sender in union group
-       CALL MPI_Group_translate_ranks(sender_group,1,0,union_group,sender_rank,ierror)
-       IF (sender_rank.EQ.MPI_UNDEFINED) &
+       rank0(1) = 0
+       CALL MPI_Group_translate_ranks(sender_group,1,rank0,union_group,sender_rank,ierror)
+       IF (sender_rank(1).EQ.MPI_UNDEFINED) &
            CALL Error(this,"GetBoundaryFlux","sender rank undefined")
        ! send result to all processes in communicator 'union_comm'
-       CALL MPI_Bcast(bflux,Physics%VNUM,DEFAULT_MPI_REAL,sender_rank,union_comm,ierror)
+       CALL MPI_Bcast(bflux,Physics%VNUM,DEFAULT_MPI_REAL,sender_rank(1),union_comm,ierror)
+       ! free union communicator
+       CALL MPI_Comm_free(union_comm,ierror)
     END IF
-    ! free union communicator
-    CALL MPI_Comm_free(union_comm,ierror)
     ! free all groups
     CALL MPI_Group_free(union_group,ierror)
     CALL MPI_Group_free(sender_group,ierror)

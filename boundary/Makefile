@@ -1,5 +1,7 @@
 # some files
-TARGET=libboundary.a
+WORKDIR=$(shell pwd | $(SED) -e 's/.*\///')
+TARGET=lib$(WORKDIR).a
+DEPFILE=Makefile.dep
 SOURCES=$(wildcard *.f90)
 OBJECTS=$(SOURCES:.f90=.o)
 
@@ -13,25 +15,15 @@ OBJECTS=$(SOURCES:.f90=.o)
 $(TARGET) : $(OBJECTS)
 	$(AR) $(AFLAGS) $@ $(OBJECTS)
 
+$(DEPFILE) : $(SOURCES)
+	$(AWK) -f ../makedeps -v objfiles="$(OBJECTS)" $(SOURCES) > $@
+
+-include $(DEPFILE)
+
 clean :
 	rm -f $(OBJECTS) $(TARGET) *.mod
 
 distclean :
 	rm -f $(OBJECTS) $(TARGET) *.mod *.bak *~
 
-boundary_nogradients.o : ../common/boundary_common.o
-boundary_periodic.o : boundary_nogradients.o
-boundary_noslip.o : boundary_nogradients.o
-boundary_fixed.o : boundary_nogradients.o
-boundary_noh.o : boundary_nogradients.o boundary_fixed.o
-boundary_custom.o : boundary_nogradients.o boundary_fixed.o
-boundary_farfield.o : boundary_nogradients.o boundary_fixed.o
-boundary_extrapolation.o : boundary_nogradients.o
-boundary_reflecting.o : boundary_nogradients.o
-boundary_axis.o : boundary_reflecting.o
-boundary_folded.o : boundary_reflecting.o
-boundary_generic.o : boundary_nogradients.o boundary_periodic.o \
-	boundary_reflecting.o boundary_folded.o boundary_axis.o \
-	boundary_fixed.o boundary_extrapolation.o boundary_noh.o\
-        boundary_noslip.o boundary_custom.o boundary_farfield.o
 

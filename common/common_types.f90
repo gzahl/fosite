@@ -27,9 +27,16 @@
 ! basic data and methods common to all objects
 !----------------------------------------------------------------------------!
 MODULE common_types
+#ifdef PARALLEL
+#ifdef HAVE_MPI_MOD
+  USE mpi
+#endif
+#endif
   IMPLICIT NONE
 #ifdef PARALLEL
-    include 'mpif.h'
+#ifdef HAVE_MPIF_H
+  include 'mpif.h'
+#endif
 #endif
   !--------------------------------------------------------------------------!
   PRIVATE
@@ -196,11 +203,14 @@ CONTAINS
   SUBROUTINE Error(this,modproc,msg,rank)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    TYPE(Common_TYP), INTENT(IN) :: this
+    TYPE(Common_TYP), INTENT(IN)  :: this
     CHARACTER(LEN=*),  INTENT(IN) :: modproc,msg
     INTEGER, OPTIONAL, INTENT(IN) :: rank
     !------------------------------------------------------------------------!
     INTEGER :: print_rank
+#ifdef PARALLEL
+    INTEGER :: ierr
+#endif
     !------------------------------------------------------------------------!
     IF (PRESENT(rank)) THEN
        print_rank = rank
@@ -216,7 +226,7 @@ CONTAINS
     END IF
     ! abort execution
 #ifdef PARALLEL
-    CALL MPI_Abort(MPI_COMM_WORLD,this%error)
+    CALL MPI_Abort(MPI_COMM_WORLD,1,ierr)
 #else
     STOP
 #endif

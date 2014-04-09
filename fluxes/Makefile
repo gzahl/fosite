@@ -1,5 +1,7 @@
 # some files
-TARGET=libfluxes.a
+WORKDIR=$(shell pwd | $(SED) -e 's/.*\///')
+TARGET=lib$(WORKDIR).a
+DEPFILE=Makefile.dep
 SOURCES=$(wildcard *.f90)
 OBJECTS=$(SOURCES:.f90=.o)
 
@@ -8,10 +10,15 @@ OBJECTS=$(SOURCES:.f90=.o)
 .PHONY: clean distclean
 
 %.o : %.f90
-	$(FC) $(FCFLAGS) -c $<
+	$(PREP) $(FC) $(FCFLAGS) -c $<
 
 $(TARGET) : $(OBJECTS)
 	$(AR) $(AFLAGS) $@ $(OBJECTS)
+
+$(DEPFILE) : $(SOURCES)
+	$(AWK) -f ../makedeps -v objfiles="$(OBJECTS)" $(SOURCES) > $@
+
+-include $(DEPFILE)
 
 clean :
 	rm -f $(OBJECTS) $(TARGET) *.mod
@@ -19,9 +26,4 @@ clean :
 distclean :
 	rm -f $(OBJECTS) $(TARGET) *.mod *.bak *~
 
-reconstruction_constant.o : ../common/reconstruction_common.o
-reconstruction_linear.o : reconstruction_constant.o
-reconstruction_generic.o : reconstruction_constant.o reconstruction_linear.o
-fluxes_midpoint.o : ../common/fluxes_common.o reconstruction_generic.o
-fluxes_trapezoidal.o : fluxes_midpoint.o
-fluxes_generic.o : fluxes_midpoint.o fluxes_trapezoidal.o
+

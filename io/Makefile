@@ -1,5 +1,7 @@
 # some files
-TARGET=libio.a
+WORKDIR=$(shell pwd | $(SED) -e 's/.*\///')
+TARGET=lib$(WORKDIR).a
+DEPFILE=Makefile.dep
 SOURCES=$(wildcard *.f90)
 OBJECTS=$(SOURCES:.f90=.o)
 
@@ -13,14 +15,15 @@ OBJECTS=$(SOURCES:.f90=.o)
 $(TARGET) : $(OBJECTS)
 	$(AR) $(AFLAGS) $@ $(OBJECTS)
 
+$(DEPFILE) : $(SOURCES)
+	$(AWK) -f ../makedeps -v objfiles="$(OBJECTS)" $(SOURCES) > $@
+
+-include $(DEPFILE)
+
 clean :
 	rm -f $(OBJECTS) $(TARGET) *.mod
 
 distclean :
 	rm -f $(OBJECTS) $(TARGET) *.mod *.bak *~
 
-fileio_gnuplot.o : ../common/fileio_common.o
-fileio_binary.o : fileio_gnuplot.o 
-fileio_netcdf.o : fileio_gnuplot.o 
-fileio_vtk.o : fileio_gnuplot.o 
-fileio_generic.o : fileio_binary.o fileio_netcdf.o fileio_gnuplot.o fileio_vtk.o
+

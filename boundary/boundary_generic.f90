@@ -43,9 +43,16 @@ MODULE boundary_generic
   USE boundary_custom
   USE boundary_farfield
   USE physics_generic, ONLY : Physics_TYP, Convert2Primitive, Convert2Conservative
+#ifdef PARALLEL
+#ifdef HAVE_MPI_MOD
+  USE mpi
+#endif
+#endif
   IMPLICIT NONE
 #ifdef PARALLEL
-    include 'mpif.h'
+#ifdef HAVE_MPIF_H
+  include 'mpif.h'
+#endif
 #endif
   !--------------------------------------------------------------------------!
   PRIVATE
@@ -282,9 +289,6 @@ CONTAINS
 
   SUBROUTINE CenterBoundary(this,Mesh,Fluxes,Physics,time,pvar,cvar)
     IMPLICIT NONE
-#ifdef PARALLEL
-    include 'mpif.h'
-#endif
     !------------------------------------------------------------------------!
     TYPE(Boundary_TYP) :: this(4)
     TYPE(Mesh_TYP)     :: Mesh

@@ -1,5 +1,17 @@
 # fortran 90/95 compiler
-FC=mpif90
+FC=gfortran
+
+# awk and sed program
+AWK=gawk
+SED=/usr/bin/sed
+
+# archiver and flags
+AR=ar
+AFLAGS=rcv
+
+# command for preprocessing (should be empty);
+# used for parallel profiling with scalasca (see below)
+PREP=
 
 # some files
 TARGET=fosite
@@ -14,25 +26,17 @@ LIBDIRS=$(foreach dir,$(SUBDIRS),-L$(BASEDIR)/$(dir))
 ALLSRCS=$(SOURCES) $(foreach dir,$(SUBDIRS), $(wildcard $(dir)/*.f90))
 ALLOBJS=$(ALLSRCS:.f90=.o)
 
-# archiver and flags
-AR=ar
-AFLAGS=rcv
-
-# command for preprocessing (should be empty);
-# used for parallel profiling with scalasca (see below)
-PREP=
-
 # compiler dependent variables
-FCFLAGS_ALL=-mtune=amdfam10 -funroll-loops -falign-functions -falign-jumps -falign-labels -falign-loops -cpp -fdefault-real-8  -DFORTRAN_STREAMS $(INCDIRS)
-FCFLAGS_OPT= -O3 -finline-functions
-FCFLAGS_DBG=-mtune=amdfam10 -funroll-loops -falign-functions -falign-jumps -falign-labels -falign-loops -g -O2 -eC
-FCFLAGS_PROF=
-FCFLAGS_MPI= -DPARALLEL
-LDFLAGS_ALL=-mtune=amdfam10 -funroll-loops -falign-functions -falign-jumps -falign-labels -falign-loops 
-LDFLAGS_OPT=
-LDFLAGS_DBG=-mtune=amdfam10 -funroll-loops -falign-functions -falign-jumps -falign-labels -falign-loops -g -eC
-LDFLAGS_PROF=
-LDFLAGS_MPI=  
+FCFLAGS_ALL= -cpp    -DFORTRAN_STREAMS   $(INCDIRS)
+FCFLAGS_OPT= -O2 
+FCFLAGS_DBG=-fcheck=all
+FCFLAGS_PROF=-pg
+FCFLAGS_MPI= 
+LDFLAGS_ALL=     
+LDFLAGS_OPT= -O2
+LDFLAGS_DBG=-fcheck=all
+LDFLAGS_PROF=-pg
+LDFLAGS_MPI= 
 
 # default compiler flags for target "all"
 FCFLAGS=$(FCFLAGS_ALL) $(FCFLAGS_OPT)
@@ -47,9 +51,9 @@ prof : FCFLAGS=$(FCFLAGS_ALL) $(FCFLAGS_OPT) $(FCFLAGS_PROF)
 prof : LDFLAGS=$(LDFLAGS_ALL) $(LDFLAGS_OPT) $(LDFLAGS_PROF)
 parprof : FCFLAGS=$(FCFLAGS_ALL) $(FCFLAGS_OPT) $(FCFLAGS_MPI)
 parprof : LDFLAGS=$(LDFLAGS_ALL) $(LDFLAGS_OPT) $(LDFLAGS_MPI)
-parprof : PREP=scalasca -instrument
+parprof : PREP=
 
-export FC FCFLAGS LDFLAGS AR AFLAGS PREP
+export FC FCFLAGS LDFLAGS AR AFLAGS AWK SED PREP
 # variable definitions end here
 
 
@@ -91,9 +95,8 @@ distclean :
 	for dir in $(SUBDIRS); do \
 	  $(MAKE) distclean -C $$dir; \
 	done
-	rm -f $(OBJECTS) $(TARGET) *.mod *.bak *.dat *.bin *.nc *.log *~
-	rm -rf epik*
-	rm -rf autom4te.cache
+	rm -f $(OBJECTS) $(TARGET) *.mod *.bak *.dat *.vts *.bin *.nc *.log *~
+	rm -rf autom4te.cache epik*
 
 .SUFFIXES:
 

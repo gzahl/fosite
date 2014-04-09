@@ -55,9 +55,6 @@ MODULE Init
   USE sources_generic
   USE timedisc_generic
   IMPLICIT NONE
-#ifdef PARALLEL
-  include 'mpif.h'
-#endif
   !--------------------------------------------------------------------------!
   PRIVATE
   ! general constants
@@ -181,6 +178,7 @@ CONTAINS
     ! boundary conditions
     CALL InitBoundary(Timedisc%boundary,Mesh,Physics, &
          western  = NO_GRADIENTS, &
+!!$         western  = CUSTOM, &
          eastern  = NO_GRADIENTS, &
          southern = PERIODIC, &
          northern = PERIODIC)
@@ -274,6 +272,13 @@ CONTAINS
     END SELECT
 
     CALL Convert2Conservative(Physics,Mesh,Timedisc%pvar,Timedisc%cvar)
+
+    ! custom boundary conditions if requested
+    IF (GetType(Timedisc%boundary(WEST)).EQ.CUSTOM) THEN
+       Timedisc%boundary(WEST)%cbtype(:,Physics%DENSITY) = CUSTOM_EXTRAPOL
+       Timedisc%boundary(WEST)%cbtype(:,Physics%XVELOCITY) = CUSTOM_EXTRAPOL
+       Timedisc%boundary(WEST)%cbtype(:,Physics%YVELOCITY) = CUSTOM_NOGRAD
+    END IF
 
     CALL Info(Mesh, " DATA-----> initial condition: " // "pringle disk")
     WRITE(value,"(ES9.3)") TAU

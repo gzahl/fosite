@@ -50,10 +50,10 @@ MODULE fileio_generic
        ! constants
        BINARY, GNUPLOT, NETCDF, VTK, &
 #ifdef HAVE_NETCDF
+       NF90_FORMAT_CLASSIC, NF90_FORMAT_64BIT, &
+       NF90_FORMAT_NETCDF4, NF90_FORMAT_NETCDF4_CLASSIC, &
 #ifdef HAVE_HDF5
        NF90_CLASSIC_MODEL, NF90_NETCDF4, &
-#else
-       NF90_FORMAT_CLASSIC, NF90_FORMAT_64BIT, &       
 #endif
 #endif
        ! methods
@@ -146,29 +146,19 @@ CONTAINS
        CALL InitFileIO_gnuplot(this,Mesh,Physics,fileformat,filename,stoptime_def,&
             dtwall_def,count_def,fcycles_def,unit)
     CASE(NETCDF)
-#ifdef HAVE_NETCDF
-#ifdef PARALLEL
-#ifdef HAVE_HDF5
-       ncfmt_def = NF90_NETCDF4
-#else
-       CALL Error(this,"InitFileIO","HDF5 required for parallel NetCDF i/o")
-#endif
-#else
        IF (PRESENT(ncfmt)) THEN
           ncfmt_def = ncfmt
        ELSE
+#ifdef HAVE_NETCDF
 #ifdef HAVE_HDF5
           ncfmt_def = NF90_NETCDF4
 #else
-          ncfmt_def = NF90_FORMAT_CLASSIC
+          ncfmt_def = NF90_FORMAT_NETCDF4
+#endif
 #endif
        END IF
-#endif
        CALL InitFileIO_netcdf(this,Mesh,Physics,fileformat,filename,stoptime_def,&
             dtwall_def,count_def,fcycles_def,ncfmt_def,unit)
-#else
-       CALL Error(this,"InitFileIO","NetCDF support disabled")
-#endif
     CASE(VTK)
        CALL InitFileIO_vtk(this,Mesh,Physics,fileformat,filename,stoptime_def,&
             dtwall_def,count_def,fcycles_def,unit)

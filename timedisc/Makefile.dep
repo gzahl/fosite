@@ -1,0 +1,3 @@
+timedisc_generic.o : \
+	timedisc_modeuler.o
+

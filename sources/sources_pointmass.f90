@@ -33,9 +33,16 @@ MODULE sources_pointmass
   USE fluxes_generic, ONLY : Fluxes_TYP, GetBoundaryFlux
   USE physics_generic
   USE mesh_generic
+#ifdef PARALLEL
+#ifdef HAVE_MPI_MOD
+  USE mpi
+#endif
+#endif
   IMPLICIT NONE
 #ifdef PARALLEL
+#ifdef HAVE_MPIF_H
   include 'mpif.h'
+#endif
 #endif
   !--------------------------------------------------------------------------!
   PRIVATE

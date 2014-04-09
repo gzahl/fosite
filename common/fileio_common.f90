@@ -32,9 +32,16 @@ MODULE fileio_common
        Info_common => Info, Warning_common => Warning, Error_common => Error
   USE mesh_common, ONLY : Mesh_TYP
   USE physics_common, ONLY : Physics_TYP
+#ifdef PARALLEL
+#ifdef HAVE_MPI_MOD
+  USE mpi
+#endif
+#endif
   IMPLICIT NONE
 #ifdef PARALLEL
+#ifdef HAVE_MPIF_H
   include 'mpif.h'
+#endif
 #endif
   !--------------------------------------------------------------------------!
   PRIVATE

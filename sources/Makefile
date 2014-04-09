@@ -1,5 +1,7 @@
 # some files
-TARGET=libsources.a
+WORKDIR=$(shell pwd | $(SED) -e 's/.*\///')
+TARGET=lib$(WORKDIR).a
+DEPFILE=Makefile.dep
 SOURCES=$(wildcard *.f90)
 OBJECTS=$(SOURCES:.f90=.o)
 
@@ -8,10 +10,15 @@ OBJECTS=$(SOURCES:.f90=.o)
 .PHONY: clean distclean
 
 %.o : %.f90
-	$(FC) $(FCFLAGS) -c $<
+	$(PREP) $(FC) $(FCFLAGS) -c $<
 
 $(TARGET) : $(OBJECTS)
 	$(AR) $(AFLAGS) $@ $(OBJECTS)
+
+$(DEPFILE) : $(SOURCES)
+	$(AWK) -f ../makedeps -v objfiles="$(OBJECTS)" $(SOURCES) > $@
+
+-include $(DEPFILE)
 
 clean :
 	rm -f $(OBJECTS) $(TARGET) *.mod
@@ -19,13 +26,4 @@ clean :
 distclean :
 	rm -f $(OBJECTS) $(TARGET) *.mod *.bak *~
 
-sources_pointmass.o : ../common/sources_common.o
-sources_diskthomson.o : sources_pointmass.o
-sources_viscosity.o : sources_pointmass.o
-sources_cooling.o : sources_pointmass.o
-sources_boundary.o :
-sources_selfgravitation.o : sources_pointmass.o sources_boundary.o
-sources_c_accel.o : sources_pointmass.o
-sources_generic.o : sources_pointmass.o sources_diskthomson.o \
-	sources_c_accel.o sources_cooling.o sources_viscosity.o \
-        sources_selfgravitation.o
+

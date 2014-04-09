@@ -30,9 +30,16 @@ MODULE fileio_gnuplot
   USE mesh_common, ONLY : Mesh_TYP
   USE physics_common, ONLY : Physics_TYP
   USE timedisc_common, ONLY : Timedisc_TYP
+#ifdef PARALLEL
+#ifdef HAVE_MPI_MOD
+  USE mpi
+#endif
+#endif
   IMPLICIT NONE
 #ifdef PARALLEL
+#ifdef HAVE_MPIF_H
   include 'mpif.h'
+#endif
 #endif
   !--------------------------------------------------------------------------!
   PRIVATE
@@ -163,6 +170,7 @@ CONTAINS
     INTEGER           :: fcycles
     INTEGER, OPTIONAL :: unit
     !------------------------------------------------------------------------!
+    INTEGER           :: err
 #ifdef PARALLEL
     INTEGER           :: i
     INTEGER, DIMENSION(Mesh%IMAX-Mesh%IMIN+1) :: blocklen,indices
@@ -188,8 +196,8 @@ CONTAINS
     this%bufsize  = Mesh%JMAX - Mesh%JMIN + 1
 
     ! allocate memory for output buffer and displacement records
-    ALLOCATE(this%outbuf(this%linelen,Mesh%JMIN:Mesh%JMAX),&
-         STAT=this%error)
+    ALLOCATE(this%outbuf(this%linelen,Mesh%JMIN:Mesh%JMAX), &
+         STAT=err)
     IF (this%error.NE.0) THEN
        CALL Error(this,"InitFileIO_gnuplot","Unable to allocate memory.")
     END IF
@@ -200,7 +208,7 @@ CONTAINS
     END DO
 
     ! new file type for the staggered data
-    CALL MPI_Type_indexed(this%blocknum,blocklen,indices,&
+    CALL MPI_Type_indexed(this%blocknum,blocklen,indices, &
          this%basictype,this%filetype,this%error)
     CALL MPI_Type_commit(this%filetype,this%error)
 #endif

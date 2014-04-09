@@ -16,7 +16,7 @@ adv2D program available at
 
    http://archiv.ub.uni-heidelberg.de/volltextserver/volltexte/2007/7046/zip/adv2D.zip
 
-I wrote for my PhD thesis. It utilzes the object-oriented (OO) design patterns
+I wrote for my PhD thesis. It utilizes the object-oriented (OO) design patterns
 described by Decyk and Gardner (Ref.: Comput. Phys. Comm., vol. 178(8), pp.
 611). Hence fosite incorporates the flexibility of OO-programming into
 Fortran 90/95 and preserves efficiency of the numerical computation.
@@ -27,17 +27,20 @@ problems with and without viscosity. So far the physics module can deal with
 2D problems and 2.5D problems with angular momentum transport. The ideal gas 
 equation of state with constant ratio of specific heat capacities is
 implemented for both 2D and 2.5D simulations. Various curvilinear grids are
-supported including polar, cylindrical and spherical geometries. There are
-two simple file formats for output data files. It could be either plain ASCII
-with the results for each variable given in columns with a block structure or
-simple binary data (see section 6. of this README). GNUPLOT (http://www.gnuplot.info)
-is capable of reading both formats (for binary input you need at least version 4.2).
-Native OpenDX output has been removed in favor of netcdf, because OpenDX is capable
-of reading data files written with the netcdf output module of fosite. Since version
-0.3 of fosite the VTK file format is supported (see http://www.vtk.org). Parallel
-output using MPI-IO is possible with all file formats. We strongly recommend the
-use of one of the binary formats for best performance and avoid data output to NFS
-file systems.
+supported including polar, cylindrical and spherical geometries. 
+
+There are two simple file formats for output data files. It could be either
+plain ASCII with the results for each variable given in columns with a block
+structure or simple binary data (see section 6. of this README). GNUPLOT 
+(http://www.gnuplot.info) is capable of reading both formats (for binary input
+you need at least version 4.2). Native OpenDX output has been removed in favor
+of netcdf, because OpenDX is capable of reading data files written with the
+netcdf output module of fosite. Since version 0.3 of fosite the VTK file format
+is supported (see http://www.vtk.org). Parallel output is possible with all
+file formats . We strongly recommend the use of one of the binary formats for
+best performance. All output formats except VTK make use of MPI-IO routines in
+parallel mode. Since MPI-IO on NFS file systems is pretty slow one should
+avoid these and use PVFS (see http://www.pvfs.org) instead.
 
 
 2. MAKE & COMPILING
@@ -73,7 +76,7 @@ a new executable file named fosite in the directory. Type
 
 to start the calculation.
 The code has been verified to compile with the Intel(R) Fortran Compiler
-(vers. 8.x,  9.x, 11.x), GNU fortran compiler (vers. 4.x, ),
+(vers. 8.x,  9.x, 11.x), GNU fortran compiler (vers. 4.1, 4.3, 4.4, 4.5),
 g95 (vers. 4.0.3) on various Linux boxes and NEC sxf90 (Rev.360 2006/11/30 and
 Rev.410 2010/02/01) cross compiler for NEC SX-8/SX-9 vector supercomputers. If
 the program aborts immediately after initialization with a segmentation fault,
@@ -82,9 +85,9 @@ try to increase the stack size (ulimit -s unlimited).
 
 3. COMPILING PARALLEL VERSION (optional)
 
-The parallel version of fosite uses the message passing interface version 2 (MPI2).
-To compile the parallelized code you have to install an implementation of MPI2, e.g.
-mpich2 (http://www.mcs.anl.gov/research/projects/mpich2) and run
+The parallel version of fosite uses the message passing interface version 2
+(MPI2). To compile the parallelized code you have to install an implementation
+of MPI2, e.g. mpich2 (http://www.mcs.anl.gov/research/projects/mpich2) and run
 
    ./configure --with-mpi
 
@@ -93,10 +96,11 @@ specify it as an additional parameter:
 
    ./configure --with-mpi=[MPI_DIR]
 
-where [MPI_DIR] is the MPI2 installation directory. For parallel I/O in a network
-environment it is strongly recommended to use a parallel file system like PVFS2
-(http://www.pvfs.org) with binary output for best performance. In this case it might
-be necessary to tell the configure script the pvfs2 installation directory
+where [MPI_DIR] is the MPI2 installation directory. For parallel I/O in a
+network environment it is strongly recommended to use a parallel file system
+like PVFS2 (http://www.pvfs.org) with binary output for best performance. In
+this case it might be necessary to tell the configure script the pvfs2
+installation directory
 
   ./configure --with-mpi=[MPI_DIR] --with-pvfs2=[PVFS2_DIR]
 
@@ -123,8 +127,18 @@ environment variable
 (csh). Remember, this is only necessary if you are using the GNU fortran
 compiler gfortran.
 
-The parallel code of Fosite has been verified to compile with the mpich2
-implementation (version 1.0.6 & 1.0.8) of MPI2. Others may work too.
+The parallel code of Fosite has been verified to compile with the MPI2
+implementations of the MPI2 standard mpich2 (version 1.0.6, 1.0.8, 1.2.1p1)
+and openmpi (version 1.2.8 & 1.4.2). Others may work too.
+Since version 0.3.2 fosite supports the Fortran 90 module interface for
+MPI. Thus configure searches for the module file mpi.mod. If the module
+file could not be found or isn't working for some reason, configure looks
+for the old mpif.h interface. If fosite does't compile with the module
+interface you can disable this feature:
+
+./configure --with-mpi --disable-mpi-module
+
+This is probably necessary if you are using mpich2.
 
 
 4. SIMPLE CUSTOMIZATION
@@ -165,8 +179,8 @@ these subdirectories to add new features:
 According to the OO-design patterns there is a generic module (e.g.
 geometry_generic) for almost any task. These modules can be considered
 as an interface between the basic modules (e.g. geometry_cartesian,
-geometry_polar, etc.) and the program. The data structures connected to
-the modules can be found in the subdirectory "common".
+geometry_polar, etc.) and the program. The data structures related to
+these modules can be found in the subdirectory "common".
 To add a new feature follow these four steps:
 1. Create a new basic module in the particular subdirectory
    (e.g. geometry_mygeo.f90 in ./mesh) using the existing modules as
@@ -178,11 +192,7 @@ To add a new feature follow these four steps:
    branch instructions in which the specific routines are called.
 3. Modify your initilization file init.f90 to use the new
    feature (e.g. CALL InitMesh(Mesh,Fluxes,MYGEO,..)).
-4. To compile the program with the new feature you have to add
-   an entry to the Makefile in the directory under consideration
-   (e.g. ./mesh/Makefile) to be sure the new module is compiled
-   before the generic module. Rebuild the whole program by doing
-   a "make distclean" first and then enter "make".
+4. Rebuild the whole program by doing "make clean" first and then enter "make".
 
 
 6. DATA OUTPUT AND FILE FORMATS
@@ -240,17 +250,48 @@ file type:
      splot "datafile.bin" binary skip=132 + iter * (3920008+168+16) \
         record=200x350 format="%lf%lf%lf%lf%lf%lf%lf" u 1:2:3
 
-6.3 Output with VTK on NecSX8 and NecSX9
+6.3 Output with VTK on NEC SX8/SX9
 
- VTK needs a C-conformable output. To ensure this on NecSX8 and NecSX9:
- set
+VTK needs a C-conformable output without the Fortran specific leading and
+trailing bytes with size information for each data record. Thus the compiler
+has to support Fortran streams as described in the Fortran 2003 standard. In
+case of the NEC SX8/SX9 computers this is not the case, but it is possible to
+disable the output of these additional bytes for each output unit designated
+for VTK by setting an runtime environment variable:
      export F_NORCW= UNITNUMBER
- as environment variable (in NQS-Skript).
- Also set 
+In addition one has to specify a distinct unit number for these output modules
+in the initialization file init.f90
      CALL InitFileIO(..., unit = UNITNUMBER,...)
- in your init.f90 file. UNITNUMBER is a integer. Ensure, that this unit
- number is unique. (save way: UNITNUMBER > 1000)
+in your init.f90 file. UNITNUMBER must be an integer. Ensure, that this unit
+number is unique. (save way: UNITNUMBER > 1000)
  
+6.4 NetCDF output
+
+NetCDF I/O is disabled by default. If you want fosite to compile the
+NetCDF I/O modules, you can enable NetCDF by typing
+
+./configure --with-netcdf
+
+If your NetCDF installation is in a non-standard directory, you can give the
+configure script a hint where to find it:
+
+./configure --with-netcdf=[NETCDFDIR]
+
+where NETCDFDIR is the root directory of your NetCDF installation. The
+configure script looks for NetCDF libraries in $NETCDFDIR/lib. A working
+Fortran 90 module file is required and should be in $NETCDFDIR/include or
+in a standard directory like /usr/include.
+The parallel version of fosite can do parallel I/O if NetCDF has been
+compiled with parallel I/O support. Check if your NetCDF installation
+is linked against the HDF5 library which is necessary for parallel
+NetCDF I/O. To enable this feature in fosite, you need to configure both
+MPI and HDF5 support:
+
+./configure --with-mpi --with-hdf5
+
+You may also give configure a hint where find your MPI and HDF5 installation
+(see Sec. 3).
+
 
 The code is distributed under the GNU General Public License - see the
 accompanying LICENSE file for more details. So feel free to experiment

@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: timedisc_modeuler.f90                                             #
 !#                                                                           #
-!# Copyright (C) 2007 - 2010                                                 #
+!# Copyright (C) 2007-2010                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -25,6 +25,7 @@
 
 !----------------------------------------------------------------------------!
 ! subroutines for modified Euler i.e. Runge-Kutta methods
+! Reference: Shu & Osher, J. Comput Phys. 77(2), 439 (1988)
 !----------------------------------------------------------------------------!
 MODULE timedisc_modeuler
   USE timedisc_common

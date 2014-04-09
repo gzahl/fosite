@@ -1,5 +1,7 @@
 # some files
-TARGET=libcommon.a
+WORKDIR=$(shell pwd | $(SED) -e 's/.*\///')
+TARGET=lib$(WORKDIR).a
+DEPFILE=Makefile.dep
 SOURCES=$(wildcard *.f90)
 OBJECTS=$(SOURCES:.f90=.o)
 
@@ -13,19 +15,15 @@ OBJECTS=$(SOURCES:.f90=.o)
 $(TARGET) : $(OBJECTS)
 	$(AR) $(AFLAGS) $@ $(OBJECTS)
 
+$(DEPFILE) : $(SOURCES)
+	$(AWK) -f ../makedeps -v objfiles="$(OBJECTS)" $(SOURCES) > $@
+
+-include $(DEPFILE)
+
 clean :
 	rm -f $(OBJECTS) $(TARGET) *.mod
 
 distclean :
 	rm -f $(OBJECTS) $(TARGET) *.mod *.bak *~
 
-boundary_common.o : common_types.o
-constants_common.o : common_types.o
-fileio_common.o : common_types.o mesh_common.o physics_common.o
-fluxes_common.o : common_types.o reconstruction_common.o
-geometry_common.o : common_types.o
-mesh_common.o : geometry_common.o
-physics_common.o : common_types.o constants_common.o sources_common.o 
-reconstruction_common.o : common_types.o
-sources_common.o : common_types.o
-timedisc_common.o : common_types.o boundary_common.o
+

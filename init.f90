@@ -213,9 +213,10 @@ CONTAINS
 
     ! initialize data input/output
     CALL InitFileIO(Datafile,Mesh,Physics,Timedisc, &
-         fileformat = VTK, &
-!!$         fileformat = GNUPLOT, &
-!!$         filecycles = 0, &
+!!$         fileformat = VTK, &
+!!$         fileformat = NETCDF, &
+         fileformat = GNUPLOT, &
+         filecycles = 0, &
          filename   = TRIM(ODIR) // TRIM(OFNAME), &
          count      = ONUM)
   END SUBROUTINE InitProgram

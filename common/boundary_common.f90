@@ -33,7 +33,9 @@ MODULE boundary_common
        Info_common => Info, Warning_common => Warning, Error_common => Error
   IMPLICIT NONE
 #ifdef PARALLEL
-    include 'mpif.h'
+#ifdef HAVE_MPIF_H
+  include 'mpif.h'
+#endif
 #endif
   !--------------------------------------------------------------------------!
   PRIVATE

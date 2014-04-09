@@ -33,9 +33,16 @@ MODULE fileio_binary
   USE physics_common, ONLY : Physics_TYP, GetType
   USE timedisc_common, ONLY : Timedisc_TYP
   USE fluxes_generic, ONLY : Fluxes_TYP, GetBoundaryFlux
+#ifdef PARALLEL
+#ifdef HAVE_MPI_MOD
+  USE mpi
+#endif
+#endif
   IMPLICIT NONE
 #ifdef PARALLEL
+#ifdef HAVE_MPIF_H
   include 'mpif.h'
+#endif
 #endif
   !--------------------------------------------------------------------------!
   PRIVATE
@@ -76,6 +83,8 @@ CONTAINS
     INTEGER           :: count
     INTEGER           :: fcycles
     INTEGER, OPTIONAL :: unit
+    !------------------------------------------------------------------------!
+    INTEGER           :: err
 #ifdef PARALLEL
     INTEGER, DIMENSION(2) :: gsizes,lsizes,indices
     INTEGER           :: lb,extent
@@ -95,7 +104,7 @@ CONTAINS
          ! and displacements
          this%disp(Mesh%IMIN:Mesh%IMAX), &
 #endif
-         STAT=this%error)
+         STAT=err)
     IF (this%error.NE.0) THEN
        CALL Error(this,"InitFileIO_binary","Unable to allocate memory.")
     END IF

@@ -1,0 +1,19 @@
+fluxes_generic.o : \
+	fluxes_midpoint.o \
+	fluxes_trapezoidal.o \
+	reconstruction_generic.o
+
+fluxes_midpoint.o : \
+	reconstruction_generic.o
+
+fluxes_trapezoidal.o : \
+	fluxes_midpoint.o \
+	reconstruction_generic.o
+
+reconstruction_generic.o : \
+	reconstruction_constant.o \
+	reconstruction_linear.o
+
+reconstruction_linear.o : \
+	reconstruction_constant.o
+

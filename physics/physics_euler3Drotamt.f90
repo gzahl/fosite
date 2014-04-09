@@ -114,7 +114,7 @@ CONTAINS
     ALLOCATE(this%structure(4),this%errormap(0:3),STAT = err)
     ! abort if allocation fails
     IF (err.NE.0) &
-         CALL Error(this, "InitPhysics_euler2D", "Unable to allocate memory.")
+         CALL Error(this, "InitPhysics_euler3Drotamt", "Unable to allocate memory.")
     this%nstruc = 4
     this%structure(1)%name = "coordinates"
     this%structure(1)%pos = -1

@@ -3,7 +3,8 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: fileio_netcdf.f90                                                 #
 !#                                                                           #
-!# Copyright (C) 2008 Tobias Illenseer <tillense@astrophysik.uni-kiel.de>    #
+!# Copyright (C) 2008-2010                                                   #
+!# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
 !# it under the terms of the GNU General Public License as published by      #
@@ -28,6 +29,12 @@
 MODULE fileio_netcdf
 #ifdef HAVE_NETCDF
   USE netcdf
+#endif
+#ifdef PARALLEL
+#ifdef HAVE_MPI_MOD
+  USE mpi
+#endif
+#endif
   USE fileio_gnuplot
   USE geometry_common, ONLY : Geometry_TYP, GetName, GetType
   USE mesh_common, ONLY : Mesh_TYP
@@ -35,18 +42,12 @@ MODULE fileio_netcdf
   USE timedisc_common, ONLY : Timedisc_TYP
   IMPLICIT NONE
 #ifdef PARALLEL
-  include 'mpif.h'
+#ifdef HAVE_MPIF_H
+  INCLUDE 'mpif.h'
+#endif
 #endif
   !--------------------------------------------------------------------------!
   PRIVATE
-  !**************************************************************************!
-  ! this is a workaround for a bug in the NetCDF 4 Fortran 90 interface;
-  ! both constants are missing:
-#ifdef PARALLEL
-  INTEGER, PARAMETER :: NF90_INDEPENDENT = 0
-  INTEGER, PARAMETER :: NF90_COLLECTIVE = 1
-#endif
-  !**************************************************************************!
   INTEGER :: DEFAULT_NF90_REAL                     ! default real data type  !
   CHARACTER(LEN=*), PARAMETER :: IDIM_NAME="inum"  ! names for dimensions &  !
   CHARACTER(LEN=*), PARAMETER :: JDIM_NAME="jnum"  !   variables             !
@@ -60,13 +61,16 @@ MODULE fileio_netcdf
        ! types
        FileIO_TYP, &
        ! constants
+#ifdef HAVE_NETCDF
+       NF90_FORMAT_CLASSIC, NF90_FORMAT_64BIT, &
+       NF90_FORMAT_NETCDF4, NF90_FORMAT_NETCDF4_CLASSIC, &
 #ifdef HAVE_HDF5
        NF90_CLASSIC_MODEL, NF90_NETCDF4, &
-#else
-       NF90_FORMAT_CLASSIC, NF90_FORMAT_64BIT, &       
+#endif
 #endif
        ! methods
        InitFileio_netcdf, &
+#ifdef HAVE_NETCDF
        OpenFile_netcdf, &
        CloseFile_netcdf, &
        WriteHeader_netcdf, &
@@ -75,6 +79,7 @@ MODULE fileio_netcdf
        ReadTimestamp_netcdf, &
        WriteDataset_netcdf, &
        ReadDataset_netcdf, &
+#endif
        CloseFileio_netcdf
   !--------------------------------------------------------------------------!
 
@@ -103,6 +108,11 @@ CONTAINS
     !------------------------------------------------------------------------!
     CALL InitFileIO(this,Mesh,Physics,fmt,"NetCDF",filename,"nc",stoptime,&
          dtwall,count,fcycles,.FALSE.,unit)
+#ifdef HAVE_NETCDF
+#ifdef PARALLEL
+    IF (ncfmt.NE.NF90_NETCDF4) &
+         CALL Error(this,"InitFileIO","NetCDF: parallel file format must be NF90_NETCDF4")
+#endif
     this%ncfmt = ncfmt
     ! determine the default netCDF data type for real numbers
     SELECT CASE (SELECTED_REAL_KIND(PRECISION(dummy)))
@@ -120,9 +130,12 @@ CONTAINS
        ! 2D case
        this%rank = 2
     END IF
+#else
+       CALL Error(this,"InitFileIO","NetCDF support disabled")
+#endif
   END SUBROUTINE InitFileIO_netcdf
 
-
+#ifdef HAVE_NETCDF
   SUBROUTINE OpenFile_netcdf(this,action)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
@@ -634,7 +647,7 @@ CONTAINS
     IF (this%error.NE.NF90_NOERR) CALL Error(this,"ReadDataset_netcdf",&
          TRIM(nf90_strerror(this%error)))
   END SUBROUTINE ReadDataset_netcdf
-
+#endif
 
   SUBROUTINE CloseFileIO_netcdf(this)
     IMPLICIT NONE
@@ -645,7 +658,5 @@ CONTAINS
     !------------------------------------------------------------------------!
   END SUBROUTINE CloseFileIO_netcdf
 
-
-#endif
 
 END MODULE fileio_netcdf

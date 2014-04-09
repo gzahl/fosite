@@ -30,16 +30,23 @@ MODULE mesh_common
   USE common_types, GetRank_common => GetRank, GetNumProcs_common => GetNumProcs, &
        Info_common => Info, Warning_common => Warning, Error_common => Error
   USE geometry_common, ONLY : Geometry_TYP
+#ifdef PARALLEL
+#ifdef HAVE_MPI_MOD
+  USE mpi
+#endif
+#endif
   IMPLICIT NONE
 #ifdef PARALLEL
+#ifdef HAVE_MPIF_H
   include 'mpif.h'
+#endif
 #endif
   !--------------------------------------------------------------------------!
   PRIVATE
   INTEGER, PARAMETER :: NDIMS = 2
   ! vector length of specific (vector) CPUs
   INTEGER, PARAMETER :: VECLEN = &
-#ifdef NECSX8
+#if defined(NECSX8) || defined(NECSX9)
   256
 #else
   1
@@ -260,11 +267,12 @@ CONTAINS
     !------------------------------------------------------------------------!
     TYPE(Mesh_TYP) :: this
     !------------------------------------------------------------------------!
-    LOGICAL, DIMENSION(NDIMS), PARAMETER :: periods = .FALSE.
+    LOGICAL, DIMENSION(NDIMS) :: periods = .FALSE.
     INTEGER        :: num,rem
     INTEGER        :: ierror
     INTEGER        :: i,j
     INTEGER        :: worldgroup,newgroup
+    INTEGER, DIMENSION(1) :: rank0in, rank0out
     INTEGER, DIMENSION(NDIMS) :: coords
     INTEGER, ALLOCATABLE, DIMENSION(:) :: ranks
     !------------------------------------------------------------------------!
@@ -286,7 +294,7 @@ CONTAINS
     ! IMPORTANT: disable reordering of nodes
     CALL MPI_Cart_create(MPI_COMM_WORLD,NDIMS,this%dims,periods,.TRUE., &
          this%comm_cart,ierror)
-
+ 
     ! 3. inquire and save the own position
     CALL MPI_Cart_get(this%comm_cart,NDIMS,this%dims,periods,this%mycoords,ierror)
 
@@ -327,8 +335,9 @@ CONTAINS
     END DO
     CALL MPI_Group_incl(worldgroup,this%dims(2),ranks,newgroup,ierror)
     CALL MPI_Comm_create(this%comm_cart,newgroup,this%comm_boundaries(1),ierror)
-    CALL MPI_Group_translate_ranks(newgroup,1,0,worldgroup,&
-         this%rank0_boundaries(1),ierror)
+    rank0in(1) = 0
+    CALL MPI_Group_translate_ranks(newgroup,1,rank0in,worldgroup,rank0out,ierror)
+    this%rank0_boundaries(1) = rank0out(1)
     CALL MPI_Group_free(newgroup,ierror)
     ! eastern boundary
     coords(1) = this%dims(1)-1
@@ -339,8 +348,9 @@ CONTAINS
     END DO
     CALL MPI_Group_incl(worldgroup,this%dims(2),ranks,newgroup,ierror)
     CALL MPI_Comm_create(this%comm_cart,newgroup,this%comm_boundaries(2),ierror)
-    CALL MPI_Group_translate_ranks(newgroup,1,0,worldgroup,&
-         this%rank0_boundaries(2),ierror)
+    rank0in(1) = 0
+    CALL MPI_Group_translate_ranks(newgroup,1,rank0in,worldgroup,rank0out,ierror)
+    this%rank0_boundaries(2) = rank0out(1)
     CALL MPI_Group_free(newgroup,ierror)
     ! southern boundary
     coords(2) = 0
@@ -351,8 +361,9 @@ CONTAINS
     END DO
     CALL MPI_Group_incl(worldgroup,this%dims(1),ranks,newgroup,ierror)
     CALL MPI_Comm_create(this%comm_cart,newgroup,this%comm_boundaries(3),ierror)
-    CALL MPI_Group_translate_ranks(newgroup,1,0,worldgroup, &
-         this%rank0_boundaries(3),ierror)
+    rank0in(1) = 0
+    CALL MPI_Group_translate_ranks(newgroup,1,rank0in,worldgroup,rank0out,ierror)
+    this%rank0_boundaries(3) = rank0out(1)
     CALL MPI_Group_free(newgroup,ierror)
     ! northern boundary
     coords(2) = this%dims(2)-1
@@ -363,8 +374,9 @@ CONTAINS
     END DO
     CALL MPI_Group_incl(worldgroup,this%dims(1),ranks,newgroup,ierror)
     CALL MPI_Comm_create(this%comm_cart,newgroup,this%comm_boundaries(4),ierror)
-    CALL MPI_Group_translate_ranks(newgroup,1,0,worldgroup, &
-         this%rank0_boundaries(4),ierror)
+    rank0in(1) = 0
+    CALL MPI_Group_translate_ranks(newgroup,1,rank0in,worldgroup,rank0out,ierror)
+    this%rank0_boundaries(4) = rank0out(1)
     CALL MPI_Group_free(newgroup,ierror)
     CALL MPI_Group_free(worldgroup,ierror)
     DEALLOCATE(ranks)
