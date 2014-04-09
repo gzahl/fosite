@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: init_riemann2d.f90                                                #
 !#                                                                           #
-!# Copyright (C) 2006-2008                                                   #
+!# Copyright (C) 2006-2010                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -25,6 +25,13 @@
 
 !----------------------------------------------------------------------------!
 ! Program and data initialization for 2D Riemann problems
+! References:
+! [1] C. W. Schulz-Rinne et al.: Numerical Solution of the Riemann Problem
+!     for Gas Dynamics, SIAM J. Sci. Comp. 14 (1993), 1394-1414
+! [2] P. Lax, X.-D. Liu: Solution of Two-dimensional Riemann Problems of
+!     Gas Dynamics by Positive Schemes, SIAM J. Sci. Comp. 19 (1998), 319-340
+! [3] A. Kurganov, E. Tadmor: Solution of Two-Dimensional Riemann Problems for 
+!     Gas Dynamics without Riemann Problem Solvers, NMPDE 18 (2002), 561-588
 !----------------------------------------------------------------------------!
 MODULE Init
   USE physics_generic
@@ -37,7 +44,24 @@ MODULE Init
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   PRIVATE
-  INTEGER :: testnum
+  ! simulation parameter
+  INTEGER, PARAMETER :: ICNUM = 6          ! initial condition (see ref. [3])
+  REAL, PARAMETER    :: GAMMA = 1.4        ! ratio of specific heats
+  ! mesh settings
+  INTEGER, PARAMETER :: MGEO = CARTESIAN   ! geometry of the mesh
+!!$  INTEGER, PARAMETER :: MGEO = POLAR
+!!$  INTEGER, PARAMETER :: MGEO = LOGPOLAR
+!!$  INTEGER, PARAMETER :: MGEO = TANPOLAR
+!!$  INTEGER, PARAMETER :: MGEO = SINHPOLAR
+  INTEGER, PARAMETER :: XRES = 100         ! resolution
+  INTEGER, PARAMETER :: YRES = 100 
+  REAL, PARAMETER    :: RMIN = 1.0E-4      ! inner radius for polar grids
+  ! output file parameter
+  INTEGER, PARAMETER :: ONUM = 10          ! number of output data sets
+  CHARACTER(LEN=256), PARAMETER &          ! output data dir
+                     :: ODIR = './'
+  CHARACTER(LEN=256), PARAMETER &          ! output data file name
+                     :: OFNAME = 'riemann2d' 
   !--------------------------------------------------------------------------!
   PUBLIC :: &
        ! methods
@@ -58,31 +82,17 @@ CONTAINS
     TYPE(FileIO_TYP)  :: Logfile
     !------------------------------------------------------------------------!
     ! Local variable declaration
+    INTEGER           :: bc(4)
+    REAL              :: x1,x2,y1,y2,sc
     REAL              :: test_stoptime
-    INTEGER           :: geometry
-    CHARACTER(LEN=256):: ofname, lfname
+    CHARACTER(LEN=3)  :: fext
     !------------------------------------------------------------------------!
     INTENT(OUT)       :: Mesh,Physics,Fluxes,Timedisc,Datafile,Logfile
     !------------------------------------------------------------------------!
-
-    ! 2D cartesian test problems  (for initial conditions see InitData)
-    ! References:
-    ! [1] C. W. Schulz-Rinne et al.: Numerical Solution of the Riemann Problem
-    !     for Gas Dynamics, SIAM J. Sci. Comp. 14 (1993), 1394-1414
-    ! [2] P. Lax, X.-D. Liu: Solution of Two-dimensional Riemann Problems of
-    !     Gas Dynamics by Positive Schemes, SIAM J. Sci. Comp. 19 (1998), 319-340
-    ! [3] A. Kurganov, E. Tadmor: Solution of Two-Dimensional Riemann Problems for 
-    !     Gas Dynamics without Riemann Problem Solvers, NMPDE 18 (2002), 561-588
-    testnum = 1
-
-    ! set the geometry
-    geometry = CARTESIAN
-!    geometry = POLAR
-
     ! physics settings
     CALL InitPhysics(Physics, &
          problem = EULER2D, &
-         gamma   = 1.4, &           ! ratio of specific heats        !
+         gamma   = GAMMA, &         ! ratio of specific heats        !
          dpmax   = 1.0)             ! for advanced time step control !
 
     ! numerical scheme for flux calculation
@@ -94,35 +104,79 @@ CONTAINS
          order     = LINEAR, &
          variables = CONSERVATIVE, &! vars. to use for reconstruction!
          limiter   = MONOCENT, &    ! one of: minmod, monocent,...   !
-         theta     = 1.3)           ! optional parameter for limiter !
+         theta     = 1.2)           ! optional parameter for limiter !
 
     ! mesh settings
-    SELECT CASE(geometry)
+    SELECT CASE(MGEO)
     CASE(CARTESIAN)
-       CALL InitMesh(Mesh,Fluxes, &
-            geometry = CARTESIAN, &
-                inum = 400, &       ! resolution in x and            !
-                jnum = 400, &       !   y direction                  !             
-                xmin = -0.5, &
-                xmax = 0.5, &
-                ymin = -0.5, &
-                ymax = 0.5)
+       sc = 1.0
+       x1 = -0.5
+       x2 = 0.5
+       y1 = -0.5
+       y2 = 0.5
+       bc(WEST)  = NO_GRADIENTS
+       bc(EAST)  = NO_GRADIENTS
+       bc(SOUTH) = NO_GRADIENTS
+       bc(NORTH) = NO_GRADIENTS
     CASE(POLAR)
-       CALL InitMesh(Mesh,Fluxes, &
-            geometry = POLAR, &
-                inum = 282, &       ! resolution in x and            !
-                jnum = 360, &       !   y direction                  !             
-                xmin = 1.0E-6, &
-                xmax = SQRT(2.0)*0.5, &
-                ymin = 0.0, &
-                ymax = 2*PI)
+       sc = 1.0
+       x1 = RMIN
+       x2 = 0.5*SQRT(2.0)
+       y1 = 0.0
+       y2 = 2*PI
+       bc(WEST)  = NO_GRADIENTS
+       bc(EAST)  = NO_GRADIENTS
+       bc(SOUTH) = PERIODIC
+       bc(NORTH) = PERIODIC
+    CASE(LOGPOLAR)
+       sc = 0.3
+       x1 = LOG(RMIN/sc)
+       x2 = LOG(0.5*SQRT(2.0)/sc)
+       y1 = 0.0
+       y2 = 2*PI
+       bc(WEST)  = NO_GRADIENTS
+       bc(EAST)  = NO_GRADIENTS
+       bc(SOUTH) = PERIODIC
+       bc(NORTH) = PERIODIC
+    CASE(TANPOLAR)
+       sc = 0.3
+       x1 = ATAN(RMIN/sc)
+       x2 = ATAN(0.5*SQRT(2.0)/sc)
+       y1 = 0.0
+       y2 = 2*PI
+       bc(WEST)  = NO_GRADIENTS
+       bc(EAST)  = NO_GRADIENTS
+       bc(SOUTH) = PERIODIC
+       bc(NORTH) = PERIODIC
+    CASE(SINHPOLAR)
+       sc = 0.3
+       x1 = RMIN/sc                  ! temporary
+       x1 = LOG(x1+SQRT(1.0+x1*x1))  ! = ASINH(RMIN/sc))
+       x2 = 0.5*SQRT(2.0)/sc         ! temporary
+       x2 = LOG(x2+SQRT(1.0+x2*x2))  ! = ASINH(RMAX/sc)
+       y1 = 0.0
+       y2 = 2*PI
+       bc(WEST)  = NO_GRADIENTS
+       bc(EAST)  = NO_GRADIENTS
+       bc(SOUTH) = PERIODIC
+       bc(NORTH) = PERIODIC
     CASE DEFAULT
        CALL Error(Physics,"InitProgram", &
-            " geometry should be either cartesian or polar")
+            " geometry should be one of cartesian,polar,logpolar,tanpolar,sinhpolar")
     END SELECT
 
+    CALL InitMesh(Mesh,Fluxes, &
+         geometry = MGEO, &
+             inum = XRES, &       ! resolution in x and            !
+             jnum = YRES, &       !   y direction                  !             
+             xmin = x1, &
+             xmax = x2, &
+             ymin = y1, &
+             ymax = y2, &
+           gparam = sc)
+
     ! runtime of the test problem
-    SELECT CASE(testnum)
+    SELECT CASE(ICNUM)
     CASE(1)  ! KT test 1
        test_stoptime = 0.2
     CASE(2)  ! Riemann problem no. 2
@@ -156,55 +210,34 @@ CONTAINS
          order    = 3, &
          cfl      = 0.4, &
          stoptime = test_stoptime, &
-         dtlimit  = 1.0E-4, &
+         dtlimit  = 1.0E-10, &
          maxiter  = 100000)
 
     ! set initial condition
     CALL InitData(Mesh,Physics,Timedisc)
 
-    ! boundary conditions
-    SELECT CASE(geometry)
-    CASE(CARTESIAN)
-       CALL InitBoundary(Timedisc%boundary,Mesh,Physics, &
-            western  = NO_GRADIENTS, &
-            eastern  = NO_GRADIENTS, &
-            southern = NO_GRADIENTS, &
-            northern = NO_GRADIENTS)
-    CASE(POLAR)
-       CALL InitBoundary(Timedisc%boundary,Mesh,Physics, &
-            western  = NO_GRADIENTS, &
-            eastern  = NO_GRADIENTS, &
-            southern = PERIODIC, &
-            northern = PERIODIC)
-    CASE DEFAULT
-       PRINT *, "ERROR in InitProgram: geometry should be either ", ACHAR(13), &
-            "cartesian or polar"
-       STOP
-    END SELECT
+    ! boundary conditions (depends on the geometry, see above)
+    CALL InitBoundary(Timedisc%boundary,Mesh,Physics, &
+         western  = bc(WEST), &
+         eastern  = bc(EAST), &
+         southern = bc(SOUTH), &
+         northern = bc(NORTH))
 
     ! initialize log input/output
-    WRITE (lfname, '(A,I2.2,A)') "riemann2dlog_", testnum
+    WRITE (fext, '(A,I2.2)') "_", ICNUM
     CALL InitFileIO(Logfile,Mesh,Physics,Timedisc,&
          fileformat = BINARY, &
-#ifdef PARALLEL
-         filename   = "/tmp/" // lfname, &
-#else
-         filename   = lfname, &
-#endif
+         filename   = TRIM(ODIR) // TRIM(OFNAME) // TRIM(fext) // "log", &
          dtwall     = 1800, &
          filecycles = 1)
 
     ! initialize data input/output
-    WRITE (ofname, '(A,I2.2,A)') "riemann2d_", testnum
     CALL InitFileIO(Datafile,Mesh,Physics,Timedisc,&
-         fileformat = GNUPLOT, &
-#ifdef PARALLEL
-         filename   = "/tmp/" // ofname, &
-#else
-         filename   = ofname, &
-#endif
-         filecycles = 2, &
-         count      = 1)
+         fileformat = VTK, &
+!!$         fileformat = GNUPLOT, &
+!!$         filecycles = 0, &
+         filename   = TRIM(ODIR) // TRIM(OFNAME) // TRIM(fext), &
+         count      = ONUM)
   END SUBROUTINE InitProgram
 
 
@@ -259,7 +292,7 @@ CONTAINS
     Timedisc%pvar(:,:,:) = 0.
     vxy(:,:,:) = 0.
 
-    SELECT CASE(testnum)
+    SELECT CASE(ICNUM)
     CASE(1)
        teststr = "2D Riemann problem no. 1"
        WHERE ( (Mesh%bccart(:,:,1).GT.x0).AND.(Mesh%bccart(:,:,2).GT.y0) )
@@ -334,7 +367,6 @@ CONTAINS
 
     CASE(4)
        teststr = "2D Riemann problem no. 4" 
-
        WHERE ( (Mesh%bccart(:,:,1).GT.x0).AND.(Mesh%bccart(:,:,2).GT.y0) )
           ! no. 1
           Timedisc%pvar(:,:,Physics%DENSITY) = 1.1
@@ -384,7 +416,6 @@ CONTAINS
           vxy(:,:,2) = -.5
           Timedisc%pvar(:,:,Physics%PRESSURE) = 1.
        END WHERE
-
     CASE(6)
        teststr = "2D Riemann problem no. 6" 
        WHERE ( (Mesh%bccart(:,:,1).GT.x0).AND.(Mesh%bccart(:,:,2).GT.y0) )

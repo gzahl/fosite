@@ -58,14 +58,16 @@ MODULE fluxes_common
      TYPE(Common_TYP)           :: quadrule        ! midpoint, trapezoidal.. !
      TYPE(Reconstruction_TYP)   :: Reconstruction  ! store recon. settings   !
      ! various data fields
-     REAL, DIMENSION(:,:,:,:), &
-          POINTER               :: prim,cons       ! states                  !
-     REAL, DIMENSION(:,:,:,:), &
-          POINTER               :: rstates         ! prim or cons            !
-     REAL, DIMENSION(:,:,:,:), &
-          POINTER               :: pfluxes,qfluxes ! physical fluxes         !
-     REAL, DIMENSION(:,:,:), &
-          POINTER               :: temp1,temp2,temp3,temp4
+     REAL, DIMENSION(:,:,:,:), POINTER &           ! primitive and conserva. !
+                                :: prim,cons       !   data on cell faces    !
+     REAL, DIMENSION(:,:,:,:), POINTER &           ! reconstructed data:     !
+                                :: rstates         !   prim or cons          !
+     REAL, DIMENSION(:,:,:,:), POINTER &           ! physical fluxes         !
+                                :: pfluxes,qfluxes
+     REAL, DIMENSION(:,:,:), POINTER &             ! temporary storage       !
+                                :: temp1,temp2,temp3,temp4
+     REAL, DIMENSION(:,:,:), POINTER &             ! boundary fluxes         !
+                                :: bxflux,byflux,bxfold,byfold
   END TYPE Fluxes_TYP
   !--------------------------------------------------------------------------!
   PUBLIC :: &

@@ -3,7 +3,9 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: fileio_generic.f90                                                #
 !#                                                                           #
-!# Copyright (C) 2008 Tobias Illenseer <tillense@astrophysik.uni-kiel.de>    #
+!# Copyright (C) 2008-2010                                                   #
+!# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
+!# Björn Sperling   <sperling@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
 !# it under the terms of the GNU General Public License as published by      #
@@ -28,9 +30,11 @@ MODULE fileio_generic
   USE fileio_gnuplot, InitFileIO_common => InitFileIO, OpenFile_basic => OpenFile
   USE fileio_binary
   USE fileio_netcdf
+  USE fileio_vtk
+  USE fluxes_common, ONLY : Fluxes_TYP
   USE mesh_common, ONLY : Mesh_TYP
-  USE physics_generic, ONLY : Physics_TYP, Convert2Conservative
   USE timedisc_common, ONLY : Timedisc_TYP
+  USE physics_generic, ONLY : Physics_TYP, Convert2Conservative
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   PRIVATE
@@ -38,12 +42,13 @@ MODULE fileio_generic
   INTEGER, PARAMETER :: BINARY  = 1
   INTEGER, PARAMETER :: GNUPLOT = 2
   INTEGER, PARAMETER :: NETCDF  = 3
+  INTEGER, PARAMETER :: VTK     = 4
   !--------------------------------------------------------------------------!
   PUBLIC :: &
        ! types
        FileIO_TYP, &
        ! constants
-       BINARY, GNUPLOT, NETCDF, &
+       BINARY, GNUPLOT, NETCDF, VTK, &
 #ifdef HAVE_NETCDF
 #ifdef HAVE_HDF5
        NF90_CLASSIC_MODEL, NF90_NETCDF4, &
@@ -74,7 +79,7 @@ MODULE fileio_generic
 CONTAINS
 
   SUBROUTINE InitFileIO(this,Mesh,Physics,Timedisc,fileformat,filename,&
-       stoptime,dtwall,count,filecycles,ncfmt)
+       stoptime,dtwall,count,filecycles,ncfmt,unit)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(FileIO_TYP)  :: this
@@ -88,6 +93,7 @@ CONTAINS
     INTEGER, OPTIONAL :: count
     INTEGER, OPTIONAL :: filecycles
     INTEGER, OPTIONAL :: ncfmt
+    INTEGER, OPTIONAL :: unit
     !------------------------------------------------------------------------!
     LOGICAL           :: success
     CHARACTER(LEN=32) :: timestamp
@@ -97,7 +103,7 @@ CONTAINS
     REAL              :: time,new_time
     !------------------------------------------------------------------------!
     INTENT(IN)        :: Mesh,Physics,fileformat,filename,stoptime,dtwall,&
-                         count,filecycles,ncfmt
+                         count,filecycles,ncfmt,unit
     INTENT(INOUT)     :: this,Timedisc
     !------------------------------------------------------------------------!
     ! wall clock time between successive outputs
@@ -113,6 +119,7 @@ CONTAINS
     ELSE
        count_def = 1
     END IF
+
     ! number of data files
     ! fcycles = 0     : one data file, append data
     ! fcycles = 1     : one data file, overwrite data
@@ -120,8 +127,9 @@ CONTAINS
     IF (PRESENT(filecycles)) THEN
        fcycles_def = filecycles
     ELSE ! default
-       fcycles_def = 0
+       fcycles_def = count_def+1
     END IF
+
     ! stop time for output defaults to simulation stop time
     IF (PRESENT(stoptime)) THEN
        stoptime_def = stoptime
@@ -133,10 +141,10 @@ CONTAINS
     SELECT CASE(fileformat)
     CASE(BINARY)
        CALL InitFileIO_binary(this,Mesh,Physics,fileformat,filename,stoptime_def,&
-            dtwall_def,count_def,fcycles_def)
+            dtwall_def,count_def,fcycles_def,unit)
     CASE(GNUPLOT)
        CALL InitFileIO_gnuplot(this,Mesh,Physics,fileformat,filename,stoptime_def,&
-            dtwall_def,count_def,fcycles_def)
+            dtwall_def,count_def,fcycles_def,unit)
     CASE(NETCDF)
 #ifdef HAVE_NETCDF
 #ifdef PARALLEL
@@ -157,10 +165,13 @@ CONTAINS
        END IF
 #endif
        CALL InitFileIO_netcdf(this,Mesh,Physics,fileformat,filename,stoptime_def,&
-            dtwall_def,count_def,fcycles_def,ncfmt_def)
+            dtwall_def,count_def,fcycles_def,ncfmt_def,unit)
 #else
        CALL Error(this,"InitFileIO","NetCDF support disabled")
 #endif
+    CASE(VTK)
+       CALL InitFileIO_vtk(this,Mesh,Physics,fileformat,filename,stoptime_def,&
+            dtwall_def,count_def,fcycles_def,unit)
     CASE DEFAULT
        CALL Error(this,"InitFileIO","Unknown file format.")
     END SELECT
@@ -228,6 +239,8 @@ CONTAINS
     CASE(NETCDF)
        CALL OpenFile_netcdf(this,action)
 #endif
+    CASE(VTK)
+       CALL OpenFile_vtk(this,action)
     END SELECT
   END SUBROUTINE OpenFile
 
@@ -248,6 +261,8 @@ CONTAINS
     CASE(NETCDF)
        CALL CloseFile_netcdf(this)
 #endif
+    CASE(VTK)
+       CALL CloseFile_vtk(this)
     END SELECT
   END SUBROUTINE CloseFile
 
@@ -273,6 +288,8 @@ CONTAINS
     CASE(NETCDF)
        CALL WriteHeader_netcdf(this,Mesh,Physics)
 #endif
+    CASE(VTK)
+       CALL WriteHeader_vtk(this,Mesh,Physics)
     END SELECT
     CALL CloseFile(this)
   END SUBROUTINE WriteHeader
@@ -301,6 +318,8 @@ CONTAINS
     CASE(NETCDF)
        CALL ReadHeader_netcdf(this,Mesh,Physics,success)
 #endif
+    CASE(VTK)
+       CALL ReadHeader_vtk(this,success)
     END SELECT
     CALL CloseFile(this)
   END SUBROUTINE ReadHeader
@@ -325,6 +344,8 @@ CONTAINS
     CASE(NETCDF)
        CALL WriteTimestamp_netcdf(this,time)
 #endif
+    CASE(VTK)
+       CALL WriteTimestamp_vtk(this,time)
     END SELECT
     CALL CloseFile(this)
   END SUBROUTINE WriteTimestamp
@@ -350,20 +371,23 @@ CONTAINS
     CASE(NETCDF)
        CALL ReadTimestamp_netcdf(this,time)
 #endif
+    CASE(VTK)
+       CALL ReadTimestamp_vtk(this,time)
     END SELECT
     CALL CloseFile(this)
   END SUBROUTINE ReadTimestamp
 
   
-  SUBROUTINE WriteDataset(this,Mesh,Physics,Timedisc)
+  SUBROUTINE WriteDataset(this,Mesh,Physics,Fluxes,Timedisc)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(FileIO_TYP)  :: this
     TYPE(Mesh_TYP)    :: Mesh
     TYPE(Physics_TYP) :: Physics
+    TYPE(Fluxes_TYP)  :: Fluxes
     TYPE(Timedisc_TYP):: Timedisc
     !------------------------------------------------------------------------!
-    INTENT(IN)        :: Mesh,Physics
+    INTENT(IN)        :: Mesh,Physics,Fluxes
     INTENT(INOUT)     :: this,Timedisc
     !------------------------------------------------------------------------!
     ! write the header if either this is the first data set we write or
@@ -374,13 +398,15 @@ CONTAINS
     CALL OpenFile(this,APPEND)
     SELECT CASE(GetType(this))
     CASE(BINARY)
-       CALL WriteDataset_binary(this,Mesh,Physics,Timedisc)
+       CALL WriteDataset_binary(this,Mesh,Physics,Fluxes,Timedisc)
     CASE(GNUPLOT)
        CALL WriteDataset_gnuplot(this,Mesh,Physics,Timedisc)
 #ifdef HAVE_NETCDF
     CASE(NETCDF)
        CALL WriteDataset_netcdf(this,Mesh,Physics,Timedisc)
 #endif
+    CASE(VTK)
+       CALL WriteDataset_vtk(this,Mesh,Physics,Timedisc)
     END SELECT
     CALL CloseFile(this)
     ! append the time stamp
@@ -410,10 +436,13 @@ CONTAINS
     CASE(NETCDF)
        CALL ReadDataset_netcdf(this,Mesh,Physics,Timedisc)
 #endif
+    CASE(VTK)
+       CALL Error(this,"ReadDataset","function not supported")
     END SELECT
     CALL CloseFile(this)
     ! calculate conservative variables
-    CALL Convert2Conservative(Physics,Mesh,Timedisc%pvar,Timedisc%cvar)
+    CALL Convert2Conservative(Physics,Mesh,Mesh%IMIN,Mesh%IMAX,Mesh%JMIN,Mesh%JMAX, &
+         Timedisc%pvar,Timedisc%cvar)
   END SUBROUTINE ReadDataset
 
 
@@ -433,6 +462,8 @@ CONTAINS
     CASE(NETCDF)
        CALL CloseFileIO_netcdf(this)
 #endif
+    CASE(VTK)
+       CALL CloseFileIO_vtk(this)
     END SELECT
   END SUBROUTINE CloseFileIO
     

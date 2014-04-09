@@ -46,6 +46,7 @@ MODULE fluxes_generic
        ! methods
        InitFluxes, &
        MallocFluxes, &
+       GetBoundaryFlux, &
        GetType, &
        GetName, &
        GetRank, &
@@ -104,6 +105,10 @@ CONTAINS
          this%prim(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,4,Physics%vnum), &
          this%pfluxes(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,4,Physics%vnum), &
          this%qfluxes(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,4,Physics%vnum), &
+         this%bxflux(Mesh%JGMIN:Mesh%JGMAX,2,Physics%vnum), &
+         this%byflux(Mesh%IGMIN:Mesh%IGMAX,2,Physics%vnum), &
+         this%bxfold(Mesh%JGMIN:Mesh%JGMAX,2,Physics%vnum), &
+         this%byfold(Mesh%IGMIN:Mesh%IGMAX,2,Physics%vnum), &
          STAT = err)
     IF (err.NE.0) THEN
        CALL Error(this, "MallocFluxes", "Unable to allocate memory.")
@@ -115,6 +120,10 @@ CONTAINS
     ELSE
        this%rstates => this%cons
     END IF
+
+    ! initialize boundary fluxes
+    this%bxflux = 0.
+    this%byflux = 0.
   END SUBROUTINE MallocFluxes
 
 
@@ -148,7 +157,8 @@ CONTAINS
     !------------------------------------------------------------------------!
     INTENT(INOUT)     :: this
     !------------------------------------------------------------------------!
-    DEALLOCATE(this%cons,this%prim,this%pfluxes,this%qfluxes)
+    DEALLOCATE(this%cons,this%prim,this%pfluxes,this%qfluxes, &
+         this%bxflux,this%byflux,this%bxfold,this%byfold)
     CALL CloseReconstruction(this%Reconstruction)
   END SUBROUTINE CloseFluxes
 

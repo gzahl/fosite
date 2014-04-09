@@ -3,8 +3,9 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: physics_euler3Drotamt.f90                                         #
 !#                                                                           #
-!# Copyright (C) 2007-2008                                                   #
+!# Copyright (C) 2007-2010                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
+!# Björn Sperling   <sperling@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
 !# it under the terms of the GNU General Public License as published by      #
@@ -82,6 +83,8 @@ CONTAINS
     TYPE(Physics_TYP) :: this
     INTEGER           :: problem
     !------------------------------------------------------------------------!
+    INTEGER           :: err
+    !------------------------------------------------------------------------!
     INTENT(IN)        :: problem
     INTENT(INOUT)     :: this
     !------------------------------------------------------------------------!
@@ -107,6 +110,34 @@ CONTAINS
     this%cvarname(this%YMOMENTUM) = "y-momentum"
     this%cvarname(this%ZMOMENTUM) = "ang-momentum"
     this%cvarname(this%ENERGY)    = "energy"
+
+    ALLOCATE(this%structure(4),this%errormap(0:3),STAT = err)
+    ! abort if allocation fails
+    IF (err.NE.0) &
+         CALL Error(this, "InitPhysics_euler2D", "Unable to allocate memory.")
+    this%nstruc = 4
+    this%structure(1)%name = "coordinates"
+    this%structure(1)%pos = -1
+    this%structure(1)%rank = 1
+    this%structure(1)%dim  = 2
+    this%structure(2)%name = "density"
+    this%structure(2)%pos  = this%DENSITY
+    this%structure(2)%rank = 0
+    this%structure(2)%dim  = 1
+    this%structure(3)%name = "velocity"
+    this%structure(3)%pos  = this%XVELOCITY
+    this%structure(3)%rank = 1
+    this%structure(3)%dim  = 3
+    this%structure(4)%name = "pressure"
+    this%structure(4)%pos  = this%PRESSURE
+    this%structure(4)%rank = 0
+    this%structure(4)%dim  = 1
+
+    !set errormapping (CheckData Symbols)
+    this%errormap(0) = 'X'
+    this%errormap(1) = 'D'
+    this%errormap(2) = 'P'
+    this%errormap(3) = 'B'
   END SUBROUTINE InitPhysics_euler3Dra
 
 
@@ -126,6 +157,10 @@ CONTAINS
     CALL CentrifugalForces(pvar(:,:,this%DENSITY),pvar(:,:,this%ZVELOCITY), &
          Mesh%bhz(:,:),Mesh%czxz(:,:,1),Mesh%czyz(:,:,1),this%fcent(:,:,1,1), &
          this%fcent(:,:,2,1))
+
+    ! no geometrical sources in continuity and angular momentum equation
+    sterm(:,:,this%DENSITY)   = 0.0
+    sterm(:,:,this%ZMOMENTUM) = 0.0
 
     ! geometrical source terms in momentum equationes
     ! with centrifugal forces
@@ -161,6 +196,10 @@ CONTAINS
          Mesh%chz(:,:,:),Mesh%czxz(:,:,:),Mesh%czyz(:,:,:),this%fcent(:,:,:,1), &
          this%fcent(:,:,:,2))
 
+    ! no geometrical sources in continuity and angular momentum equation
+    sterm(:,:,this%DENSITY)   = 0.0
+    sterm(:,:,this%ZMOMENTUM) = 0.0
+
     ! geometrical source terms in momentum equationes
     ! sum up all four corner values
     sterm(:,:,this%XMOMENTUM) = SUM(MomentumSourcesX_euler2D(cons(:,:,:,this%YMOMENTUM), &
@@ -176,75 +215,87 @@ CONTAINS
   END SUBROUTINE GeometricalSources_faces
 
 
-  PURE SUBROUTINE Convert2Primitive_center(this,Mesh,cvar,pvar)
+  PURE SUBROUTINE Convert2Primitive_center(this,Mesh,i1,i2,j1,j2,cvar,pvar)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Physics_TYP)    :: this
     TYPE(Mesh_TYP)       :: Mesh
+    INTEGER              :: i1,i2,j1,j2
     REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,this%vnum) &
                          :: cvar,pvar
     !------------------------------------------------------------------------!
-    INTENT(IN)  :: this,Mesh,cvar
+    INTENT(IN)  :: this,Mesh,i1,i2,j1,j2,cvar
     INTENT(OUT) :: pvar
     !------------------------------------------------------------------------!
-    CALL Cons2Prim_euler3Dra(this%gamma,cvar(:,:,this%DENSITY),cvar(:,:,this%XMOMENTUM), &
-         cvar(:,:,this%YMOMENTUM),cvar(:,:,this%ZMOMENTUM),cvar(:,:,this%ENERGY), &
-         pvar(:,:,this%DENSITY),pvar(:,:,this%XVELOCITY),pvar(:,:,this%YVELOCITY), &
-         pvar(:,:,this%ZVELOCITY),pvar(:,:,this%PRESSURE))
+    CALL Cons2Prim_euler3Dra(this%gamma,cvar(i1:i2,j1:j2,this%DENSITY), &
+         cvar(i1:i2,j1:j2,this%XMOMENTUM),cvar(i1:i2,j1:j2,this%YMOMENTUM), &
+         cvar(i1:i2,j1:j2,this%ZMOMENTUM),cvar(i1:i2,j1:j2,this%ENERGY), &
+         pvar(i1:i2,j1:j2,this%DENSITY),pvar(i1:i2,j1:j2,this%XVELOCITY), &
+         pvar(i1:i2,j1:j2,this%YVELOCITY),pvar(i1:i2,j1:j2,this%ZVELOCITY), &
+         pvar(i1:i2,j1:j2,this%PRESSURE))
   END SUBROUTINE Convert2Primitive_center
 
 
-  PURE SUBROUTINE Convert2Primitive_faces(this,Mesh,cons,prim)
+  PURE SUBROUTINE Convert2Primitive_faces(this,Mesh,i1,i2,j1,j2,cons,prim)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Physics_TYP)    :: this
     TYPE(Mesh_TYP)       :: Mesh
+    INTEGER              :: i1,i2,j1,j2
     REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,4,this%vnum) &
                          :: cons,prim
     !------------------------------------------------------------------------!
-    INTENT(IN)  :: this,Mesh,cons
+    INTENT(IN)  :: this,Mesh,i1,i2,j1,j2,cons
     INTENT(OUT) :: prim
     !------------------------------------------------------------------------!
-    CALL Cons2Prim_euler3Dra(this%gamma,cons(:,:,:,this%DENSITY),cons(:,:,:,this%XMOMENTUM), &
-         cons(:,:,:,this%YMOMENTUM),cons(:,:,:,this%ZMOMENTUM),cons(:,:,:,this%ENERGY), &
-         prim(:,:,:,this%DENSITY),prim(:,:,:,this%XVELOCITY),prim(:,:,:,this%YVELOCITY), &
-         prim(:,:,:,this%ZVELOCITY),prim(:,:,:,this%PRESSURE))
+    CALL Cons2Prim_euler3Dra(this%gamma,cons(i1:i2,j1:j2,:,this%DENSITY), &
+         cons(i1:i2,j1:j2,:,this%XMOMENTUM),cons(i1:i2,j1:j2,:,this%YMOMENTUM), &
+         cons(i1:i2,j1:j2,:,this%ZMOMENTUM),cons(i1:i2,j1:j2,:,this%ENERGY), &
+         prim(i1:i2,j1:j2,:,this%DENSITY),prim(i1:i2,j1:j2,:,this%XVELOCITY), &
+         prim(i1:i2,j1:j2,:,this%YVELOCITY),prim(i1:i2,j1:j2,:,this%ZVELOCITY), &
+         prim(i1:i2,j1:j2,:,this%PRESSURE))
   END SUBROUTINE Convert2Primitive_faces
 
 
-  PURE SUBROUTINE Convert2Conservative_center(this,Mesh,pvar,cvar)
+  PURE SUBROUTINE Convert2Conservative_center(this,Mesh,i1,i2,j1,j2,pvar,cvar)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Physics_TYP)    :: this
     TYPE(Mesh_TYP)       :: Mesh
+    INTEGER              :: i1,i2,j1,j2
     REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,this%vnum) &
                          :: cvar,pvar
     !------------------------------------------------------------------------!
-    INTENT(IN)  :: this,Mesh,pvar
+    INTENT(IN)  :: this,Mesh,i1,i2,j1,j2,pvar
     INTENT(OUT) :: cvar
     !------------------------------------------------------------------------!
-    CALL Prim2Cons_euler3Dra(this%gamma,pvar(:,:,this%DENSITY),pvar(:,:,this%XVELOCITY), &
-         pvar(:,:,this%YVELOCITY),pvar(:,:,this%ZVELOCITY),pvar(:,:,this%PRESSURE), &
-         cvar(:,:,this%DENSITY),cvar(:,:,this%XMOMENTUM),cvar(:,:,this%YMOMENTUM), &
-         cvar(:,:,this%ZMOMENTUM),cvar(:,:,this%ENERGY))
+    CALL Prim2Cons_euler3Dra(this%gamma,pvar(i1:i2,j1:j2,this%DENSITY), &
+         pvar(i1:i2,j1:j2,this%XVELOCITY),pvar(i1:i2,j1:j2,this%YVELOCITY), &
+         pvar(i1:i2,j1:j2,this%ZVELOCITY),pvar(i1:i2,j1:j2,this%PRESSURE), &
+         cvar(i1:i2,j1:j2,this%DENSITY),cvar(i1:i2,j1:j2,this%XMOMENTUM), &
+         cvar(i1:i2,j1:j2,this%YMOMENTUM),cvar(i1:i2,j1:j2,this%ZMOMENTUM), &
+         cvar(i1:i2,j1:j2,this%ENERGY))
   END SUBROUTINE Convert2Conservative_center
 
 
-  PURE SUBROUTINE Convert2Conservative_faces(this,Mesh,prim,cons)
+  PURE SUBROUTINE Convert2Conservative_faces(this,Mesh,i1,i2,j1,j2,prim,cons)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Physics_TYP)    :: this
     TYPE(Mesh_TYP)       :: Mesh
+    INTEGER              :: i1,i2,j1,j2
     REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,4,this%vnum) &
                          :: cons,prim
     !------------------------------------------------------------------------!
-    INTENT(IN)  :: this,Mesh,prim
+    INTENT(IN)  :: this,Mesh,i1,i2,j1,j2,prim
     INTENT(OUT) :: cons
     !------------------------------------------------------------------------!
-    CALL Prim2Cons_euler3Dra(this%gamma,prim(:,:,:,this%DENSITY),prim(:,:,:,this%XVELOCITY), &
-         prim(:,:,:,this%YVELOCITY),prim(:,:,:,this%ZVELOCITY),prim(:,:,:,this%PRESSURE), &
-         cons(:,:,:,this%DENSITY),cons(:,:,:,this%XMOMENTUM),cons(:,:,:,this%YMOMENTUM), &
-         cons(:,:,:,this%ZMOMENTUM),cons(:,:,:,this%ENERGY))
+    CALL Prim2Cons_euler3Dra(this%gamma,prim(i1:i2,j1:j2,:,this%DENSITY), &
+         prim(i1:i2,j1:j2,:,this%XVELOCITY),prim(i1:i2,j1:j2,:,this%YVELOCITY), &
+         prim(i1:i2,j1:j2,:,this%ZVELOCITY),prim(i1:i2,j1:j2,:,this%PRESSURE), &
+         cons(i1:i2,j1:j2,:,this%DENSITY),cons(i1:i2,j1:j2,:,this%XMOMENTUM), &
+         cons(i1:i2,j1:j2,:,this%YMOMENTUM),cons(i1:i2,j1:j2,:,this%ZMOMENTUM), &
+         cons(i1:i2,j1:j2,:,this%ENERGY))
   END SUBROUTINE Convert2Conservative_faces
 
 

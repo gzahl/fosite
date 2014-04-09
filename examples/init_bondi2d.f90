@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: init_bondi2d.f90                                                  #
 !#                                                                           #
-!# Copyright (C) 2006 - 2008                                                 #
+!# Copyright (C) 2006 - 2010                                                 #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -25,12 +25,17 @@
 
 !----------------------------------------------------------------------------!
 ! Program and data initialization for 2D Bondi accretion
+! References:
+! [1] Bondi, H.: On spherically symmetrical accretion,
+!     Mon. Not. Roy. Astron. Soc., 112 (1951)
+!     ADS link: http://adsabs.harvard.edu/abs/1952MNRAS.112..195B
+! [2] Padmanabhan, T.:Theoretical Astrophysics, Vol. I: Astrophysical
+!     Processes, Cambridge University Press (2000), Chapter 8.9.2
 !----------------------------------------------------------------------------!
 
 !**************************************!
 !* IMPORTANT:                         *!
 !* - compile with autodouble          *!
-!* - use primitive reconstruction     *!
 !**************************************!
 
 MODULE Init
@@ -46,16 +51,32 @@ MODULE Init
   !--------------------------------------------------------------------------!
   PRIVATE
   ! general constants
-  REAL, PARAMETER :: MSUN    = 1.989E+30   ! solar mass [kg]                 !
-  ! test boundary conditions at infinity
-  REAL, PARAMETER :: RHOINF  = 1.0E-20     ! density at infinity [kg/m^3]    !
-  REAL, PARAMETER :: CSINF   = 1.0E+04     ! sound speed at infinity [m/s]   !
-  REAL, PARAMETER :: ACCMASS = 1.0 * MSUN  ! mass of the accreting object    !
-  REAL, PARAMETER :: GAMMA   = 1.4         ! ratio of specific heats         !
+  REAL, PARAMETER    :: MSUN = 1.989E+30   ! solar mass [kg]
+  ! simulation parameters
+  REAL, PARAMETER    :: TSIM    = 10.0     ! simulation time [TAU] (free fall)
+  REAL, PARAMETER    :: ACCMASS = 1.0*MSUN ! mass of the accreting object
+  REAL, PARAMETER    :: GAMMA   = 1.4      ! ratio of specific heats 
+  ! boundary conditions
+  REAL, PARAMETER    :: RHOINF  = 1.0E-20  ! density at infinity [kg/m^3]
+  REAL, PARAMETER    :: CSINF   = 1.0E+04  ! sound speed at infinity [m/s]
+  ! mesh settings
+  INTEGER, PARAMETER :: MGEO = POLAR       ! geometry
+!!$  INTEGER, PARAMETER :: MGEO = LOGPOLAR
+!!$  INTEGER, PARAMETER :: MGEO = TANPOLAR
+!!$  INTEGER, PARAMETER :: MGEO = SINHPOLAR
+  INTEGER, PARAMETER :: XRES = 50          ! x-resolution
+  INTEGER, PARAMETER :: YRES = 1           ! y-resolution
+  REAL, PARAMETER    :: RIN  = 0.1         ! inner/outer radii in terms of
+  REAL, PARAMETER    :: ROUT = 2.0         !   the Bondi radius RB, ROUT > 1
+  ! output parameters
+  INTEGER, PARAMETER :: ONUM = 10          ! number of output data sets
+  CHARACTER(LEN=256), PARAMETER &          ! output data dir
+                     :: ODIR = './'
+  CHARACTER(LEN=256), PARAMETER &          ! output data file name
+                     :: OFNAME = 'bondi2d' 
   ! some derives quandities
-  REAL            :: RB                    ! Bondi radius                    !
-  REAL            :: RIN, ROUT             ! inner & outer radius            !
-  REAL            :: TS                    ! time scale                      !
+  REAL               :: RB                 ! Bondi radius
+  REAL               :: TAU                ! free fall time scale
   !--------------------------------------------------------------------------!
   PUBLIC :: &
        ! methods
@@ -76,6 +97,7 @@ CONTAINS
     TYPE(FileIO_TYP)  :: Logfile
     !------------------------------------------------------------------------!
     ! Local variable declaration
+    REAL              :: x1,x2,scale
     !------------------------------------------------------------------------!
     INTENT(OUT)       :: Mesh,Physics,Fluxes,Timedisc,Datafile,Logfile
     !------------------------------------------------------------------------!
@@ -86,10 +108,8 @@ CONTAINS
          dpmax   = 1.0)                     ! for advanced time step control !
 
     ! derived constants
-    RB   = Physics%Constants%GN * ACCMASS / CSINF**2 ! bondi radius [m]      !
-    RIN  = 1.0E-1 * RB                      ! inner & outer radius of the    !
-    ROUT = 1.0E+1 * RB                      !    computational domain [m]    !
-    TS   = ROUT / CSINF                     ! time scale [s]                 !
+    RB  = Physics%Constants%GN * ACCMASS / CSINF**2  ! bondi radius [m]      !
+    TAU = RB / CSINF                        ! free fall time scale [s]       !
 
     ! numerical scheme for flux calculation
     CALL InitFluxes(Fluxes, &
@@ -98,24 +118,46 @@ CONTAINS
     ! reconstruction method
     CALL InitReconstruction(Fluxes%reconstruction, &
          order     = LINEAR, &
-         variables = PRIMITIVE, &           ! vars. to use for reconstruction!
+         variables = CONSERVATIVE, &        ! vars. to use for reconstruction!
          limiter   = MONOCENT, &            ! one of: minmod, monocent,...   !
-         theta     = 1.3)                   ! optional parameter for limiter !
+         theta     = 1.2)                   ! optional parameter for limiter !
 
     ! mesh settings
+    SELECT CASE(MGEO)
+    CASE(POLAR)
+       x1 = RIN * RB
+       x2 = ROUT * RB
+       scale = 1.0
+    CASE(LOGPOLAR)
+       x1 = LOG(RIN)
+       x2 = LOG(ROUT)
+       scale = RB
+    CASE(TANPOLAR)
+       x1 = ATAN(RIN)
+       x2 = ATAN(ROUT)
+       scale = RB
+    CASE(SINHPOLAR)
+       x1 = LOG(RIN+SQRT(1.0+RIN*RIN))  ! = ASINH(RIN))
+       x2 = LOG(ROUT+SQRT(1.0+ROUT*ROUT))
+       scale = RB
+    CASE DEFAULT
+       CALL Error(Physics,"InitProgram","mesh geometry not supported for 2D Bondi accretion")
+    END SELECT
     CALL InitMesh(Mesh,Fluxes, &
-         geometry = POLAR, &
-             inum = 64, &                   ! resolution in x and            !
-             jnum = 6, &                    !   y direction                  !
-             xmin = RIN, &
-             xmax = ROUT, &
+         geometry = MGEO, &
+             inum = XRES, &
+             jnum = YRES, &
+             xmin = x1, &
+             xmax = x2, &
              ymin = 0.0, &
-             ymax = 2*PI)
+             ymax = 2*PI, &
+           gparam = scale)
 
     ! source term due to a point mass
-    CALL InitSources(Physics%sources,Mesh,Fluxes,Physics, &
+    CALL InitSources(Physics%sources,Mesh,Fluxes,Physics,Timedisc%boundary, &
          stype  = POINTMASS, &            ! grav. accel. of a point mass     !
            mass = ACCMASS)                ! mass of the accreting object[kg] !
+    Physics%sources%outbound = 0          ! disable accretion
 
     ! boundary conditions
     CALL InitBoundary(Timedisc%boundary,Mesh,Physics, &
@@ -129,33 +171,25 @@ CONTAINS
          method   = MODIFIED_EULER, &
          order    = 3, &
          cfl      = 0.4, &
-         stoptime = 30 * TS, &
-         dtlimit  = 1.0E-6 * TS, &
+         stoptime = TSIM * TAU, &
+         dtlimit  = 1.0E-6 * TAU, &
          maxiter  = 1000000)
 
     ! set initial condition
     CALL InitData(Mesh,Physics,Fluxes,Timedisc)
 
-  ! initialize log input/output
-    CALL InitFileIO(Logfile,Mesh,Physics,Timedisc, &
+    ! initialize log input/output
+    CALL InitFileIO(Logfile,Mesh,Physics,Timedisc,&
          fileformat = BINARY, &
-#ifdef PARALLEL
-         filename   = "/tmp/bondi2dlog", &
-#else
-         filename   = "bondi2d", &
-#endif
-         filecycles = 1)
+         filename   = TRIM(ODIR) // TRIM(OFNAME) // 'log', &
+         filecycles = 1)                  ! just one log file
 
     ! initialize data input/output
     CALL InitFileIO(Datafile,Mesh,Physics,Timedisc, &
          fileformat = GNUPLOT, &
-#ifdef PARALLEL
-         filename   = "/tmp/bondi2d", &
-#else
-         filename   = "bondi2d", &
-#endif
-         count      = 30)
-
+         filecycles = 0, &                ! all time steps in one file
+         filename   = TRIM(ODIR) // TRIM(OFNAME), &
+         count      = ONUM)
   END SUBROUTINE InitProgram
 
 
@@ -168,8 +202,9 @@ CONTAINS
     TYPE(Timedisc_TYP):: Timedisc
     !------------------------------------------------------------------------!
     ! Local variable declaration
-    REAL              :: rho,vr,cs2
+    REAL              :: r,rho,vr,cs2
     INTEGER           :: i,j
+    CHARACTER(LEN=64) :: info_str
     !------------------------------------------------------------------------!
     INTENT(IN)        :: Mesh,Physics,Fluxes
     INTENT(INOUT)     :: Timedisc
@@ -187,37 +222,32 @@ CONTAINS
 
     ! boundary condition: subsonic inflow according to Bondi's solution
     ! calculate Bondi solution for y=ymin..ymax at xmax
-#ifdef PARALLEL
     IF (GetType(Timedisc%Boundary(EAST)).EQ.FIXED) THEN
-#endif
-       DO j=Mesh%JGMIN,Mesh%JGMAX
+       DO j=Mesh%JMIN,Mesh%JMAX
           DO i=1,2
-             CALL bondi(Mesh%bcenter(Mesh%IMAX+i,j,1)/RB,GAMMA,RHOINF,CSINF,rho,vr)
+             r = SQRT(Mesh%bccart(Mesh%IMAX+i,j,1)**2+Mesh%bccart(Mesh%IMAX+i,j,2)**2)
+             CALL bondi(r/RB,GAMMA,RHOINF,CSINF,rho,vr)
              cs2 = CSINF**2 * (rho/RHOINF)**(GAMMA-1.0)
              ! set boundary data to either primitive or conservative values
              ! depending on the reconstruction
-             IF (PrimRecon(Fluxes%reconstruction).EQV.PRIMITIVE) THEN
-                Timedisc%Boundary(EAST)%data(i,j,Physics%DENSITY)   = rho
-                Timedisc%Boundary(EAST)%data(i,j,Physics%XVELOCITY) = vr
-                Timedisc%Boundary(EAST)%data(i,j,Physics%YVELOCITY) = 0.
-                Timedisc%Boundary(EAST)%data(i,j,Physics%PRESSURE)  = rho * cs2 / GAMMA
-             ELSE
-                Timedisc%Boundary(EAST)%data(i,j,Physics%DENSITY)   = rho
-                Timedisc%Boundary(EAST)%data(i,j,Physics%XMOMENTUM) = rho*vr
-                Timedisc%Boundary(EAST)%data(i,j,Physics%YMOMENTUM) = 0.
-                Timedisc%Boundary(EAST)%data(i,j,Physics%ENERGY)    = rho * &
-                     (cs2 / (GAMMA*(GAMMA-1.0)) + 0.5*vr*vr)
-             END IF
+             Timedisc%Boundary(EAST)%data(i,j,Physics%DENSITY)   = rho
+             Timedisc%Boundary(EAST)%data(i,j,Physics%XVELOCITY) = vr
+             Timedisc%Boundary(EAST)%data(i,j,Physics%YVELOCITY) = 0.
+             Timedisc%Boundary(EAST)%data(i,j,Physics%PRESSURE)  = rho * cs2 / GAMMA
           END DO
-       END DO
-       ! this tells the boundary routine which values to fix (.TRUE.)
-       ! and which to extrapolate (.FALSE.)
-       Timedisc%Boundary(EAST)%fixed = (/ .TRUE., .FALSE., .TRUE., .TRUE. /)
-#ifdef PARALLEL
+          ! this tells the boundary routine which values to fix (.TRUE.)
+          ! and which to extrapolate (.FALSE.)
+          Timedisc%Boundary(EAST)%fixed(j,:) = (/ .TRUE., .FALSE., .TRUE., .TRUE. /)
+      END DO
     END IF
-#endif
 
     CALL Info(Mesh," DATA-----> initial condition: 2D Bondi accretion")
+    WRITE(info_str,"(ES9.3)") RB
+    CALL Info(Mesh, "                               " // "Bondi radius:       " &
+         // TRIM(info_str) // " m")
+    WRITE(info_str,"(ES9.3)") TAU
+    CALL Info(Mesh, "                               " // "Free fall time:     " &
+         // TRIM(info_str) // " s")
   END SUBROUTINE InitData
 
 

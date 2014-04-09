@@ -3,8 +3,9 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: physics_generic.f90                                               #
 !#                                                                           #
-!# Copyright (C) 2007-2008                                                   #
+!# Copyright (C) 2007 - 2010                                                 #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
+!# Björn Sperling   <sperling@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
 !# it under the terms of the GNU General Public License as published by      #
@@ -43,11 +44,15 @@ MODULE physics_generic
   END INTERFACE
   INTERFACE Convert2Primitive
      MODULE PROCEDURE Convert2Primitive_center
+     MODULE PROCEDURE Convert2Primitive_centsub
      MODULE PROCEDURE Convert2Primitive_faces
+     MODULE PROCEDURE Convert2Primitive_facesub
   END INTERFACE
   INTERFACE Convert2Conservative
      MODULE PROCEDURE Convert2Conservative_center
+     MODULE PROCEDURE Convert2Conservative_centsub
      MODULE PROCEDURE Convert2Conservative_faces
+     MODULE PROCEDURE Convert2Conservative_facesub
   END INTERFACE
   !--------------------------------------------------------------------------!
   ! flags for advection problems
@@ -71,6 +76,7 @@ MODULE physics_generic
        MaxWaveSpeeds, &
        CalculateFluxesX, &
        CalculateFluxesY, &
+       CalculateStresses, &
        GeometricalSources, &
        ExternalSources, &
        ViscositySources, &
@@ -78,6 +84,7 @@ MODULE physics_generic
        Convert2Conservative, &
        ReflectionMasks, &
        AxisMasks, &
+       GetSoundSpeed_adiabatic, &
        GetType, &
        GetName, &
        GetRank, &
@@ -185,8 +192,8 @@ CONTAINS
          this%amax(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX), &
          this%bmin(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX), &
          this%bmax(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX), &
-         this%tmin(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,2), &
-         this%tmax(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,2), &
+         this%tmin(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,4), &
+         this%tmax(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,4), &
          STAT = err)
     IF (err.NE.0) THEN
        CALL Error(this, "MallocPhysics", "Unable to allocate memory.")
@@ -227,26 +234,35 @@ CONTAINS
   END SUBROUTINE AxisMasks
 
 
-  PURE FUNCTION CheckData(this,Mesh,pvar,pold) RESULT(bad_data)
+  PURE FUNCTION CheckData(this,Mesh,pvar,pold,meshrange) RESULT(bad_data)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Physics_TYP) :: this
     TYPE(Mesh_TYP)    :: Mesh
     REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,this%vnum) &
-         :: pvar,pold
+                      :: pvar,pold
+    INTEGER, DIMENSION(4), OPTIONAL :: meshrange
     INTEGER           :: bad_data
     !------------------------------------------------------------------------!
-    INTENT(IN)        :: this,Mesh,pvar,pold
+    INTEGER, DIMENSION(4) :: meshrange_def
     !------------------------------------------------------------------------!
+    INTENT(IN)        :: this,Mesh,pvar,pold,meshrange
+    !------------------------------------------------------------------------!
+    IF (PRESENT(meshrange)) THEN
+       meshrange_def = meshrange
+    ELSE
+       meshrange_def = (/Mesh%IGMIN, Mesh%IGMAX, Mesh%JGMIN, Mesh%JGMAX/)
+    END IF
+
     SELECT CASE(GetType(this))
     CASE(EULER2D)
-       bad_data = CheckData_euler2D(this,Mesh,pvar,pold)
+       bad_data = CheckData_euler2D(this,Mesh,pvar,pold,meshrange_def)
     CASE(EULER2D_ISOTHERM)
-       bad_data = CheckData_euler2Dit(this,Mesh,pvar,pold)
+       bad_data = CheckData_euler2Dit(this,Mesh,pvar,pold,meshrange_def)
     CASE(EULER3D_ROTSYM)
-       bad_data = CheckData_euler3Drs(this,Mesh,pvar,pold)
+       bad_data = CheckData_euler3Drs(this,Mesh,pvar,pold,meshrange_def)
     CASE(EULER3D_ROTAMT)
-       bad_data = CheckData_euler3Dra(this,Mesh,pvar,pold)
+       bad_data = CheckData_euler3Dra(this,Mesh,pvar,pold,meshrange_def)
     END SELECT
   END FUNCTION CheckData
 
@@ -300,7 +316,8 @@ CONTAINS
        CALL CalculateWaveSpeeds_euler3Dra(this,Mesh,pvar)
     END SELECT
 
-    amax = MAX(this%tmax,-this%tmin)
+    amax(:,:,1) = MAX(this%amax,-this%amin)
+    amax(:,:,2) = MAX(this%bmax,-this%bmin)
   END SUBROUTINE MaxWaveSpeeds
 
 
@@ -352,6 +369,38 @@ CONTAINS
        CALL CalculateFluxesY_euler3Dra(this,Mesh,nmin,nmax,prim,cons,yfluxes)
     END SELECT
   END SUBROUTINE CalculateFluxesY
+
+
+  PURE SUBROUTINE CalculateStresses(this,Mesh,pvar,dynvis,bulkvis, &
+       btxx,btxy,btxz,btyy,btyz,btzz)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Physics_TYP) :: this
+    TYPE(Mesh_TYP)    :: Mesh
+    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,this%VNUM) :: pvar
+    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX) :: &
+         dynvis,bulkvis,btxx,btxy,btxz,btyy,btyz,btzz
+    !------------------------------------------------------------------------!
+    INTENT(IN)        :: this,Mesh,pvar,dynvis,bulkvis
+    INTENT(INOUT)     :: btxx,btxy,btxz,btyy,btyz,btzz
+    !------------------------------------------------------------------------!
+    SELECT CASE(GetType(this))
+    CASE(EULER2D)
+       CALL CalculateStresses_euler2D(this,Mesh,pvar,dynvis,bulkvis, &
+            btxx,btxy,btyy)
+    CASE(EULER2D_ISOTHERM)
+       CALL CalculateStresses_euler2Dit(this,Mesh,pvar,dynvis,bulkvis, &
+            btxx,btxy,btyy)
+    CASE(EULER3D_ROTSYM)
+       CALL CalculateStresses_euler3Drs(this,Mesh,pvar,dynvis,bulkvis, &
+            btxx,btxy,btxz,btyy,btyz,btzz)
+! ***************************************************************************!
+! FIXME: not implemented yet
+!    CASE(EULER3D_ROTAMT)
+!       CALL CalculateStresses_euler3Dra(this,Mesh,nmin,nmax,prim,cons,yfluxes)
+! ***************************************************************************!
+    END SELECT
+  END SUBROUTINE CalculateStresses
 
 
   PURE SUBROUTINE GeometricalSources_center(this,Mesh,pvar,cvar,sterm)
@@ -434,26 +483,33 @@ CONTAINS
   END SUBROUTINE ExternalSources
 
 
-  PURE SUBROUTINE ViscositySources(this,Mesh,Sources,pvar,cvar,sterm)
+  PURE SUBROUTINE ViscositySources(this,Mesh,pvar,btxx,btxy,btxz, &
+       btyy,btyz,btzz,ftxx,ftxy,ftxz,ftyy,ftyz,ftzz,sterm)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Physics_TYP) :: this
     TYPE(Mesh_TYP)    :: Mesh
-    TYPE(Sources_TYP) :: Sources
-    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,this%vnum) &
-         :: pvar,cvar,sterm
+    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,this%VNUM) :: &
+         pvar,sterm
+    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX) :: &
+         btxx,btxy,btxz,btyy,btyz,btzz
+    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,4) :: &
+         ftxx,ftxy,ftxz,ftyy,ftyz,ftzz
     !------------------------------------------------------------------------!
-    INTENT(IN)        :: this,Mesh,pvar,cvar
-    INTENT(INOUT)     :: Sources
+    INTENT(IN)        :: this,Mesh,pvar, btxx,btxy,btxz,btyy,btyz,btzz
+    INTENT(INOUT)     :: ftxx,ftxy,ftxz,ftyy,ftyz,ftzz
     INTENT(OUT)       :: sterm
     !------------------------------------------------------------------------!
     SELECT CASE(GetType(this))
     CASE(EULER2D)
-       CALL ViscositySources_euler2D(this,Mesh,Sources,pvar,cvar,sterm)
+       CALL ViscositySources_euler2D(this,Mesh,pvar,btxx,btxy,btyy, &
+            ftxx,ftxy,ftyy,sterm)
     CASE(EULER2D_ISOTHERM)
-       CALL ViscositySources_euler2Dit(this,Mesh,Sources,pvar,cvar,sterm)
+       CALL ViscositySources_euler2Dit(this,Mesh,pvar,btxx,btxy,btyy, &
+            ftxx,ftxy,ftyy,sterm)
     CASE(EULER3D_ROTSYM)
-       CALL ViscositySources_euler3Drs(this,Mesh,Sources,pvar,cvar,sterm)
+       CALL ViscositySources_euler3Drs(this,Mesh,pvar,btxx,btxy,btxz, &
+       btyy,btyz,btzz,ftxx,ftxy,ftxz,ftyy,ftyz,ftzz,sterm)
 ! ***************************************************************************!
 ! FIXME: not implemented yet
 !    CASE(EULER3D_ROTAMT)
@@ -463,7 +519,6 @@ CONTAINS
   END SUBROUTINE ViscositySources
 
 
-  
   PURE SUBROUTINE Convert2Primitive_center(this,Mesh,cvar,pvar)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
@@ -477,15 +532,44 @@ CONTAINS
     !------------------------------------------------------------------------!
     SELECT CASE(GetType(this))
     CASE(EULER2D)
-       CALL Convert2Primitive_euler2D(this,Mesh,cvar,pvar)
+       CALL Convert2Primitive_euler2D(this,Mesh,Mesh%IGMIN,Mesh%IGMAX,&
+            Mesh%JGMIN,Mesh%JGMAX,cvar,pvar)
     CASE(EULER2D_ISOTHERM)
-       CALL Convert2Primitive_euler2Dit(this,Mesh,cvar,pvar)
+       CALL Convert2Primitive_euler2Dit(this,Mesh,Mesh%IGMIN,Mesh%IGMAX,&
+            Mesh%JGMIN,Mesh%JGMAX,cvar,pvar)
     CASE(EULER3D_ROTSYM)
-       CALL Convert2Primitive_euler3Drs(this,Mesh,cvar,pvar)
+       CALL Convert2Primitive_euler3Drs(this,Mesh,Mesh%IGMIN,Mesh%IGMAX,&
+            Mesh%JGMIN,Mesh%JGMAX,cvar,pvar)
     CASE(EULER3D_ROTAMT)
-       CALL Convert2Primitive_euler3Dra(this,Mesh,cvar,pvar)
+       CALL Convert2Primitive_euler3Dra(this,Mesh,Mesh%IGMIN,Mesh%IGMAX,&
+            Mesh%JGMIN,Mesh%JGMAX,cvar,pvar)
     END SELECT
   END SUBROUTINE Convert2Primitive_center
+
+  
+  PURE SUBROUTINE Convert2Primitive_centsub(this,Mesh,i1,i2,j1,j2,cvar,pvar)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Physics_TYP)    :: this
+    TYPE(Mesh_TYP)       :: Mesh
+    INTEGER              :: i1,i2,j1,j2
+    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,this%vnum) &
+                         :: cvar,pvar
+    !------------------------------------------------------------------------!
+    INTENT(IN)  :: this,Mesh,i1,i2,j1,j2,cvar
+    INTENT(OUT) :: pvar
+    !------------------------------------------------------------------------!
+    SELECT CASE(GetType(this))
+    CASE(EULER2D)
+       CALL Convert2Primitive_euler2D(this,Mesh,i1,i2,j1,j2,cvar,pvar)
+    CASE(EULER2D_ISOTHERM)
+       CALL Convert2Primitive_euler2Dit(this,Mesh,i1,i2,j1,j2,cvar,pvar)
+    CASE(EULER3D_ROTSYM)
+       CALL Convert2Primitive_euler3Drs(this,Mesh,i1,i2,j1,j2,cvar,pvar)
+    CASE(EULER3D_ROTAMT)
+       CALL Convert2Primitive_euler3Dra(this,Mesh,i1,i2,j1,j2,cvar,pvar)
+    END SELECT
+  END SUBROUTINE Convert2Primitive_centsub
 
 
   PURE SUBROUTINE Convert2Primitive_faces(this,Mesh,cons,prim)
@@ -501,15 +585,44 @@ CONTAINS
     !------------------------------------------------------------------------!
     SELECT CASE(GetType(this))
     CASE(EULER2D)
-       CALL Convert2Primitive_euler2D(this,Mesh,cons,prim)
+       CALL Convert2Primitive_euler2D(this,Mesh,Mesh%IGMIN,Mesh%IGMAX,&
+            Mesh%JGMIN,Mesh%JGMAX,cons,prim)
     CASE(EULER2D_ISOTHERM)
-       CALL Convert2Primitive_euler2Dit(this,Mesh,cons,prim)
+       CALL Convert2Primitive_euler2Dit(this,Mesh,Mesh%IGMIN,Mesh%IGMAX,&
+            Mesh%JGMIN,Mesh%JGMAX,cons,prim)
     CASE(EULER3D_ROTSYM)
-       CALL Convert2Primitive_euler3Drs(this,Mesh,cons,prim)
+       CALL Convert2Primitive_euler3Drs(this,Mesh,Mesh%IGMIN,Mesh%IGMAX,&
+            Mesh%JGMIN,Mesh%JGMAX,cons,prim)
     CASE(EULER3D_ROTAMT)
-       CALL Convert2Primitive_euler3Dra(this,Mesh,cons,prim)
+       CALL Convert2Primitive_euler3Dra(this,Mesh,Mesh%IGMIN,Mesh%IGMAX,&
+            Mesh%JGMIN,Mesh%JGMAX,cons,prim)
     END SELECT
   END SUBROUTINE Convert2Primitive_faces
+
+
+  PURE SUBROUTINE Convert2Primitive_facesub(this,Mesh,i1,i2,j1,j2,cons,prim)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Physics_TYP)    :: this
+    TYPE(Mesh_TYP)       :: Mesh
+    INTEGER              :: i1,i2,j1,j2
+    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,4,this%vnum) &
+         :: cons,prim
+    !------------------------------------------------------------------------!
+    INTENT(IN)  :: this,Mesh,i1,i2,j1,j2,cons
+    INTENT(OUT) :: prim
+    !------------------------------------------------------------------------!
+    SELECT CASE(GetType(this))
+    CASE(EULER2D)
+       CALL Convert2Primitive_euler2D(this,Mesh,i1,i2,j1,j2,cons,prim)
+    CASE(EULER2D_ISOTHERM)
+       CALL Convert2Primitive_euler2Dit(this,Mesh,i1,i2,j1,j2,cons,prim)
+    CASE(EULER3D_ROTSYM)
+       CALL Convert2Primitive_euler3Drs(this,Mesh,i1,i2,j1,j2,cons,prim)
+    CASE(EULER3D_ROTAMT)
+       CALL Convert2Primitive_euler3Dra(this,Mesh,i1,i2,j1,j2,cons,prim)
+    END SELECT
+  END SUBROUTINE Convert2Primitive_facesub
 
 
   PURE SUBROUTINE Convert2Conservative_center(this,Mesh,pvar,cvar)
@@ -525,15 +638,44 @@ CONTAINS
     !------------------------------------------------------------------------!
     SELECT CASE(GetType(this))
     CASE(EULER2D)
-       CALL Convert2Conservative_euler2D(this,Mesh,pvar,cvar)
+       CALL Convert2Conservative_euler2D(this,Mesh,Mesh%IGMIN,Mesh%IGMAX,&
+            Mesh%JGMIN,Mesh%JGMAX,pvar,cvar)
     CASE(EULER2D_ISOTHERM)
-       CALL Convert2Conservative_euler2Dit(this,Mesh,pvar,cvar)
+       CALL Convert2Conservative_euler2Dit(this,Mesh,Mesh%IGMIN,Mesh%IGMAX,&
+            Mesh%JGMIN,Mesh%JGMAX,pvar,cvar)
     CASE(EULER3D_ROTSYM)
-       CALL Convert2Conservative_euler3Drs(this,Mesh,pvar,cvar)
+       CALL Convert2Conservative_euler3Drs(this,Mesh,Mesh%IGMIN,Mesh%IGMAX,&
+            Mesh%JGMIN,Mesh%JGMAX,pvar,cvar)
     CASE(EULER3D_ROTAMT)
-       CALL Convert2Conservative_euler3Dra(this,Mesh,pvar,cvar)
+       CALL Convert2Conservative_euler3Dra(this,Mesh,Mesh%IGMIN,Mesh%IGMAX,&
+            Mesh%JGMIN,Mesh%JGMAX,pvar,cvar)
     END SELECT
   END SUBROUTINE Convert2Conservative_center
+
+
+  PURE SUBROUTINE Convert2Conservative_centsub(this,Mesh,i1,i2,j1,j2,pvar,cvar)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Physics_TYP)    :: this
+    TYPE(Mesh_TYP)       :: Mesh
+    INTEGER              :: i1,i2,j1,j2
+    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,this%vnum) &
+                         :: cvar,pvar
+    !------------------------------------------------------------------------!
+    INTENT(IN)  :: this,Mesh,i1,i2,j1,j2,pvar
+    INTENT(OUT) :: cvar
+    !------------------------------------------------------------------------!
+    SELECT CASE(GetType(this))
+    CASE(EULER2D)
+       CALL Convert2Conservative_euler2D(this,Mesh,i1,i2,j1,j2,pvar,cvar)
+    CASE(EULER2D_ISOTHERM)
+       CALL Convert2Conservative_euler2Dit(this,Mesh,i1,i2,j1,j2,pvar,cvar)
+    CASE(EULER3D_ROTSYM)
+       CALL Convert2Conservative_euler3Drs(this,Mesh,i1,i2,j1,j2,pvar,cvar)
+    CASE(EULER3D_ROTAMT)
+       CALL Convert2Conservative_euler3Dra(this,Mesh,i1,i2,j1,j2,pvar,cvar)
+    END SELECT
+  END SUBROUTINE Convert2Conservative_centsub
 
 
   PURE SUBROUTINE Convert2Conservative_faces(this,Mesh,prim,cons)
@@ -549,15 +691,44 @@ CONTAINS
     !------------------------------------------------------------------------!
     SELECT CASE(GetType(this))
     CASE(EULER2D)
-       CALL Convert2Conservative_euler2D(this,Mesh,prim,cons)
+       CALL Convert2Conservative_euler2D(this,Mesh,Mesh%IGMIN,Mesh%IGMAX,&
+            Mesh%JGMIN,Mesh%JGMAX,prim,cons)
     CASE(EULER2D_ISOTHERM)
-       CALL Convert2Conservative_euler2Dit(this,Mesh,prim,cons)
+       CALL Convert2Conservative_euler2Dit(this,Mesh,Mesh%IGMIN,Mesh%IGMAX,&
+            Mesh%JGMIN,Mesh%JGMAX,prim,cons)
     CASE(EULER3D_ROTSYM)
-       CALL Convert2Conservative_euler3Drs(this,Mesh,prim,cons)
+       CALL Convert2Conservative_euler3Drs(this,Mesh,Mesh%IGMIN,Mesh%IGMAX,&
+            Mesh%JGMIN,Mesh%JGMAX,prim,cons)
     CASE(EULER3D_ROTAMT)
-       CALL Convert2Conservative_euler3Dra(this,Mesh,prim,cons)
+       CALL Convert2Conservative_euler3Dra(this,Mesh,Mesh%IGMIN,Mesh%IGMAX,&
+            Mesh%JGMIN,Mesh%JGMAX,prim,cons)
     END SELECT
   END SUBROUTINE Convert2Conservative_faces
+  
+
+  PURE SUBROUTINE Convert2Conservative_facesub(this,Mesh,i1,i2,j1,j2,prim,cons)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Physics_TYP)    :: this
+    TYPE(Mesh_TYP)       :: Mesh
+    INTEGER              :: i1,i2,j1,j2
+    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,4,this%vnum) &
+         :: cons,prim
+    !------------------------------------------------------------------------!
+    INTENT(IN)  :: this,Mesh,i1,i2,j1,j2,prim
+    INTENT(OUT) :: cons
+    !------------------------------------------------------------------------!
+    SELECT CASE(GetType(this))
+    CASE(EULER2D)
+       CALL Convert2Conservative_euler2D(this,Mesh,i1,i2,j1,j2,prim,cons)
+    CASE(EULER2D_ISOTHERM)
+       CALL Convert2Conservative_euler2Dit(this,Mesh,i1,i2,j1,j2,prim,cons)
+    CASE(EULER3D_ROTSYM)
+       CALL Convert2Conservative_euler3Drs(this,Mesh,i1,i2,j1,j2,prim,cons)
+    CASE(EULER3D_ROTAMT)
+       CALL Convert2Conservative_euler3Dra(this,Mesh,i1,i2,j1,j2,prim,cons)
+    END SELECT
+  END SUBROUTINE Convert2Conservative_facesub
   
 
   PURE SUBROUTINE ReflectionMasks(this,reflX,reflY)

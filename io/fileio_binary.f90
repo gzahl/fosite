@@ -3,7 +3,8 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: fileio_binary.f90                                                 #
 !#                                                                           #
-!# Copyright (C) 2008 Tobias Illenseer <tillense@astrophysik.uni-kiel.de>    #
+!# Copyright (C) 2008-2010                                                   #
+!# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
 !# it under the terms of the GNU General Public License as published by      #
@@ -31,6 +32,7 @@ MODULE fileio_binary
   USE mesh_common, ONLY : Mesh_TYP
   USE physics_common, ONLY : Physics_TYP, GetType
   USE timedisc_common, ONLY : Timedisc_TYP
+  USE fluxes_generic, ONLY : Fluxes_TYP, GetBoundaryFlux
   IMPLICIT NONE
 #ifdef PARALLEL
   include 'mpif.h'
@@ -61,7 +63,7 @@ MODULE fileio_binary
 CONTAINS
   
   SUBROUTINE InitFileIO_binary(this,Mesh,Physics,fmt,filename,stoptime,dtwall,&
-       count,fcycles)
+       count,fcycles,unit)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(FileIO_TYP)  :: this
@@ -73,23 +75,25 @@ CONTAINS
     INTEGER           :: dtwall
     INTEGER           :: count
     INTEGER           :: fcycles
+    INTEGER, OPTIONAL :: unit
 #ifdef PARALLEL
     INTEGER, DIMENSION(2) :: gsizes,lsizes,indices
     INTEGER           :: lb,extent
 #endif
     !------------------------------------------------------------------------!
-    INTENT(IN)    :: Mesh,Physics,fmt,filename,stoptime,count,fcycles
+    INTENT(IN)    :: Mesh,Physics,fmt,filename,stoptime,count,fcycles,unit
     INTENT(INOUT) :: this
     !------------------------------------------------------------------------!
-    CALL InitFileIO(this,Mesh,Physics,fmt,"binary",filename,"bin",stoptime,&
-         dtwall,count,fcycles)
+    CALL InitFileIO(this,Mesh,Physics,fmt,"binary",filename,"bin",stoptime, &
+         dtwall,count,fcycles,.FALSE.,unit)
     ! allocate memory
-    ALLOCATE(this%header%idata(HISIZE),this%header%rdata(HRSIZE),&
+    ALLOCATE(this%header%idata(HISIZE),this%header%rdata(HRSIZE), &
          ! for output buffer
-         this%binout(1:this%cols,Mesh%IMIN:Mesh%IMAX,Mesh%JMIN:Mesh%JMAX),&
+         this%binout(1:this%cols,Mesh%IMIN:Mesh%IMAX,Mesh%JMIN:Mesh%JMAX), &
+         this%bflux(Physics%VNUM,4), &
 #ifdef PARALLEL
          ! and displacements
-         this%disp(Mesh%IMIN:Mesh%IMAX),&
+         this%disp(Mesh%IMIN:Mesh%IMAX), &
 #endif
          STAT=this%error)
     IF (this%error.NE.0) THEN
@@ -150,11 +154,11 @@ CONTAINS
     INTEGER, OPTIONAL :: error
     !------------------------------------------------------------------------!
 #ifdef PARALLEL
-    INTEGER           :: k
+    INTEGER           :: j,k
     INTEGER(KIND=4)   :: size1,size2  ! force 4 byte integer
     INTEGER(KIND=MPI_OFFSET_KIND) :: offset
 #endif
-    INTEGER           :: i,j,n,err
+    INTEGER           :: i,n,err
     !------------------------------------------------------------------------!
     INTENT(IN)        :: count
     INTENT(INOUT)     :: this
@@ -247,7 +251,9 @@ CONTAINS
     TYPE(FileIO_TYP) :: this
     LOGICAL          :: success
     !------------------------------------------------------------------------!
+#ifdef PARALLEL
     INTEGER(KIND=4)  :: size1, size2    ! force 4 byte integer
+#endif
     INTEGER, DIMENSION(HISIZE) :: idata
     REAL, DIMENSION(HRSIZE)    :: rdata
     !------------------------------------------------------------------------!
@@ -379,12 +385,13 @@ CONTAINS
   END SUBROUTINE ReadTimestamp_binary
 
 
-  SUBROUTINE WriteDataset_binary(this,Mesh,Physics,Timedisc)
+  SUBROUTINE WriteDataset_binary(this,Mesh,Physics,Fluxes,Timedisc)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(FileIO_TYP)  :: this
     TYPE(Mesh_TYP)    :: Mesh
     TYPE(Physics_TYP) :: Physics
+    TYPE(Fluxes_TYP)  :: Fluxes
     TYPE(Timedisc_TYP):: Timedisc
     !------------------------------------------------------------------------!
     INTEGER          :: i,j,kx,ky
@@ -394,7 +401,7 @@ CONTAINS
     INTEGER          :: request
 #endif
     !------------------------------------------------------------------------!
-    INTENT(IN)       :: Mesh,Physics,Timedisc
+    INTENT(IN)       :: Mesh,Physics,Fluxes,Timedisc
     INTENT(INOUT)    :: this
     !------------------------------------------------------------------------!
     IF (Mesh%INUM.GT.1) THEN
@@ -407,6 +414,7 @@ CONTAINS
     ELSE
        ky=kx
     END IF
+    ! prepare data for output
     DO j=Mesh%JMIN,Mesh%JMAX
        DO i=Mesh%IMIN,Mesh%IMAX
           ! copy coordinates
@@ -423,7 +431,7 @@ CONTAINS
     CALL MPI_Barrier(MPI_COMM_WORLD,this%error)
     ! compute the number of bytes in real numbers we are going to
     ! write with _all_ processes in total 
-    size=(Mesh%INUM*Mesh%JNUM*this%cols) * this%realext
+    size = (Mesh%INUM*Mesh%JNUM*this%cols) * this%realext
     IF (GetRank(this).EQ.0) THEN
        ! write size information for compatiblity with standard Fortran I/O
        CALL MPI_File_write_at(this%handle,this%offset,size,1,MPI_INTEGER4,&
@@ -452,6 +460,43 @@ CONTAINS
 #else
     WRITE (this%unit) this%binout(:,:,:)
 #endif
+
+    ! get boundary fluxes across all 4 boundaries
+    DO i=1,4
+       ! in PARALLEL mode the result is sent to process with rank 0
+       this%bflux(:,i) = GetBoundaryFlux(Fluxes,Mesh,Physics,i)
+    END DO
+    ! write boundary fluxes
+#ifdef PARALLEL
+    ! compute size of boundary flux data array in bytes
+    i = 4 * Physics%VNUM          ! number of real numbers
+    size = i * this%realext       ! number of bytes
+    ! skip 4 bytes of the size information of the main data set
+    this%offset = this%offset + 4
+    ! write size information for compatiblity with standard Fortran I/O
+    IF (GetRank(this).EQ.0) THEN
+       CALL MPI_File_write(this%handle,size,1,MPI_INTEGER4, &
+            this%status,this%error)
+    END IF
+    this%offset = this%offset + 4
+    CALL MPI_File_set_view(this%handle,this%offset,DEFAULT_MPI_REAL,&
+         DEFAULT_MPI_REAL, 'native', MPI_INFO_NULL, this%error)
+    ! write boundary fluxes
+    IF (GetRank(this).EQ.0) THEN
+       CALL MPI_File_write(this%handle,this%bflux,i,DEFAULT_MPI_REAL, &
+            this%status,this%error)
+    END IF
+    this%offset = this%offset + size
+    CALL MPI_File_set_view(this%handle,this%offset,MPI_INTEGER4,&
+         MPI_INTEGER4, 'native', MPI_INFO_NULL, this%error)
+    ! write size information again at the end
+    IF (GetRank(this).EQ.0) THEN
+       CALL MPI_File_write(this%handle,size,1,MPI_INTEGER4, &
+            this%status,this%error)
+    END IF
+#else
+    WRITE (this%unit) this%bflux(:,:)    
+#endif
   END SUBROUTINE WriteDataset_binary
 
 
@@ -473,8 +518,11 @@ CONTAINS
     INTENT(IN)        :: Mesh,Physics
     INTENT(INOUT)     :: this,Timedisc
     !------------------------------------------------------------------------!
-    ! point on data record
-    CALL SeekBackwards(this,2,this%error)
+    ! point on data record (skip time stamp and boundary fluxes)
+    CALL SeekBackwards(this,3,this%error)
+    ! ***********************************************************************!
+    ! FIXME: read boundary fluxes not implemented yet
+    ! ***********************************************************************!    
     IF (this%error.EQ.0) THEN
 #ifdef PARALLEL
        ! compute the number of bytes in real numbers we are going to
@@ -520,7 +568,7 @@ CONTAINS
 #ifdef PARALLEL
          this%disp,&
 #endif
-         this%binout)
+         this%binout,this%bflux)
   END SUBROUTINE CloseFileIO_binary
 
 END MODULE fileio_binary

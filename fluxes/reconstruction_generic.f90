@@ -43,7 +43,7 @@ MODULE reconstruction_generic
        ! constants
        CONSTANT, LINEAR, &
        PRIMITIVE, CONSERVATIVE, &
-       MINMOD, MONOCENT, SWEBY, SUPERBEE, OSPRE, &
+       MINMOD, MONOCENT, SWEBY, SUPERBEE, OSPRE, PP, &
        ! methods
        InitReconstruction, &
        MallocReconstruction, &
@@ -89,7 +89,7 @@ CONTAINS
        CALL InitReconstruction_constant(this,order,variables)
     CASE(LINEAR)
        SELECT CASE(limiter)
-       CASE(MINMOD,MONOCENT,SWEBY,SUPERBEE,OSPRE)
+       CASE(MINMOD,MONOCENT,SWEBY,SUPERBEE,OSPRE,PP)
           CALL InitReconstruction_linear(this,order,variables,limiter_default,theta_default)
        CASE DEFAULT
           CALL Error(this, "InitReconstruction", "Unknown limiter")

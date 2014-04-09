@@ -67,7 +67,7 @@ MODULE fileio_common
   INTEGER, PARAMETER      :: MAXCYCLES = 10000 ! max. number of data files   !
   INTEGER, PARAMETER      :: FCYCLEN   = 4     ! num. of digits in file names!
   CHARACTER(LEN=32), SAVE :: cycfmt            ! format string for cycles    !
-   !--------------------------------------------------------------------------!
+  !--------------------------------------------------------------------------!
   ! data type for file header data
   TYPE Header_TYP
      INTEGER, DIMENSION(:), POINTER :: idata
@@ -82,6 +82,8 @@ MODULE fileio_common
      CHARACTER(LEN=FEXTLEN) :: extension           ! file name extension     !
      CHARACTER(LEN=64)      :: fmtstr              ! format string           !
      CHARACTER(LEN=64)      :: linefmt             ! output line format str. !
+     CHARACTER(LEN=12)      :: realfmt             ! real format str. for vtk!
+     CHARACTER(LEN=14)      :: endianness          ! endianness str. for vtk !
      INTEGER                :: cols                ! no. of output columns   !
      INTEGER                :: linelen             ! length of a line        !
      INTEGER                :: error               ! i/o error code          !
@@ -89,9 +91,12 @@ MODULE fileio_common
      INTEGER                :: count               ! number of output steps  !
      INTEGER                :: cycles              ! number of output files  !
      INTEGER                :: dtwall              ! wall clock time diff.   !
+     INTEGER                :: ioffset             ! VTK: appended data offset!
      REAL                   :: stoptime            ! end of data output      !
      REAL                   :: time                ! output time             !
+     REAL, DIMENSION(:,:,:), POINTER :: vtktemp    ! vtk temp. data          !
      REAL, DIMENSION(:,:,:), POINTER :: binout     ! binary data output buf. !
+     REAL, DIMENSION(:,:) , POINTER  :: bflux      ! bound. flux data output !               
 #ifdef HAVE_NETCDF
      INTEGER                :: ncid                ! file id                 !
      INTEGER                :: ncfmt               ! file format             !
@@ -108,9 +113,9 @@ MODULE fileio_common
      INTEGER(KIND=MPI_OFFSET_KIND) :: offset       ! skip header bytes       !
      INTEGER, DIMENSION(:), POINTER :: disp        ! array of displacements  !
      INTEGER, DIMENSION(MPI_STATUS_SIZE) :: status ! MPI i/o status record   !
-#else
-     INTEGER                :: unit                ! i/o unit                !
+     LOGICAL                :: sepfiles            ! one or multiple files in parallel mode!
 #endif
+     INTEGER                :: unit                ! i/o unit                !
   END TYPE FileIO_TYP
   !--------------------------------------------------------------------------!
   INTEGER, PARAMETER :: READONLY = 1               ! file access modes       !
@@ -122,7 +127,7 @@ MODULE fileio_common
   ! file formats
   CHARACTER(LEN=9), PARAMETER :: ASCII  = "formatted"
   CHARACTER(LEN=11), PARAMETER :: BIN    = "unformatted"
- !--------------------------------------------------------------------------!
+  !--------------------------------------------------------------------------!
   INTEGER, SAVE :: lastunit = 10
   !--------------------------------------------------------------------------!
   PUBLIC :: &
@@ -150,7 +155,7 @@ MODULE fileio_common
 
 CONTAINS
 
-  SUBROUTINE InitFileIO(this,fmt,fmt_name,fname,fext,fcycles)
+  SUBROUTINE InitFileIO(this,fmt,fmt_name,fname,fext,fcycles,sepfiles,unit)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(FileIO_TYP) :: this
@@ -159,8 +164,12 @@ CONTAINS
     CHARACTER(LEN=*) :: fname
     CHARACTER(LEN=*) :: fext
     INTEGER          :: fcycles
+    LOGICAL          :: sepfiles
+    INTEGER, OPTIONAL:: unit
     !------------------------------------------------------------------------!
-    INTENT(IN)       :: fmt,fmt_name,fname,fext,fcycles
+    CHARACTER(LEN=FCYCLEN+2)  :: rankstr  ! same length as fcycle 
+    !------------------------------------------------------------------------!
+    INTENT(IN)       :: fmt,fmt_name,fname,fext,fcycles,sepfiles,unit
     INTENT(INOUT)    :: this
     !------------------------------------------------------------------------!
     CALL InitCommon(this%format,fmt,fmt_name)
@@ -170,27 +179,45 @@ CONTAINS
     END IF
     ! check file name
     IF (fcycles.GT.0) THEN
-       IF (LEN_TRIM(fname).GT.(FNAMLEN-(FCYCLEN+1))) THEN
+       IF (LEN_TRIM(fname).GT.(FNAMLEN-(FCYCLEN+1))) &
           CALL Error(this,"InitFileIO","file name too long")
-       END IF
     ELSE IF (LEN_TRIM(fname).GT.FNAMLEN) THEN
-          CALL Error(this,"InitFileIO","file name too long")
+       CALL Error(this,"InitFileIO","file name too long")
     END IF
     ! check file name extension
     IF (LEN_TRIM(fext).GT.FEXTLEN) THEN
        CALL Error(this,"InitFileIO","file name extension too long")
     END IF
+    ! format string for writing file names with explicit time step
+    WRITE (cycfmt, "('(A,I',I1,'.',I1,',A)')") FCYCLEN,FCYCLEN
+
     this%filename = fname
+#ifdef PARALLEL
+    this%sepfiles = sepfiles
+    IF (this%sepfiles) THEN
+       ! check file name
+       IF (fcycles.GT.0) THEN
+          IF (LEN_TRIM(fname).GT.(FNAMLEN-(2*FCYCLEN+3))) &
+             CALL Error(this,"InitFileIO","file name too long")
+       ELSE IF (LEN_TRIM(fname).GT.FNAMLEN-(FCYCLEN+2)) THEN
+          CALL Error(this,"InitFileIO","file name too long")
+       END IF
+       ! sets rankstr
+       WRITE (rankstr, FMT=TRIM(cycfmt))"-r",GetRank(this)
+       this%filename = fname//rankstr
+    END IF
+#endif
     this%extension= fext
     this%cycles   = fcycles
     this%error    = 0
-    ! format string for writing file names with explicit time step
-    WRITE (cycfmt, "('(A,I',I1,'.',I1,',A)')") FCYCLEN,FCYCLEN
-#ifndef PARALLEL
-    ! this ensures that no unit number is assigned twice
-    this%unit = lastunit + 1
-    lastunit  = this%unit
-#endif
+
+    IF (PRESENT(unit)) THEN
+       this%unit = unit
+    ELSE
+       ! this ensures that no unit number is assigned twice
+       this%unit = lastunit + 1
+       lastunit  = this%unit
+    END IF
   END SUBROUTINE InitFileIO
 
 
@@ -205,10 +232,10 @@ CONTAINS
     IF (this%cycles.GT.0) THEN
        ! generate a file name with time step
        WRITE (cycstr, FMT=TRIM(cycfmt)) "_", MODULO(this%step,this%cycles), "."
-       WRITE (fname,"(A,A,A)") TRIM(this%filename), TRIM(cycstr), TRIM(this%extension)
+       WRITE (fname,"(A,A,A)") TRIM(this%filename),TRIM(cycstr), TRIM(this%extension)
     ELSE
        ! file name + extension
-       WRITE (fname,"(A)") TRIM(this%filename) // "." // TRIM(this%extension)
+       WRITE (fname,"(A)") TRIM(this%filename)// "." // TRIM(this%extension)
     END IF
   END FUNCTION GetFilename
 

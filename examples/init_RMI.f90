@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: init_RMI.f90                                                      #
 !#                                                                           #
-!# Copyright (C) 2006-2008                                                   #
+!# Copyright (C) 2006-2010                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -25,6 +25,12 @@
 
 !----------------------------------------------------------------------------!
 ! Program and data initialization for Richtmyer-Meshkov instability
+! [1] Richtmyer, R. D.: Taylor instability in a shock acceleration of
+!     compressible fluids, Comm. Pure. Appl. Math. 13 (1960), 297-319;
+!     DOI: 10.1002/cpa.3160130207
+!  [2] E. E. Meshkov (Евгений Евграфович Мешков)
+!      "Instability of the Interface of Two Gases Accelerated by a Shock Wave"
+!      Soviet Fluid Dynamics 4 ,101-104 (1969)
 !----------------------------------------------------------------------------!
 MODULE Init
   USE physics_generic
@@ -37,6 +43,19 @@ MODULE Init
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   PRIVATE
+  ! simulation parameters
+  REAL, PARAMETER    :: TSIM  = 200.0      ! simulation time
+  REAL, PARAMETER    :: GAMMA = 1.4        ! ratio of specific heats
+  ! mesh settings
+  INTEGER, PARAMETER :: MGEO = CARTESIAN   ! geometry of the mesh
+  INTEGER, PARAMETER :: XRES = 300         ! resolution
+  INTEGER, PARAMETER :: YRES = 200
+  ! output file parameter
+  INTEGER, PARAMETER :: ONUM = 100         ! number of output data sets
+  CHARACTER(LEN=256), PARAMETER &          ! output data dir
+                     :: ODIR = './'
+  CHARACTER(LEN=256), PARAMETER &          ! output data file name
+                     :: OFNAME = 'RMI' 
   !--------------------------------------------------------------------------!
   PUBLIC :: &
        ! methods
@@ -64,25 +83,25 @@ CONTAINS
     ! physics settings
     CALL InitPhysics(Physics, &
          problem = EULER2D, &
-         gamma   = 1.4, &           ! ratio of specific heats        !
-         dpmax   = 1.0)             ! for advanced time step control !
+         gamma   = GAMMA, &                 ! ratio of specific heats        !
+         dpmax   = 1.0)                     ! for advanced time step control !
 
     ! numerical scheme for flux calculation
     CALL InitFluxes(Fluxes, &
-         scheme = MIDPOINT)         ! quadrature rule                !
+         scheme = MIDPOINT)                 ! quadrature rule                !
 
     ! reconstruction method
     CALL InitReconstruction(Fluxes%reconstruction, &
          order     = LINEAR, &
-         variables = CONSERVATIVE, &! vars. to use for reconstruction!
-         limiter   = MONOCENT, &    ! one of: minmod, monocent,...   !
-         theta     = 1.2)           ! optional parameter for limiter !
+         variables = CONSERVATIVE, &        ! vars. to use for reconstruction!
+         limiter   = MONOCENT, &            ! one of: minmod, monocent,...   !
+         theta     = 1.2)                   ! optional parameter for limiter !
 
     ! mesh settings
     CALL InitMesh(Mesh,Fluxes, &
          geometry = CARTESIAN, &
-             inum = 300, &          ! resolution in x and            !
-             jnum = 200, &          !   y direction                  !             
+             inum = XRES, &                 ! resolution in x and            !
+             jnum = YRES, &                 !   y direction                  !             
              xmin = 0.0, &
              xmax = 60.0, &
              ymin = 0.0, &
@@ -100,7 +119,7 @@ CONTAINS
          method   = MODIFIED_EULER, &
          order    = 3, &
          cfl      = 0.4, &
-         stoptime = 200.0, &
+         stoptime = TSIM, &
          dtlimit  = 1.0E-4, &
          maxiter  = 1000000)
 
@@ -110,23 +129,16 @@ CONTAINS
     ! initialize log input/output
     CALL InitFileIO(Logfile,Mesh,Physics,Timedisc,&
          fileformat = BINARY, &
-#ifdef PARALLEL
-         filename   = "/tmp/RMIlog", &
-#else
-         filename   = "RMIlog", &
-#endif
+         filename   = TRIM(ODIR) // TRIM(OFNAME) // 'log', &
          filecycles = 1)
 
     ! initialize data input/output
     CALL InitFileIO(Datafile,Mesh,Physics,Timedisc, &
-         fileformat = BINARY, &
-#ifdef PARALLEL
-         filename   = "/tmp/RMI", &
-#else
-         filename   = "RMI", &
-#endif
-         stoptime   = Timedisc%stoptime, &
-         count      = 20)
+         fileformat = VTK, &
+!!$         fileformat = GNUPLOT, &
+!!$         filecycles = 0, &
+         filename   = TRIM(ODIR) // TRIM(OFNAME), &
+         count      = ONUM)
 
   END SUBROUTINE InitProgram
 

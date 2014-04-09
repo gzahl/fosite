@@ -62,14 +62,25 @@ MODULE boundary_common
   TYPE Boundary_TYP
      TYPE(Common_TYP)  :: condition         ! outflow, reflect, periodic, .. !
      TYPE(Common_TYP)  :: direction         ! west, east, south, north       !
+     LOGICAL           :: first_call        ! used in far-field bc           ! 
      INTEGER           :: IMID, JMID        ! indices of cells in the middle !
      INTEGER           :: nohdim            ! dimension of Noh problem       !
-     REAL, DIMENSION(:,:,:), POINTER &
-                       :: data              ! boundary data for fixed/reflec. bc     !
+     INTEGER, DIMENSION(:,:), POINTER &
+                       :: cbtype            ! custom boundary condition type !
+     REAL, DIMENSION(:,:,:), POINTER &      ! boundary data for fixed and    !
+                       :: data              !   reflecting boundary cond.    !
      REAL, DIMENSION(:,:), POINTER &        ! inverse distance to center     !
                        :: invr              !   used for Noh boundary        !
-     LOGICAL, DIMENSION(:), POINTER  &      ! masks for reflecting or fixed  !
-                       :: reflX,reflY,fixed !   boundaries                   !
+     REAL, DIMENSION(:,:,:), POINTER &      ! Riemann invariants for far-    !
+                       :: Rinv              !   field boundary conditions    !
+     REAL, DIMENSION(:,:), POINTER &        ! temporary Riemann invariants   !
+                       :: Rtmp              !   for far-field bound. cond.   !
+     REAL, DIMENSION(:), POINTER &          ! storage for far-field boundary !
+                       :: cs,cs2gam,vn,s    !   conditions                   !
+     LOGICAL, DIMENSION(:), POINTER  &
+                       :: reflX,reflY       ! mask arrays for reflecting and !
+     LOGICAL, DIMENSION(:,:), POINTER &     !   fixed boundaries             !
+                       :: fixed
 #ifdef PARALLEL
      REAL, DIMENSION(:,:,:), POINTER &      ! send and receive buffer for    !
           :: sendbuf,recvbuf                ! boundary data                  !

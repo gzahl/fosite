@@ -134,7 +134,7 @@ CONTAINS
     END IF
     ! main loop
     DO i=1,MAXIT
-       ! regular falsi
+       ! regula falsi
        dx = fl*(xl-xr)/(fl-fr)
        xm = xl - dx
        root = xm

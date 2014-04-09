@@ -30,9 +30,12 @@
 !----------------------------------------------------------------------------!
 MODULE boundary_noh
   USE mesh_common, ONLY : Mesh_TYP
+  USE fluxes_common, ONLY : Fluxes_TYP
+  USE reconstruction_common, ONLY : Reconstruction_TYP, PrimRecon
   USE physics_common, ONLY : Physics_TYP
   USE boundary_nogradients
   USE boundary_fixed
+  USE physics_generic
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   PRIVATE
@@ -65,10 +68,10 @@ CONTAINS
     ! allocate memory for inverse distances of boundary cells to the origin
     SELECT CASE(GetDirection(this))
     CASE(WEST,EAST)
-       ALLOCATE(this%invr(2,Mesh%JGMIN:Mesh%JGMAX), &
+       ALLOCATE(this%invr(Mesh%GNUM,Mesh%JMIN:Mesh%JMAX), &
             STAT=err)
     CASE(SOUTH,NORTH)
-       ALLOCATE(this%invr(Mesh%IGMIN:Mesh%IGMAX,2), &
+       ALLOCATE(this%invr(Mesh%IMIN:Mesh%IMAX,Mesh%GNUM), &
             STAT=err)
     END SELECT
     IF (err.NE.0) THEN
@@ -77,17 +80,21 @@ CONTAINS
     ! compute the inverse distances using cartesian coordinates
     SELECT CASE(GetDirection(this))
     CASE(WEST)
-       this%invr(:,:) = 1./SQRT(Mesh%bccart(Mesh%IMIN-2:Mesh%IMIN-1,:,1)**2 &
-            + Mesh%bccart(Mesh%IMIN-2:Mesh%IMIN-1,:,2)**2)
+       this%invr(:,Mesh%JMIN:Mesh%JMAX) =&
+            1./SQRT(Mesh%bccart(Mesh%IGMIN:Mesh%IMIN-1,Mesh%JMIN:Mesh%JMAX,1)**2 &
+            + Mesh%bccart(Mesh%IGMIN:Mesh%IMIN-1,Mesh%JMIN:Mesh%JMAX,2)**2)
     CASE(EAST)
-       this%invr(:,:) = 1./SQRT(Mesh%bccart(Mesh%IMAX+1:Mesh%IMAX+2,:,1)**2 &
-            + Mesh%bccart(Mesh%IMAX+1:Mesh%IMAX+2,:,2)**2)
+       this%invr(:,Mesh%JMIN:Mesh%JMAX) =&
+            1./SQRT(Mesh%bccart(Mesh%IMAX+1:Mesh%IGMAX,Mesh%JMIN:Mesh%JMAX,1)**2 &
+            + Mesh%bccart(Mesh%IMAX+1:Mesh%IGMAX,Mesh%JMIN:Mesh%JMAX,2)**2)
     CASE(SOUTH)
-       this%invr(:,:) = 1./SQRT(Mesh%bccart(:,Mesh%JMIN-2:Mesh%JMIN-1,1)**2 &
-            + Mesh%bccart(:,Mesh%JMIN-2:Mesh%JMIN-1,2)**2)
+       this%invr(Mesh%IMIN:Mesh%IMAX,:) =&
+            1./SQRT(Mesh%bccart(Mesh%IMIN:Mesh%IMAX,Mesh%JGMIN:Mesh%JMIN-1,1)**2 &
+            + Mesh%bccart(Mesh%IMIN:Mesh%IMAX,Mesh%JGMIN:Mesh%JMIN-1,2)**2)
     CASE(NORTH)
-       this%invr(:,:) = 1./SQRT(Mesh%bccart(:,Mesh%JMAX+1:Mesh%JMAX+2,1)**2 &
-            + Mesh%bccart(:,Mesh%JMAX+1:Mesh%JMAX+2,2)**2)
+       this%invr(Mesh%IMIN:Mesh%IMAX,:) =&
+            1./SQRT(Mesh%bccart(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX+1:Mesh%JGMAX,1)**2 &
+            + Mesh%bccart(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX+1:Mesh%JGMAX,2)**2)
     END SELECT
     ! dimensional constant of the Noh problem;
     ! for 1D, 2 for 2D, 3 for 3D
@@ -99,65 +106,86 @@ CONTAINS
    END SUBROUTINE InitBoundary_noh
 
 
-  PURE SUBROUTINE CenterBoundary_noh(this,Mesh,Physics,time,rvar)
+  PURE SUBROUTINE CenterBoundary_noh(this,Mesh,Physics,Fluxes,time,pvar)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Boundary_TYP) :: this
     TYPE(Mesh_TYP)     :: Mesh
     TYPE(Physics_TYP)  :: Physics
+    TYPE(Fluxes_TYP)   :: Fluxes
     REAL               :: time
-    REAL :: rvar(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%VNUM)
+    REAL :: pvar(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%VNUM)
+     !------------------------------------------------------------------------!
+    INTEGER       :: i,j
     !------------------------------------------------------------------------!
-    INTEGER       :: i,j,k
-    !------------------------------------------------------------------------!
-    INTENT(IN)    :: this,Mesh,Physics,time
-    INTENT(INOUT) :: rvar   
+    INTENT(IN)    :: this,Mesh,Physics,Fluxes,time
+    INTENT(INOUT) :: pvar 
     !------------------------------------------------------------------------!
     SELECT CASE(GetDirection(this))
     CASE(WEST)
-       FORALL (i=1:2,j=Mesh%JGMIN:Mesh%JGMAX)
+       ! UNROLL=Mesh%GNUM would be sufficient, but the compiler does
+       ! not know the value of Mesh%GNUM, hence we set UNROLL=4 and
+       ! hope that nobody sets Mesh%GNUM to a value greater than 4
+!CDIR UNROLL=4
+       DO i=1,Mesh%GNUM
           ! the field normally reserved for the density in the
           ! auxiliary data array contains the inverse of the distance to the
           ! origin; we use this to set the time dependend density
-          rvar(Mesh%IMIN-i,j,Physics%DENSITY)  = this%data(3-i,j,Physics%DENSITY) &
-               * (1.0 + time*this%invr(3-i,j))**(this%nohdim-1)
+          pvar(Mesh%IGMIN+i-1,Mesh%JMIN:Mesh%JMAX,Physics%DENSITY) &
+               = this%data(i,Mesh%JMIN:Mesh%JMAX,Physics%DENSITY) &
+               * (1.0 + time*this%invr(i,Mesh%JMIN:Mesh%JMAX))**(this%nohdim-1)
           ! set fixed boundary data for velocities and pressure
-          rvar(Mesh%IMIN-i,j,Physics%XVELOCITY:Physics%VNUM) &
-               = this%data(3-i,j,Physics%XVELOCITY:Physics%VNUM)
-       END FORALL
+          pvar(Mesh%IGMIN+i-1,Mesh%JMIN:Mesh%JMAX,Physics%XVELOCITY:Physics%VNUM) &
+               = this%data(i,Mesh%JMIN:Mesh%JMAX,Physics%XVELOCITY:Physics%VNUM)
+       END DO
     CASE(EAST)
-       FORALL (i=1:2,j=Mesh%JGMIN:Mesh%JGMAX)
+       ! UNROLL=Mesh%GNUM would be sufficient, but the compiler does
+       ! not know the value of Mesh%GNUM, hence we set UNROLL=4 and
+       ! hope that nobody sets Mesh%GNUM to a value greater than 4
+!CDIR UNROLL=4
+       DO i=1,Mesh%GNUM
           ! the field normally reserved for the density in the
           ! auxiliary data array contains the inverse of the distance to the
           ! origin; we use this to set the time dependend density
-          rvar(Mesh%IMAX+i,j,Physics%DENSITY) = this%data(i,j,Physics%DENSITY) &
-               * (1.0 + time*this%invr(i,j))**(this%nohdim-1)
+          pvar(Mesh%IMAX+i,Mesh%JMIN:Mesh%JMAX,Physics%DENSITY) &
+               = this%data(i,Mesh%JMIN:Mesh%JMAX,Physics%DENSITY) &
+               * (1.0 + time*this%invr(i,Mesh%JMIN:Mesh%JMAX))**(this%nohdim-1)
           ! set fixed boundary data for velocities and pressure
-          rvar(Mesh%IMAX+i,j,Physics%XVELOCITY:Physics%VNUM) &
-               = this%data(i,j,Physics%XVELOCITY:Physics%VNUM)
-       END FORALL
+          pvar(Mesh%IMAX+i,Mesh%JMIN:Mesh%JMAX,Physics%XVELOCITY:Physics%VNUM) &
+               = this%data(i,Mesh%JMIN:Mesh%JMAX,Physics%XVELOCITY:Physics%VNUM)
+       END DO
     CASE(SOUTH)
-       FORALL (i=Mesh%IGMIN:Mesh%IGMAX,j=1:2)
+       ! UNROLL=Mesh%GNUM would be sufficient, but the compiler does
+       ! not know the value of Mesh%GNUM, hence we set UNROLL=4 and
+       ! hope that nobody sets Mesh%GNUM to a value greater than 4
+!CDIR UNROLL=4
+       DO j=1,Mesh%GNUM
           ! the field normally reserved for the density in the
           ! auxiliary data array contains the inverse of the distance to the
           ! origin; we use this to set the time dependend density
-          rvar(i,Mesh%JMIN-j,Physics%DENSITY) = this%data(i,3-j,Physics%DENSITY) &
-               * (1.0 + time*this%invr(i,3-j))**(this%nohdim-1)
+          pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JGMIN+j-1,Physics%DENSITY) &
+               = this%data(Mesh%IMIN:Mesh%IMAX,j,Physics%DENSITY) &
+               * (1.0 + time*this%invr(Mesh%IMIN:Mesh%IMAX,j))**(this%nohdim-1)
           ! set fixed boundary data for velocities and pressure
-          rvar(i,Mesh%JMIN-j,Physics%XVELOCITY:Physics%VNUM) &
-               = this%data(i,3-j,Physics%XVELOCITY:Physics%VNUM)
-       END FORALL
+          pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JGMIN+j-1,Physics%XVELOCITY:Physics%VNUM) &
+               = this%data(Mesh%IMIN:Mesh%IMAX,j,Physics%XVELOCITY:Physics%VNUM)
+       END DO
     CASE(NORTH)
-       FORALL (i=Mesh%IGMIN:Mesh%IGMAX,j=1:2)
+       ! UNROLL=Mesh%GNUM would be sufficient, but the compiler does
+       ! not know the value of Mesh%GNUM, hence we set UNROLL=4 and
+       ! hope that nobody sets Mesh%GNUM to a value greater than 4
+!CDIR UNROLL=4
+       DO j=1,Mesh%GNUM
           ! the field normally reserved for the density in the
           ! auxiliary data array contains the inverse of the distance to the
           ! origin; we use this to set the time dependend density
-          rvar(i,Mesh%JMAX+j,Physics%DENSITY) = this%data(i,j,Physics%DENSITY) &
-               * (1.0 + time*this%invr(i,j))**(this%nohdim-1)
+          pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX+j,Physics%DENSITY) &
+               = this%data(Mesh%IMIN:Mesh%IMAX,j,Physics%DENSITY) &
+               * (1.0 + time*this%invr(Mesh%IMIN:Mesh%IMAX,j))**(this%nohdim-1)
           ! set fixed boundary data for velocities and pressure
-          rvar(i,Mesh%JMAX+j,Physics%XVELOCITY:Physics%VNUM) &
-               = this%data(i,j,Physics%XVELOCITY:Physics%VNUM)
-       END FORALL
+          pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX+j,Physics%XVELOCITY:Physics%VNUM) &
+               = this%data(Mesh%IMIN:Mesh%IMAX,j,Physics%XVELOCITY:Physics%VNUM)
+       END DO
     END SELECT
   END SUBROUTINE CenterBoundary_noh
 

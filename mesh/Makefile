@@ -22,12 +22,18 @@ distclean :
 geometry_cartesian.o : ../common/geometry_common.o
 geometry_cylindrical.o : geometry_cartesian.o
 geometry_polar.o : geometry_cartesian.o
-geometry_logpolar.o : geometry_oblatespheroidal.o
+geometry_logpolar.o : geometry_cartesian.o
+geometry_tanpolar.o : geometry_cartesian.o
+geometry_sinhpolar.o : geometry_cartesian.o
 geometry_spherical.o : geometry_cartesian.o
 geometry_oblatespheroidal.o : geometry_cartesian.o
+geometry_sinhspherical.o : geometry_spherical.o
+geometry_tancylindrical.o : geometry_cartesian.o
 geometry_generic.o : geometry_cartesian.o geometry_cylindrical.o \
 	geometry_polar.o geometry_logpolar.o geometry_spherical.o \
-	geometry_oblatespheroidal.o
+	geometry_oblatespheroidal.o geometry_tancylindrical.o  \
+        geometry_tanpolar.o geometry_sinhpolar.o \
+        geometry_sinhspherical.o
 mesh_midpoint.o : ../common/mesh_common.o geometry_generic.o
 mesh_trapezoidal.o : mesh_midpoint.o geometry_generic.o
 mesh_generic.o : mesh_midpoint.o mesh_trapezoidal.o

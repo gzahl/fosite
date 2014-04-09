@@ -1,5 +1,5 @@
 # fortran 90/95 compiler
-FC=mpif90
+FC=gfortran
 
 # some files
 TARGET=fosite
@@ -23,16 +23,16 @@ AFLAGS=rcv
 PREP=
 
 # compiler dependent variables
-FCFLAGS_ALL= -x f95-cpp-input -fdefault-real-8 -finline-functions  $(INCDIRS)
+FCFLAGS_ALL= -x f95-cpp-input -fdefault-real-8  -DFORTRAN_STREAMS $(INCDIRS)
 FCFLAGS_OPT= -O3 -finline-functions
-FCFLAGS_DBG= -g -O2
-FCFLAGS_PROF=
+FCFLAGS_DBG= -g -O2 -eC
+FCFLAGS_PROF=-pg
 FCFLAGS_MPI= -DPARALLEL
 LDFLAGS_ALL= 
 LDFLAGS_OPT=
-LDFLAGS_DBG= -g
-LDFLAGS_PROF=
-LDFLAGS_MPI=  
+LDFLAGS_DBG= -g -eC
+LDFLAGS_PROF=-pg
+LDFLAGS_MPI= 
 
 # default compiler flags for target "all"
 FCFLAGS=$(FCFLAGS_ALL) $(FCFLAGS_OPT)
@@ -47,7 +47,7 @@ prof : FCFLAGS=$(FCFLAGS_ALL) $(FCFLAGS_OPT) $(FCFLAGS_PROF)
 prof : LDFLAGS=$(LDFLAGS_ALL) $(LDFLAGS_OPT) $(LDFLAGS_PROF)
 parprof : FCFLAGS=$(FCFLAGS_ALL) $(FCFLAGS_OPT) $(FCFLAGS_MPI)
 parprof : LDFLAGS=$(LDFLAGS_ALL) $(LDFLAGS_OPT) $(LDFLAGS_MPI)
-parprof : PREP=scalasca -instrument
+parprof : PREP=
 
 export FC FCFLAGS LDFLAGS AR AFLAGS PREP
 # variable definitions end here
@@ -74,9 +74,9 @@ physics : common
 boundary : common physics
 fluxes : common physics
 mesh : common fluxes
-sources : common physics fluxes mesh
+sources : common physics boundary fluxes mesh
 timedisc : common physics boundary fluxes mesh sources
-io: common physics
+io: common physics fluxes mesh
 
 init.o : subdirs
 main.o : subdirs init.o
@@ -93,6 +93,7 @@ distclean :
 	done
 	rm -f $(OBJECTS) $(TARGET) *.mod *.bak *.dat *.bin *.nc *.log *~
 	rm -rf epik*
+	rm -rf autom4te.cache
 
 .SUFFIXES:
 

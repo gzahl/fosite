@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: mesh_common.f90                                                   #
 !#                                                                           #
-!# Copyright (C) 2006-2008                                                   #
+!# Copyright (C) 2006-2009                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -37,6 +37,13 @@ MODULE mesh_common
   !--------------------------------------------------------------------------!
   PRIVATE
   INTEGER, PARAMETER :: NDIMS = 2
+  ! vector length of specific (vector) CPUs
+  INTEGER, PARAMETER :: VECLEN = &
+#ifdef NECSX8
+  256
+#else
+  1
+#endif
   !--------------------------------------------------------------------------!
   INTERFACE GetRank
      MODULE PROCEDURE GetMeshRank, GetRank_common
@@ -83,6 +90,7 @@ MODULE mesh_common
      REAL, POINTER              :: bccart(:,:,:)   ! cartesian bary centers  !
      REAL, POINTER              :: fpos(:,:,:,:)   ! face centered positions !
      REAL, POINTER              :: cpos(:,:,:,:)   ! corner positions        !
+     REAL, POINTER              :: cpcart(:,:,:,:) ! cartesian corner pos.   !
      REAL, POINTER              :: fhx(:,:,:)      ! face centered scale     !
      REAL, POINTER              :: fhy(:,:,:)      !  factors                !
      REAL, POINTER              :: fhz(:,:,:)      !                         !
@@ -195,6 +203,8 @@ CONTAINS
          this%bcenter(this%IGMIN:this%IGMAX,this%JGMIN:this%JGMAX,2), &
          this%bccart(this%IGMIN:this%IGMAX,this%JGMIN:this%JGMAX,2), &
          this%fpos(this%IGMIN:this%IGMAX,this%JGMIN:this%JGMAX,4,2), &
+         this%cpos(this%IGMIN:this%IGMAX,this%JGMIN:this%JGMAX,4,2), &
+         this%cpcart(this%IGMIN:this%IGMAX,this%JGMIN:this%JGMAX,4,2), &
          this%bhx(this%IGMIN:this%IGMAX,this%JGMIN:this%JGMAX), &
          this%bhy(this%IGMIN:this%IGMAX,this%JGMIN:this%JGMAX), &
          this%bhz(this%IGMIN:this%IGMAX,this%JGMIN:this%JGMAX), &
@@ -228,6 +238,19 @@ CONTAINS
        this%fpos(i,j,4,1) = this%center(i,j,1)                ! northern x coord
        this%fpos(i,j,4,2) = this%center(i,j,2) + 0.5*this%dy  ! northern y coord
     END FORALL
+
+   ! corner positions
+   FORALL (i=this%IGMIN:this%IGMAX,j=this%JGMIN:this%JGMAX)
+       this%cpos(i,j,1,1) = this%fpos(i,j,1,1)      ! south-west
+       this%cpos(i,j,1,2) = this%fpos(i,j,3,2)
+       this%cpos(i,j,2,1) = this%fpos(i,j,2,1)      ! south-east
+       this%cpos(i,j,2,2) = this%fpos(i,j,3,2)
+       this%cpos(i,j,3,1) = this%fpos(i,j,1,1)      ! north-west
+       this%cpos(i,j,3,2) = this%fpos(i,j,4,2)
+       this%cpos(i,j,4,1) = this%fpos(i,j,2,1)      ! north-east
+       this%cpos(i,j,4,2) = this%fpos(i,j,4,2)
+   END FORALL
+
   END SUBROUTINE InitMesh
 
 
@@ -252,7 +275,9 @@ CONTAINS
     ! 1. balance number of processes per direction
     this%dims(1)=GetNumProcs(this)
     this%dims(2)=1
-    CALL CalculateDecomposition(this%INUM,this%JNUM,this%dims(1),this%dims(2))
+    ! account for vector length of vector CPUs in the fast (first) dimension
+    CALL CalculateDecomposition((this%INUM+2*this%GNUM-1)/VECLEN+1,this%JNUM,&
+         this%dims(1),this%dims(2))
     IF (this%dims(2).LE.0) THEN
        CALL Error(this,"InitMesh_parallel","Domain decomposition algorithm failed.")
     END IF
@@ -399,7 +424,7 @@ CONTAINS
       INTEGER :: bl
       !------------------------------------------------------------------------!
       INTEGER :: n1,n2,p1,p2,boundlen
-      INTEGER :: primfac,bl1,bl2
+      INTEGER :: primfac,bl1
       !------------------------------------------------------------------------!
       boundlen(n1,n2,p1,p2) = n1*(p2-1) + n2*(p1-1)
       !------------------------------------------------------------------------!
@@ -486,7 +511,15 @@ CONTAINS
     !------------------------------------------------------------------------!
     TYPE(Mesh_TYP)    :: this
     !------------------------------------------------------------------------!
-    DEALLOCATE(this%center,this%bcenter,this%bccart,this%fpos, &
+#ifdef PARALLEL
+    INTEGER :: i,ierror
+    !------------------------------------------------------------------------!
+    DO i=1,4
+       IF (this%comm_boundaries(i).NE.MPI_COMM_NULL) &
+          CALL MPI_Comm_free(this%comm_boundaries(i),ierror)
+    END DO
+#endif
+    DEALLOCATE(this%center,this%bcenter,this%bccart,this%fpos,this%cpos,this%cpcart, &
          this%bhx,this%bhy,this%bhz, &
          this%fhx,this%fhy,this%fhz, &
          this%volume,this%dxdV,this%dydV,this%dlx,this%dly)

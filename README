@@ -27,12 +27,16 @@ problems with and without viscosity. So far the physics module can deal with
 2D problems and 2.5D problems with angular momentum transport. The ideal gas 
 equation of state with constant ratio of specific heat capacities is
 implemented for both 2D and 2.5D simulations. Various curvilinear grids are
-supported including polar, cylindrical and spherical geometries. The data file
-for the output can either be simple in columns with a block structure or in
-binary. GNUPLOT is capable of reading both formats (for binary input you need
-at least version 4.2). OpenDX output has been removed and HDF5 is not yet
-implemented.
-
+supported including polar, cylindrical and spherical geometries. There are
+two simple file formats for output data files. It could be either plain ASCII
+with the results for each variable given in columns with a block structure or
+simple binary data (see section 6. of this README). GNUPLOT is capable of reading
+both formats (for binary input you need at least version 4.2). Native OpenDX output
+has been removed in favor of netcdf, because OpenDX is capable of reading data files
+written with the netcdf output module of fosite. Since version 0.3 of fosite
+the VTK file format is supported (see http://www.vtk.org). Parallel output is using
+MPI-IO is possible with all file formats. We strongly recommend to use one of
+the binary formats for best performance and avoid data output to NFS file systems.
 
 2. MAKE & COMPILING
 
@@ -103,19 +107,31 @@ To compile the parallel version of Fosite type
 
    make parallel
 
-Sometimes gfortran buffers output to screen in parallel mode. To prevent it type
-   export GFORTRAN_UNBUFFERED_ALL=Y
-before compile fosite.
+Sometimes it's usefull to prevent gfortran from buffering all output to
+the terminal. Otherwise you will probably get the programs informative
+output normally written to standard output (i.e. the terminal) after the
+last MPI process has finished its job. To force fosite to write all
+runtime information directly to standard output type
+   export GFORTRAN_UNBUFFERED_PRECONNECTED=Y
+(bash) or
+   setenv GFORTRAN_UNBUFFERED_PRECONNECTED Y
+(csh) before compiling. Remember, this is only necessary if you are
+using the GNU fortran compiler gfortran.
+
 The parallel code of Fosite has been verified to compile with the mpich2
-(version 1.0.6) implementation of MPI others may work too.
+implementation (version 1.0.6 & 1.0.8) of MPI others may work too.
 
 4. SIMPLE CUSTOMIZATION
 
 Maybe the best way to learn how to customize the code is to take a look
-at the example setups in the examples subdirectory. To use one of them
+at the init files in the examples subdirectory. To use one of them
 copy it into the base directory
 
   cp examples/init_gauss3d.f90 ./init.f90
+
+or generate a symbolic link
+
+  ln -sf examples/init_gauss3d.f90 ./init.f90
 
 rebuild the program and run it. The initialization module contains
 at least 2 subroutines which can be modified by the user.
@@ -123,8 +139,8 @@ at least 2 subroutines which can be modified by the user.
    InitProgram: set control variables
    InitData: set initial conditions
 
-For a short description of some control variables take a look at the file
-types.f90 (deprecated) and files in the "common" subdirectory.
+For a short description of some control variables take a look at the
+example files.
 
 
 5. ADVANCED CUSTOMIZATION
@@ -138,6 +154,7 @@ these subdirectories to add new features:
   fluxes:   flux functions and reconstruction processes
   physics:  change physical fluxes (i.e eigenvalues of the advection problem)
   sources:  add new/modify existing source terms
+  io:       add support for new input/output data file formats
 
 According to the OO-design patterns there is a generic module (e.g.
 geometry_generic) for almost any task. These modules can be considered
@@ -150,7 +167,7 @@ To add a new feature follow these four steps:
    a template.
 2. Edit the generic module and add a USE instruction with your new module
    to the header.Then define a new flag as an integer constant
-   (e.g. INTEGER, PARAMETER :: MYGEO = 10) and customize the
+   (e.g. INTEGER, PARAMETER :: MYGEO = 100) and customize the
    generic subroutines and functions. There are SELECT .. CASE
    branch instructions in which the specific routines are called.
 3. Modify your initilization file init.f90 to use the new
@@ -161,45 +178,61 @@ To add a new feature follow these four steps:
    before the generic module. Rebuild the whole program by doing
    a "make distclean" first and then enter "make".
 
-The code is distributed under the GNU General Public License - see the
-accompanying LICENSE file for more details. So feel free to experiment
-with this.
 
-6. Output Format - binary
+6. DATA OUTPUT AND FILE FORMATS
 
- Specification: header - data - timestamp - data - timestamp - ....
+6.1 Simple binary output
+
+ Specification: header - data - bflux - timestamp - data - bflus - timestamp - ....
   header   : (4 + 10 * sizeof(INTEGER) + 10 * sizeof(REAL) + 4) bytes
-  data     : (4 + sizeof(REAL) * INUM * JNUM * VNUM + 4) bytes
+  data     : (4 + sizeof(REAL) * INUM * JNUM * (2+VNUM) + 4) bytes
+  bflux    : (4 + sizeof(REAL) * 4 * VNUM + 4) bytes
   timestamp: (4 + sizeof(REAL) + 4) bytes
   the leading and trailing 4 bytes are caused by the Fortran output
 
  Example: 
-  Physics: Euler3D -> VNUM=7; Mesh: 200x350;
+  Physics: Euler3D -> VNUM=5; Mesh: 200x350;
   compiled with AUTODOUBLE -> sizeof(REAL)=8, sizeof(INTEGER)=4
    -> header   : 4+40+80+4 = 128 bytes
    -> data     : 4+8*200*350*7+4=3920008 bytes
                  first data set starts at 128+4 = 132 bytes
+   -> bflux    : 4+8*4*5+4 = 168 bytes
    -> timestamp: 4+8+4 = 16 bytes
 
-6.1 How to plot binary data with Gnuplot
+6.2 How to plot binary data with Gnuplot
 
  to plot Z over X and Y
  
     (s)plot "FILENAME" binary \
-       skip=sizeof(HEADER+4)+timestep*sizeof(DATA+TIMESTAMP) \
+       skip=sizeof(HEADER+4)+timestep*sizeof(DATA+BFLUX+TIMESTAMP) \
        record=INUMxJNUM format="FORMATSTRING" using X:Y(:Z)
 
- FORMATSTRING is %f*VNUM or %lf*VNUM
+ FORMATSTRING is %f*(2+VNUM) or %lf*(2+VNUM)
 
  Example:
   to plot 23. timestep of example above
   
      iter = 23
-     splot "tci-ta3800-nl.bin" binary skip=132 + iter * (3920008+16) \
+     splot "tci-ta3800-nl.bin" binary skip=132 + iter * (3920008+168+16) \
         record=200x350 format="%lf%lf%lf%lf%lf%lf%lf" u 1:2:3
 
+6.3 Output with VTK on NecSX8 and NecSX9
 
-Copyright (C) 2006-2009 Tobias Illenseer <tillense@astrophysik.uni-kiel.de>
+ VTK needs a C-conformable output. To ensure this on NecSX8 and NecSX9:
+ set
+     export F_NORCW= UNITNUMBER
+ as environment variable (in NQS-Skript).
+ Also set 
+     CALL InitFileIO(..., unit = UNITNUMBER,...)
+ in your init.f90 file. UNITNUMBER is a integer. Ensure, that this unit
+ number is unique. (save way: UNITNUMBER > 1000)
+ 
+
+The code is distributed under the GNU General Public License - see the
+accompanying LICENSE file for more details. So feel free to experiment
+with this.
+
+Copyright (C) 2006-2010 Tobias Illenseer <tillense@astrophysik.uni-kiel.de>
 
 
 

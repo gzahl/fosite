@@ -81,7 +81,7 @@ MODULE fileio_netcdf
 CONTAINS
   
   SUBROUTINE InitFileio_netcdf(this,Mesh,Physics,fmt,filename,stoptime,dtwall,&
-       count,fcycles,ncfmt)
+       count,fcycles,ncfmt,unit)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(FileIO_TYP)  :: this
@@ -94,14 +94,15 @@ CONTAINS
     INTEGER           :: count
     INTEGER           :: fcycles
     INTEGER           :: ncfmt
+    INTEGER, OPTIONAL :: unit
     !------------------------------------------------------------------------!
     REAL              :: dummy
     !------------------------------------------------------------------------!
-    INTENT(IN)        :: Mesh,Physics,fmt,filename,stoptime,count,fcycles,ncfmt
+    INTENT(IN)        :: Mesh,Physics,fmt,filename,stoptime,count,fcycles,ncfmt,unit
     INTENT(INOUT)     :: this
     !------------------------------------------------------------------------!
     CALL InitFileIO(this,Mesh,Physics,fmt,"NetCDF",filename,"nc",stoptime,&
-         dtwall,count,fcycles)
+         dtwall,count,fcycles,.FALSE.,unit)
     this%ncfmt = ncfmt
     ! determine the default netCDF data type for real numbers
     SELECT CASE (SELECTED_REAL_KIND(PRECISION(dummy)))

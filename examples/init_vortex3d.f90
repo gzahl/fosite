@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: init_vortex3d.f90                                                 #
 !#                                                                           #
-!# Copyright (C) 2006-2008                                                   #
+!# Copyright (C) 2006-2010                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -25,6 +25,10 @@
 
 !----------------------------------------------------------------------------!
 ! Program and data initialization for 3D isentropic vortex
+! References:
+! [1] Yee, H. C. et al.: Low-dissipative high-order shock-capturing methods
+!     using characteristic-based filters, J. Comput. Phys. 150 (1999), 199-238
+!     DOI: 10.1006/jcph.1998.6177
 !----------------------------------------------------------------------------!
 MODULE Init
   USE physics_generic
@@ -37,6 +41,25 @@ MODULE Init
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   PRIVATE
+  ! simulation parameters
+  REAL, PARAMETER    :: TSIM    = 100.0    ! simulation stop time
+  REAL, PARAMETER    :: GAMMA   = 1.4      ! ratio of specific heats
+  ! initial condition (dimensionless units)
+  REAL, PARAMETER    :: RHOINF  = 1.       ! ambient density
+  REAL, PARAMETER    :: PINF    = 1.       ! ambient pressure
+  REAL, PARAMETER    :: VSTR    = 5.0      ! nondimensional vortex strength
+  ! mesh settings
+  INTEGER, PARAMETER :: MGEO = CYLINDRICAL ! geometry
+  INTEGER, PARAMETER :: XRES = 1           ! x-resolution
+  INTEGER, PARAMETER :: YRES = 400         ! y-resolution
+  REAL, PARAMETER    :: RMAX = 5.0         ! outer radius
+  REAL, PARAMETER    :: GPAR = 1.0         ! geometry scaling parameter     !
+  ! output parameters
+  INTEGER, PARAMETER :: ONUM = 10          ! number of output data sets
+  CHARACTER(LEN=256), PARAMETER &          ! output data dir
+                     :: ODIR = './'
+  CHARACTER(LEN=256), PARAMETER &          ! output data file name
+                     :: OFNAME = 'vortex3d' 
   !--------------------------------------------------------------------------!
   PUBLIC :: &
        ! methods
@@ -64,69 +87,61 @@ CONTAINS
     ! physics settings
     CALL InitPhysics(Physics, &
          problem = EULER3D_ROTSYM, &
-         gamma   = 1.4, &           ! ratio of specific heats        !
-         dpmax   = 1.0)             ! for advanced time step control !
+         gamma   = GAMMA, &                   ! ratio of specific heats        !
+         dpmax   = 1.0)                     ! for advanced time step control !
 
     ! numerical scheme for flux calculation
     CALL InitFluxes(Fluxes, &
-         scheme = MIDPOINT)         ! quadrature rule                !
+         scheme = MIDPOINT)                 ! quadrature rule                !
 
     ! reconstruction method
     CALL InitReconstruction(Fluxes%reconstruction, &
          order     = LINEAR, &
-         variables = CONSERVATIVE, &! vars. to use for reconstruction!
-         limiter   = MONOCENT, &    ! one of: minmod, monocent,...   !
-         theta     = 1.2)           ! optional parameter for limiter !
+         variables = CONSERVATIVE, &        ! vars. to use for reconstruction!
+         limiter   = MONOCENT, &            ! one of: minmod, monocent,...   !
+         theta     = 1.2)                   ! optional parameter for limiter !
 
     ! mesh settings
     CALL InitMesh(Mesh,Fluxes, &
-         geometry = CYLINDRICAL, &
-             inum = 1, &         ! resolution in x and            !
-             jnum = 100, &       !   y direction                  !             
-             xmin = -0.1, &
-             xmax = 0.1, &
+         geometry = MGEO, &
+             inum = XRES, &
+             jnum = YRES, &
+             xmin = -1.0, &
+             xmax = 1.0, &
              ymin = 0.0, &
-             ymax = 5.0)
+             ymax = RMAX)
 
     ! boundary conditions
     CALL InitBoundary(Timedisc%boundary,Mesh,Physics, &
          western  = NO_GRADIENTS, &
          eastern  = NO_GRADIENTS, &
          southern = AXIS, &
-         northern = REFLECTING)
+         northern = NO_GRADIENTS)
 
     ! time discretization settings
     CALL InitTimedisc(Timedisc,Mesh,Physics,&
          method   = MODIFIED_EULER, &
          order    = 3, &
          cfl      = 0.4, &
-         stoptime = 100.0, &
-         dtlimit  = 1.0E-4, &
+         stoptime = TSIM, &
+         dtlimit  = 1.0E-10, &
          maxiter  = 100000)
 
     ! set initial condition
     CALL InitData(Mesh,Physics,Timedisc)
 
     ! initialize log input/output
-    CALL InitFileIO(Logfile,Mesh,Physics,Timedisc, &
+    CALL InitFileIO(Logfile,Mesh,Physics,Timedisc,&
          fileformat = BINARY, &
-#ifdef PARALLEL
-         filename   = "/tmp/vortex3dlog", &
-#else
-         filename   = "vortex3d", &
-#endif
+         filename   = TRIM(ODIR) // TRIM(OFNAME) // 'log', &
          filecycles = 1)
 
     ! initialize data input/output
     CALL InitFileIO(Datafile,Mesh,Physics,Timedisc, &
          fileformat = GNUPLOT, &
-#ifdef PARALLEL
-         filename   = "/tmp/vortex3d", &
-#else
-         filename   = "vortex3d", &
-#endif
-         stoptime   = Timedisc%stoptime, &
-         count      = 10)
+         filename   = TRIM(ODIR) // TRIM(OFNAME), &
+         filecycles = 0, &
+         count      = ONUM)
 
   END SUBROUTINE InitProgram
 
@@ -139,43 +154,32 @@ CONTAINS
     TYPE(Timedisc_TYP):: Timedisc
     !------------------------------------------------------------------------!
     ! Local variable declaration
-    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,2)&
-                      :: cart
     INTEGER           :: i,j
     REAL              :: r,r2
-    REAL              :: rho0,P0,T,T0,T0_nd,du,dv,T_nd,dT_nd,beta
     !------------------------------------------------------------------------!
     INTENT(IN)        :: Mesh,Physics
     INTENT(INOUT)     :: Timedisc
     !------------------------------------------------------------------------!
-
-    ! ambient values of primitive variables
-    rho0  = 1.
-    P0    = 1.
-    T0_nd = .2       ! nondimensional temperature
-    T0    = Physics%mu/Physics%constants%RG * P0/rho0
-    
-    ! vortex strength
-    beta = 5.
-
-    CALL Convert2Cartesian(Mesh%geometry,Mesh%bcenter,cart)
-
+    ! initial condition
     DO j=Mesh%JGMIN,Mesh%JGMAX
        DO i=Mesh%IGMIN,Mesh%IGMAX
-          r  = cart(i,j,1)                      ! distance to axis
+          ! axis distance
+          r  = Mesh%bccart(i,j,1)
           r2 = r*r
-          dv = r*beta/(2.*PI)*EXP(0.5*(1.-r2))
-          dT_nd = -(Physics%gamma-1.)*beta / (8.*Physics%gamma*PI*PI) * EXP(1.-r2)
-          T_nd = T0_nd + dT_nd
-          T = T0/T0_nd * T_nd
-          ! set primitive variables
-          Timedisc%pvar(i,j,Physics%DENSITY) = rho0*(T/T0)**(1./(Physics%gamma-1.))
+          ! density
+          ! ATTENTION: there's a factor of 1/PI missing in the density
+          ! formula  eq. (3.3) in [1]
+          Timedisc%pvar(i,j,Physics%DENSITY) = RHOINF * (1.0 - (GAMMA-1.0)*VSTR**2 / &
+               (8*PI**2*GAMMA) * EXP(1.-r2) )**(1./(GAMMA-1.))
+          ! pressure
+          Timedisc%pvar(i,j,Physics%PRESSURE) = PINF &
+               * (Timedisc%pvar(i,j,Physics%DENSITY)/RHOINF)**GAMMA
+          ! rotational velocity
+          Timedisc%pvar(i,j,Physics%ZVELOCITY) = 0.5*VSTR/PI*r*EXP(0.5*(1.-r2))
+          ! other velocities
           Timedisc%pvar(i,j,Physics%XVELOCITY) = 0.
           Timedisc%pvar(i,j,Physics%YVELOCITY) = 0.
-          Timedisc%pvar(i,j,Physics%ZVELOCITY) = dv
-          Timedisc%pvar(i,j,Physics%PRESSURE) = &
-               Physics%constants%RG/Physics%mu * T * Timedisc%pvar(i,j,Physics%DENSITY)
-       END DO
+        END DO
     END DO
     
     ! set specific angular momentum for EULER3D_ROTAMT

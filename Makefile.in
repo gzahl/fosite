@@ -74,9 +74,9 @@ physics : common
 boundary : common physics
 fluxes : common physics
 mesh : common fluxes
-sources : common physics fluxes mesh
+sources : common physics boundary fluxes mesh
 timedisc : common physics boundary fluxes mesh sources
-io: common physics
+io: common physics fluxes mesh
 
 init.o : subdirs
 main.o : subdirs init.o
@@ -93,6 +93,7 @@ distclean :
 	done
 	rm -f $(OBJECTS) $(TARGET) *.mod *.bak *.dat *.bin *.nc *.log *~
 	rm -rf epik*
+	rm -rf autom4te.cache
 
 .SUFFIXES:
 

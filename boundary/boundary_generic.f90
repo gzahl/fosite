@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: boundary_generic.f90                                              #
 !#                                                                           #
-!# Copyright (C) 2006-2008                                                   #
+!# Copyright (C) 2006-2010                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -27,9 +27,10 @@
 ! Subroutines for boundary conditions
 !----------------------------------------------------------------------------!
 MODULE boundary_generic
+  USE timedisc_common, ONLY : Timedisc_TYP
   USE mesh_common, ONLY : Mesh_TYP, GetRank, Error
-  USE physics_common, ONLY : Physics_TYP
   USE fluxes_common, ONLY : Fluxes_TYP
+  USE reconstruction_common, ONLY : Reconstruction_TYP, PrimRecon
   USE boundary_nogradients, InitBoundary_common => InitBoundary
   USE boundary_periodic
   USE boundary_reflecting, InitBoundary_common1 => InitBoundary
@@ -38,7 +39,10 @@ MODULE boundary_generic
   USE boundary_fixed
   USE boundary_extrapolation
   USE boundary_noh
-  USE boundary_moving_wall, InitBoundary_common2 => InitBoundary
+  USE boundary_noslip
+  USE boundary_custom
+  USE boundary_farfield
+  USE physics_generic, ONLY : Physics_TYP, Convert2Primitive, Convert2Conservative
   IMPLICIT NONE
 #ifdef PARALLEL
     include 'mpif.h'
@@ -61,7 +65,9 @@ MODULE boundary_generic
   INTEGER, PARAMETER :: EXTRAPOLATION = 7
   INTEGER, PARAMETER :: NOH2D         = 8
   INTEGER, PARAMETER :: NOH3D         = 9
-  INTEGER, PARAMETER :: MOVING_WALL   = 10
+  INTEGER, PARAMETER :: NOSLIP        = 10
+  INTEGER, PARAMETER :: CUSTOM        = 11
+  INTEGER, PARAMETER :: FARFIELD      = 12
   !--------------------------------------------------------------------------!
   PUBLIC :: &
        ! types
@@ -69,7 +75,9 @@ MODULE boundary_generic
        ! constants
        WEST, EAST, SOUTH, NORTH, &
        NO_GRADIENTS, PERIODIC, REFLECTING, AXIS, FOLDED, FIXED, EXTRAPOLATION, &
-       NOH2D, NOH3D, MOVING_WALL, &
+       NOH2D, NOH3D, NOSLIP, CUSTOM, FARFIELD, &
+       CUSTOM_NOGRAD, CUSTOM_PERIOD, CUSTOM_REFLECT, CUSTOM_REFLNEG, &
+       CUSTOM_EXTRAPOL, CUSTOM_FIXED, &
        ! methods
        InitBoundary, &
        CenterBoundary, &
@@ -131,8 +139,12 @@ CONTAINS
        CALL InitBoundary_noh(this,Mesh,Physics,btype,dir,2)
     CASE(NOH3D)
        CALL InitBoundary_noh(this,Mesh,Physics,btype,dir,3)
-    CASE(MOVING_WALL)
-       CALL InitBoundary_moving_wall(this,Mesh,Physics,btype,dir)
+    CASE(NOSLIP)
+       CALL InitBoundary_noslip(this,Mesh,Physics,btype,dir)
+    CASE(CUSTOM)
+       CALL InitBoundary_custom(this,Mesh,Physics,btype,dir)
+    CASE(FARFIELD)
+       CALL InitBoundary_farfield(this,Mesh,Physics,btype,dir)
     CASE DEFAULT
        CALL Error(this, "InitBoundary_one", "Unknown boundary condition.")
     END SELECT
@@ -142,19 +154,18 @@ CONTAINS
     ! send boundary information to the rank 0 process;
     ! we only need this to synchronize the output
     IF (GetRank(this) .EQ. 0 .AND. GetRank(this).EQ.Mesh%rank0_boundaries(dir)) THEN
-       !print output without communication 
+       ! print output without communication 
 #endif
        CALL Info(this, " BOUNDARY-> condition:         " //  TRIM(GetDirectionName(this)) &
             // " " // TRIM(GetName(this)), GetRank(this))
 #ifdef PARALLEL
     ELSE IF (GetRank(this).EQ.Mesh%rank0_boundaries(dir)) THEN
-       !send info to root
-       !WRITE (sendbuf,*) TRIM(GetDirectionName(this)), " ", TRIM(GetName(this))
+       ! send info to root
        sendbuf = TRIM(GetDirectionName(this))//" "//TRIM(GetName(this))
        CALL MPI_SEND(sendbuf,strlen,MPI_CHARACTER,0, &
                      0,MPI_COMM_WORLD,ierror)
     ELSE IF (GetRank(this).EQ.0) THEN
-       !receive input from rank0_boundaries(dir)
+       ! receive input from rank0_boundaries(dir)
        CALL MPI_RECV(recvbuf,strlen,MPI_CHARACTER,Mesh%rank0_boundaries(dir),&
                      MPI_ANY_TAG,MPI_COMM_WORLD,status,ierror)
        CALL Info(this, " BOUNDARY-> condition:         " // TRIM(recvbuf),GetRank(this))
@@ -269,19 +280,19 @@ CONTAINS
   END SUBROUTINE InitBoundary
 
 
-  SUBROUTINE CenterBoundary(this,Mesh,Fluxes,Physics,time,rvar)
+  SUBROUTINE CenterBoundary(this,Mesh,Fluxes,Physics,time,pvar,cvar)
     IMPLICIT NONE
 #ifdef PARALLEL
     include 'mpif.h'
 #endif
     !------------------------------------------------------------------------!
-    TYPE(Boundary_TYP), DIMENSION(4) :: this
+    TYPE(Boundary_TYP) :: this(4)
     TYPE(Mesh_TYP)     :: Mesh
     TYPE(Fluxes_TYP)   :: Fluxes
     TYPE(Physics_TYP)  :: Physics
     REAL               :: time
-    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum) &
-                       :: rvar
+    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%VNUM) &
+                       :: pvar, cvar
     !------------------------------------------------------------------------!
     INTEGER       :: i,j
     INTEGER       :: ierr
@@ -291,110 +302,87 @@ CONTAINS
 #endif
     !------------------------------------------------------------------------!
     INTENT(IN)    :: Mesh,Physics,Fluxes,time
-    INTENT(INOUT) :: this,rvar   
+    INTENT(INOUT) :: this,pvar,cvar
     !------------------------------------------------------------------------!
+    CALL Convert2Primitive(Physics,Mesh,Mesh%IMIN,Mesh%IMAX,Mesh%JMIN, &
+             Mesh%JMAX,cvar,pvar)
 #ifdef PARALLEL
     ! IMPORTANT:
     ! First exchange the boundary data of the _internal_ boundaries before
     ! processing the _real_ boundaries of the computational domain
 
     ! send boundary data to western neighbor
-    this(WEST)%sendbuf(:,:,:) = rvar(Mesh%IMIN:Mesh%IMIN+Mesh%GNUM-1,Mesh%JMIN:Mesh%JMAX,1:Physics%vnum)
+    this(WEST)%sendbuf(:,:,:) = pvar(Mesh%IMIN:Mesh%IMIN+Mesh%GNUM-1,Mesh%JMIN:Mesh%JMAX,1:Physics%vnum)
     CALL MPI_Issend(this(WEST)%sendbuf,Mesh%GNUM*(Mesh%JMAX-Mesh%JMIN+1)*Physics%vnum, &
          DEFAULT_MPI_REAL,Mesh%neighbor(WEST),10+WEST,Mesh%comm_cart,req(WEST),ierr)
     ! receive boundary data from eastern neighbor
     CALL MPI_Recv(this(EAST)%recvbuf,Mesh%GNUM*(Mesh%JMAX-Mesh%JMIN+1)*Physics%vnum, &
          DEFAULT_MPI_REAL,Mesh%neighbor(EAST),10+WEST,Mesh%comm_cart,status,ierr)
     CALL MPI_Wait(req(WEST),status,ierr)
-    rvar(Mesh%IMAX+1:Mesh%IGMAX,Mesh%JMIN:Mesh%JMAX,1:Physics%vnum) = this(EAST)%recvbuf(:,:,:)
+    pvar(Mesh%IMAX+1:Mesh%IGMAX,Mesh%JMIN:Mesh%JMAX,1:Physics%vnum) = this(EAST)%recvbuf(:,:,:)
 
     ! send boundary data to eastern neighbor
-    this(EAST)%sendbuf(:,:,:) = rvar(Mesh%IMAX-Mesh%GNUM+1:Mesh%IMAX,Mesh%JMIN:Mesh%JMAX,1:Physics%vnum)
+    this(EAST)%sendbuf(:,:,:) = pvar(Mesh%IMAX-Mesh%GNUM+1:Mesh%IMAX,Mesh%JMIN:Mesh%JMAX,1:Physics%vnum)
     CALL MPI_Issend(this(EAST)%sendbuf,Mesh%GNUM*(Mesh%JMAX-Mesh%JMIN+1)*Physics%vnum, &
          DEFAULT_MPI_REAL,Mesh%neighbor(EAST),10+EAST,Mesh%comm_cart,req(EAST),ierr)
     ! receive boundary data from western neighbor
     CALL MPI_Recv(this(WEST)%recvbuf,Mesh%GNUM*(Mesh%JMAX-Mesh%JMIN+1)*Physics%vnum, &
          DEFAULT_MPI_REAL,Mesh%neighbor(WEST),10+EAST,Mesh%comm_cart,status,ierr)
     CALL MPI_Wait(req(EAST),status,ierr)
-    rvar(Mesh%IGMIN:Mesh%IMIN-1,Mesh%JMIN:Mesh%JMAX,1:Physics%vnum) = this(WEST)%recvbuf(:,:,:)
+    pvar(Mesh%IGMIN:Mesh%IMIN-1,Mesh%JMIN:Mesh%JMAX,1:Physics%vnum) = this(WEST)%recvbuf(:,:,:)
     
     ! send boundary data to southern neighbor
-    this(SOUTH)%sendbuf(:,:,:) = rvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN:Mesh%JMIN+Mesh%GNUM-1,1:Physics%vnum)
+    this(SOUTH)%sendbuf(:,:,:) = pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN:Mesh%JMIN+Mesh%GNUM-1,1:Physics%vnum)
     CALL MPI_Issend(this(SOUTH)%sendbuf,Mesh%GNUM*(Mesh%IMAX-Mesh%IMIN+1)*Physics%vnum, &
          DEFAULT_MPI_REAL,Mesh%neighbor(SOUTH),10+SOUTH,Mesh%comm_cart,req(SOUTH),ierr)
     ! receive boundary data from northern neighbor
     CALL MPI_Recv(this(NORTH)%recvbuf,Mesh%GNUM*(Mesh%IMAX-Mesh%IMIN+1)*Physics%vnum, &
          DEFAULT_MPI_REAL,Mesh%neighbor(NORTH),10+SOUTH,Mesh%comm_cart,status,ierr)
     CALL MPI_Wait(req(SOUTH),status,ierr)
-    rvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX+1:Mesh%JGMAX,1:Physics%vnum) = this(NORTH)%recvbuf(:,:,:)
+    pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX+1:Mesh%JGMAX,1:Physics%vnum) = this(NORTH)%recvbuf(:,:,:)
 
     ! send boundary data to northern neighbor
-    this(NORTH)%sendbuf(:,:,:) = rvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX-Mesh%GNUM+1:Mesh%JMAX,1:Physics%vnum)
+    this(NORTH)%sendbuf(:,:,:) = pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX-Mesh%GNUM+1:Mesh%JMAX,1:Physics%vnum)
     CALL MPI_Issend(this(NORTH)%sendbuf,Mesh%GNUM*(Mesh%IMAX-Mesh%IMIN+1)*Physics%vnum, &
          DEFAULT_MPI_REAL,Mesh%neighbor(NORTH),10+NORTH,Mesh%comm_cart,req(NORTH),ierr)
     ! receive boundary data from southern neighbor
     CALL MPI_Recv(this(SOUTH)%recvbuf,Mesh%GNUM*(Mesh%IMAX-Mesh%IMIN+1)*Physics%vnum, &
          DEFAULT_MPI_REAL,Mesh%neighbor(SOUTH),10+NORTH,Mesh%comm_cart,status,ierr)
     CALL MPI_Wait(req(NORTH),status,ierr)
-    rvar(Mesh%IMIN:Mesh%IMAX,Mesh%JGMIN:Mesh%JMIN-1,1:Physics%vnum) = this(SOUTH)%recvbuf(:,:,:)
+    pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JGMIN:Mesh%JMIN-1,1:Physics%vnum) = this(SOUTH)%recvbuf(:,:,:)
 
-    ! FIXME: implement MPI communication to exchange corner values
-    ! this is a quick hack to set defined internal boundary values at
-    ! the corners of the computational domain
-    ! this is necessary, because we need these values in the
-    ! viscosity module
-    ! south west
-    rvar(Mesh%IMIN-1,Mesh%JMIN-1,:) = 0.5 * (rvar(Mesh%IMIN,Mesh%JMIN-1,:) &
-         + rvar(Mesh%IMIN-1,Mesh%JMIN,:))
-    ! south east
-    rvar(Mesh%IMAX+1,Mesh%JMIN-1,:) = 0.5 * (rvar(Mesh%IMAX,Mesh%JMIN-1,:) &
-         + rvar(Mesh%IMAX+1,Mesh%JMIN,:))
-    ! north west
-    rvar(Mesh%IMIN-1,Mesh%JMAX+1,:) = 0.5 * (rvar(Mesh%IMIN-1,Mesh%JMAX,:) &
-         + rvar(Mesh%IMIN,Mesh%JMAX+1,:))
-    ! north east
-    rvar(Mesh%IMAX+1,Mesh%JMAX+1,:) = 0.5 * (rvar(Mesh%IMAX+1,Mesh%JMAX,:) &
-         + rvar(Mesh%IMAX,Mesh%JMAX+1,:))
 #endif
-    ! for 1D simulations copy the data 
-    IF (Mesh%INUM.EQ.1) THEN
-       rvar(Mesh%IMIN-1,:,:) = rvar(Mesh%IMIN,:,:)
-       rvar(Mesh%IMIN-2,:,:) = rvar(Mesh%IMIN,:,:)
-       rvar(Mesh%IMAX+1,:,:) = rvar(Mesh%IMAX,:,:)
-       rvar(Mesh%IMAX+2,:,:) = rvar(Mesh%IMAX,:,:)
-    END IF
-    IF (Mesh%JNUM.EQ.1) THEN
-       rvar(:,Mesh%JMIN-1,:) = rvar(:,Mesh%JMIN,:)
-       rvar(:,Mesh%JMIN-2,:) = rvar(:,Mesh%JMIN,:)
-       rvar(:,Mesh%JMAX+1,:) = rvar(:,Mesh%JMAX,:)
-       rvar(:,Mesh%JMAX+2,:) = rvar(:,Mesh%JMAX,:)
-    END IF
+
     ! Set boundary values depending on the selected boundary condition.
     IF (Mesh%INUM.GT.1) THEN
        DO i=1,2
           SELECT CASE(GetType(this(i)))
           CASE(NO_GRADIENTS)
-             CALL CenterBoundary_nogradients(this(i),Mesh,Physics,rvar)
+             CALL CenterBoundary_nogradients(this(i),Mesh,Physics,Fluxes,pvar)
           CASE(PERIODIC)
              ! do nothing in parallel version, because periodicity is
              ! handled via MPI communication
 #ifndef PARALLEL
-             CALL CenterBoundary_periodic(this(i),Mesh,Physics,rvar)
+             CALL CenterBoundary_periodic(this(i),Mesh,Physics,pvar)
 #endif
           CASE(REFLECTING)
-             CALL CenterBoundary_reflecting(this(i),Mesh,Physics,rvar)
+             CALL CenterBoundary_reflecting(this(i),Mesh,Physics,Fluxes,pvar)
           CASE(AXIS)
-             CALL CenterBoundary_axis(this(i),Mesh,Physics,rvar)
+             CALL CenterBoundary_axis(this(i),Mesh,Physics,Fluxes,pvar)
           CASE(FOLDED)
-             CALL CenterBoundary_folded(this(i),Mesh,Physics,rvar)
+             CALL CenterBoundary_folded(this(i),Mesh,Physics,Fluxes,pvar)
           CASE(FIXED)
-             CALL CenterBoundary_fixed(this(i),Mesh,Physics,rvar)
+             CALL CenterBoundary_fixed(this(i),Mesh,Physics,Fluxes,pvar)
           CASE(EXTRAPOLATION)
-             CALL CenterBoundary_extrapolation(this(i),Mesh,Physics,rvar)
+             CALL CenterBoundary_extrapolation(this(i),Mesh,Physics,Fluxes,pvar)
           CASE(NOH2D,NOH3D)
-             CALL CenterBoundary_noh(this(i),Mesh,Physics,time,rvar)
-          CASE(MOVING_WALL)
-             CALL CenterBoundary_moving_wall(this(i),Mesh,Fluxes,Physics,rvar)
+             CALL CenterBoundary_noh(this(i),Mesh,Physics,Fluxes,time,pvar)
+          CASE(NOSLIP)
+             CALL CenterBoundary_noslip(this(i),Mesh,Physics,Fluxes,pvar)
+          CASE(CUSTOM)
+             CALL CenterBoundary_custom(this(i),Mesh,Physics,Fluxes,pvar)
+          CASE(FARFIELD)
+             CALL CenterBoundary_farfield(this(i),Mesh,Physics,Fluxes,pvar)
           END SELECT
        END DO
     END IF
@@ -402,30 +390,91 @@ CONTAINS
        DO i=3,4
           SELECT CASE(GetType(this(i)))
           CASE(NO_GRADIENTS)
-             CALL CenterBoundary_nogradients(this(i),Mesh,Physics,rvar)
+             CALL CenterBoundary_nogradients(this(i),Mesh,Physics,Fluxes,pvar)
           CASE(PERIODIC)
              ! do nothing in parallel version, because periodicity is
              ! handled via MPI communication
 #ifndef PARALLEL
-             CALL CenterBoundary_periodic(this(i),Mesh,Physics,rvar)
+             CALL CenterBoundary_periodic(this(i),Mesh,Physics,pvar)
 #endif
           CASE(REFLECTING)
-             CALL CenterBoundary_reflecting(this(i),Mesh,Physics,rvar)
+             CALL CenterBoundary_reflecting(this(i),Mesh,Physics,Fluxes,pvar)
           CASE(AXIS)
-             CALL CenterBoundary_axis(this(i),Mesh,Physics,rvar)
+             CALL CenterBoundary_axis(this(i),Mesh,Physics,Fluxes,pvar)
           CASE(FOLDED)
-             CALL CenterBoundary_folded(this(i),Mesh,Physics,rvar)
+             CALL CenterBoundary_folded(this(i),Mesh,Physics,Fluxes,pvar)
           CASE(FIXED)
-             CALL CenterBoundary_fixed(this(i),Mesh,Physics,rvar)
+             CALL CenterBoundary_fixed(this(i),Mesh,Physics,Fluxes,pvar)
           CASE(EXTRAPOLATION)
-             CALL CenterBoundary_extrapolation(this(i),Mesh,Physics,rvar)
+             CALL CenterBoundary_extrapolation(this(i),Mesh,Physics,Fluxes,pvar)
           CASE(NOH2D,NOH3D)
-             CALL CenterBoundary_noh(this(i),Mesh,Physics,time,rvar)
-          CASE(MOVING_WALL)
-             CALL CenterBoundary_moving_wall(this(i),Mesh,Fluxes,Physics,rvar)
+             CALL CenterBoundary_noh(this(i),Mesh,Physics,Fluxes,time,pvar)
+          CASE(NOSLIP)
+             CALL CenterBoundary_noslip(this(i),Mesh,Physics,Fluxes,pvar)
+          CASE(CUSTOM)
+             CALL CenterBoundary_custom(this(i),Mesh,Physics,Fluxes,pvar)
+          CASE(FARFIELD)
+             CALL CenterBoundary_farfield(this(i),Mesh,Physics,Fluxes,pvar)
           END SELECT
        END DO
     END IF
+
+    ! FIXME: implement MPI communication to exchange corner values
+    ! this is a quick hack to set defined boundary values in
+    ! the corners outside the computational domain;
+    ! this is also necessary, because we need some of these values in the
+    ! viscosity module
+    IF ((Mesh%INUM > 1) .AND. (Mesh%JNUM > 1)) THEN
+       ! south west
+       pvar(Mesh%IMIN-1,Mesh%JMIN-1,:) = 0.5 * (pvar(Mesh%IMIN,Mesh%JMIN-1,:) &
+         + pvar(Mesh%IMIN-1,Mesh%JMIN,:))
+       pvar(Mesh%IMIN-1,Mesh%JMIN-2,:) = pvar(Mesh%IMIN-1,Mesh%JMIN-1,:)
+       pvar(Mesh%IMIN-2,Mesh%JMIN-1,:) = pvar(Mesh%IMIN-1,Mesh%JMIN-1,:)
+       pvar(Mesh%IMIN-2,Mesh%JMIN-2,:) = pvar(Mesh%IMIN-1,Mesh%JMIN-1,:)
+       ! south east
+       pvar(Mesh%IMAX+1,Mesh%JMIN-1,:) = 0.5 * (pvar(Mesh%IMAX,Mesh%JMIN-1,:) &
+         + pvar(Mesh%IMAX+1,Mesh%JMIN,:))
+       pvar(Mesh%IMAX+2,Mesh%JMIN-1,:) = pvar(Mesh%IMAX+1,Mesh%JMIN-1,:)
+       pvar(Mesh%IMAX+1,Mesh%JMIN-2,:) = pvar(Mesh%IMAX+1,Mesh%JMIN-1,:)
+       pvar(Mesh%IMAX+2,Mesh%JMIN-2,:) = pvar(Mesh%IMAX+1,Mesh%JMIN-1,:)
+       ! north west
+       pvar(Mesh%IMIN-1,Mesh%JMAX+1,:) = 0.5 * (pvar(Mesh%IMIN-1,Mesh%JMAX,:) &
+         + pvar(Mesh%IMIN,Mesh%JMAX+1,:))
+       pvar(Mesh%IMIN-2,Mesh%JMAX+1,:) = pvar(Mesh%IMIN-1,Mesh%JMAX+1,:)
+       pvar(Mesh%IMIN-1,Mesh%JMAX+2,:) = pvar(Mesh%IMIN-1,Mesh%JMAX+1,:)
+       pvar(Mesh%IMIN-2,Mesh%JMAX+2,:) = pvar(Mesh%IMIN-1,Mesh%JMAX+1,:)
+       ! north east
+       pvar(Mesh%IMAX+1,Mesh%JMAX+1,:) = 0.5 * (pvar(Mesh%IMAX+1,Mesh%JMAX,:) &
+         + pvar(Mesh%IMAX,Mesh%JMAX+1,:))
+       pvar(Mesh%IMAX+2,Mesh%JMAX+1,:) = pvar(Mesh%IMAX+1,Mesh%JMAX+1,:)
+       pvar(Mesh%IMAX+1,Mesh%JMAX+2,:) = pvar(Mesh%IMAX+1,Mesh%JMAX+1,:)
+       pvar(Mesh%IMAX+2,Mesh%JMAX+2,:) = pvar(Mesh%IMAX+1,Mesh%JMAX+1,:)
+    ELSE IF (Mesh%JNUM.EQ.1) THEN
+       ! for 1D simulations along the x-direction copy internal data
+       ! into the ghost cells at the y-boundaries
+       DO j=1,Mesh%GNUM
+          pvar(:,Mesh%JMIN-j,:) = pvar(:,Mesh%JMIN,:)
+          pvar(:,Mesh%JMAX+j,:) = pvar(:,Mesh%JMAX,:)
+       END DO
+    ELSE IF (Mesh%INUM.EQ.1) THEN
+       ! for 1D simulations along the y-direction copy internal data
+       ! into the ghost cells at the x-boundaries
+       DO i=1,Mesh%GNUM
+          pvar(Mesh%IMIN-i,:,:) = pvar(Mesh%IMIN,:,:)
+          pvar(Mesh%IMAX+i,:,:) = pvar(Mesh%IMAX,:,:)
+       END DO
+    END IF
+
+    ! convert primitive variables in ghost cells
+    CALL Convert2Conservative(Physics,Mesh,Mesh%IGMIN,Mesh%IMIN-1,&
+         Mesh%JGMIN,Mesh%JGMAX,pvar,cvar)
+    CALL Convert2Conservative(Physics,Mesh,Mesh%IMAX+1,Mesh%IGMAX,&
+         Mesh%JGMIN,Mesh%JGMAX,pvar,cvar)
+    CALL Convert2Conservative(Physics,Mesh,Mesh%IGMIN,Mesh%IGMAX,&
+         Mesh%JGMIN,Mesh%JMIN-1,pvar,cvar)
+    CALL Convert2Conservative(Physics,Mesh,Mesh%IGMIN,Mesh%IGMAX,&
+         Mesh%JMAX+1,Mesh%JGMAX,pvar,cvar)
+
   END SUBROUTINE CenterBoundary
 
 
@@ -447,8 +496,12 @@ CONTAINS
        CALL CloseBoundary_folded(this)
     CASE(FIXED)
        CALL CloseBoundary_fixed(this)
-    CASE(MOVING_WALL)
-       CALL CloseBoundary_moving_wall(this)
+    CASE(NOSLIP)
+       CALL CloseBoundary_noslip(this)
+    CASE(CUSTOM)
+       CALL CloseBoundary_custom(this)
+    CASE(FARFIELD)
+       CALL CloseBoundary_farfield(this)
     END SELECT
   END SUBROUTINE CloseBoundary_one
 

@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: init_sedov3d.f90                                                  #
 !#                                                                           #
-!# Copyright (C) 2006-2008                                                   #
+!# Copyright (C) 2006-2010                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -25,6 +25,13 @@
 
 !----------------------------------------------------------------------------!
 ! Program and data initialization for 3D Sedov explosion
+! References:
+! [1] Sedov, L. I.: Unsteady motions of compressible fluids,
+!     J. Appl. Math. Mech. 9 (1945)
+! [2] Sedov, L. I.: Similarity and Dimensional Methods in Mechanics
+!     Academic Press Ltd., New York (1959)
+! [3] Padmanabhan, T.:Theoretical Astrophysics, Vol. I: Astrophysical
+!     Processes, Cambridge University Press (2000), Chapter 8.12
 !----------------------------------------------------------------------------!
 MODULE Init
   USE physics_generic
@@ -37,6 +44,33 @@ MODULE Init
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   PRIVATE
+  ! simulation parameters
+  REAL, PARAMETER    :: TSIM    = 0.05     ! simulation stop time
+  REAL, PARAMETER    :: GAMMA   = 1.4      ! ratio of specific heats
+  ! initial condition (dimensionless units)
+  REAL, PARAMETER    :: RHO0 = 1.0         ! ambient density
+  REAL, PARAMETER    :: P0   = 1.0E-05     ! ambient pressure
+  REAL, PARAMETER    :: E1   = 1.0         ! initial energy input
+  ! Spatial with of the initial pulse should be at least 5 cells;
+  ! if you wish to compare the results on different grids
+  ! R0 should be of the same order
+  REAL, PARAMETER    :: R0   = 3.0E-2
+  ! mesh settings
+  INTEGER, PARAMETER :: MGEO = SPHERICAL   ! geometry
+!!$  INTEGER, PARAMETER :: MGEO = CYLINDRICAL
+!!$  INTEGER, PARAMETER :: MGEO = TANCYLINDRICAL
+!!$  INTEGER, PARAMETER :: MGEO = OBLATE_SPHEROIDAL
+!!$  INTEGER, PARAMETER :: MGEO = SINHSPHERICAL
+  INTEGER, PARAMETER :: XRES  = 50         ! x-resolution
+  INTEGER, PARAMETER :: YRES  = 30         ! y-resolution
+  REAL, PARAMETER    :: RMAX  = 0.4        ! outer radius of comput. domain
+  REAL, PARAMETER    :: GPAR  = 0.2        ! geometry scaling parameter
+  ! output parameters
+  INTEGER, PARAMETER :: ONUM = 10          ! number of output data sets
+  CHARACTER(LEN=256), PARAMETER &          ! output data dir
+                     :: ODIR = './'
+  CHARACTER(LEN=256), PARAMETER &          ! output data file name
+                     :: OFNAME = 'sedov3d' 
   !--------------------------------------------------------------------------!
   PUBLIC :: &
        ! methods
@@ -57,21 +91,16 @@ CONTAINS
     TYPE(FILEIO_TYP)  :: Logfile
     !------------------------------------------------------------------------!
     ! Local variable declaration
-    INTEGER           :: geometry
+    REAL              :: x1,x2,y1,y2
+    INTEGER           :: bc(4)
     !------------------------------------------------------------------------!
     INTENT(OUT)       :: Mesh,Physics,Fluxes,Timedisc,Datafile,Logfile
     !------------------------------------------------------------------------!
-
-    ! set the geometry
-    geometry = CYLINDRICAL
-!    geometry = SPHERICAL
-!    geometry = OBLATE_SPHEROIDAL
-
     ! physics settings
     CALL InitPhysics(Physics, &
          problem = EULER3D_ROTSYM, &
-         gamma   = 1.4, &           ! ratio of specific heats        !
-         dpmax   = 100.0)           ! for advanced time step control !
+         gamma   = GAMMA, &         ! ratio of specific heats        !
+         dpmax   = 1.0E+10)         ! for advanced time step control !
 
     ! numerical scheme for flux calculation
     CALL InitFluxes(Fluxes, &
@@ -84,54 +113,82 @@ CONTAINS
          limiter   = MONOCENT, &    ! one of: minmod, monocent,...   !
          theta     = 1.2)           ! optional parameter for limiter !
 
-    SELECT CASE(geometry)
-    CASE(CYLINDRICAL)
-       ! mesh settings
-       CALL InitMesh(Mesh,Fluxes, &
-            geometry = CYLINDRICAL, &
-                inum = 100, &       ! resolution in x and            !
-                jnum = 50, &        !   y direction                  !             
-                xmin = -0.4, &
-                xmax = 0.4, &
-                ymin = 0.0, &
-                ymax = 0.4)
-       ! boundary conditions
-       CALL InitBoundary(Timedisc%boundary,Mesh,Physics, &
-         western  = NO_GRADIENTS, &
-         eastern  = NO_GRADIENTS, &
-         southern = AXIS, &
-         northern = NO_GRADIENTS)
+    ! mesh settings and boundary conditions
+    SELECT CASE(MGEO)
     CASE(SPHERICAL)
-       ! mesh settings
-       CALL InitMesh(Mesh,Fluxes,SPHERICAL,50,30,0.0,0.4,0.0,PI)
-       ! boundary conditions
-       CALL InitBoundary(Timedisc%boundary,Mesh,Physics, &
-         western  = REFLECTING, &
-         eastern  = NO_GRADIENTS, &
-         southern = AXIS, &
-         northern = AXIS)
+       x1 = 0.0
+       x2 = RMAX
+       y1 = 0.0
+       y2 = PI
+       bc(WEST)  = REFLECTING
+       bc(EAST)  = NO_GRADIENTS
+       bc(SOUTH) = AXIS
+       bc(NORTH) = AXIS
+    CASE(CYLINDRICAL)
+       x1 = -RMAX
+       x2 = RMAX
+       y1 = 0.0
+       y2 = RMAX
+       bc(WEST)  = NO_GRADIENTS
+       bc(EAST)  = NO_GRADIENTS
+       bc(SOUTH) = AXIS
+       bc(NORTH) = NO_GRADIENTS
     CASE(OBLATE_SPHEROIDAL)
-       ! mesh settings
-       CALL InitMesh(Mesh,Fluxes,OBLATE_SPHEROIDAL,50,60, &
-            0.0,1.4,-0.5*PI,0.5*PI, &
-            0.2)                    ! optional geometry parameter    !
-       ! boundary conditions
-       CALL InitBoundary(Timedisc%boundary,Mesh,Physics, &
-         western  = FOLDED, &
-         eastern  = NO_GRADIENTS, &
-         southern = AXIS, &
-         northern = AXIS)
+       x1 = 0.0
+       x2 = RMAX/GPAR
+       x2 = LOG(x2+SQRT(x2**2-1.0)) ! = ACOSH(RMAX/GPAR)
+       y1 = -0.5*PI
+       y2 = 0.5*PI
+       bc(WEST)  = FOLDED
+       bc(EAST)  = NO_GRADIENTS
+       bc(SOUTH) = AXIS
+       bc(NORTH) = AXIS
+    CASE(TANCYLINDRICAL)
+       x1 = ATAN(-RMAX/GPAR)
+       x2 = ATAN(RMAX/GPAR)
+       y1 = 0.0
+       y2 = RMAX
+       bc(WEST)  = NO_GRADIENTS
+       bc(EAST)  = NO_GRADIENTS
+       bc(SOUTH) = AXIS
+       bc(NORTH) = NO_GRADIENTS
+    CASE(SINHSPHERICAL)
+       x1 = 0.0
+       x2 = RMAX/GPAR
+       x2 = LOG(x2+SQRT(x2**2+1.0)) ! = ASINH(RMAX/GPAR)
+       y1 = 0.0
+       y2 = PI
+       bc(WEST)  = REFLECTING
+       bc(EAST)  = NO_GRADIENTS
+       bc(SOUTH) = AXIS
+       bc(NORTH) = AXIS
     CASE DEFAULT
-       CALL Error(Physics,"InitProgram", &
-            "geometry should be either cylindrical, spherical or oblate spheroidal")
+       CALL Error(Physics,"InitProgram","geometry not supported for 3D Sedov explosion")
     END SELECT
+    ! mesh settings
+    CALL InitMesh(Mesh,Fluxes, &
+         geometry = MGEO, &
+             inum = XRES, &
+             jnum = YRES, &
+             xmin = x1, &
+             xmax = x2, &
+             ymin = y1, &
+             ymax = y2, &
+           gparam = GPAR)
+
+    ! boundary conditions
+    CALL InitBoundary(Timedisc%boundary,Mesh,Physics, &
+         western  = bc(WEST), &
+         eastern  = bc(EAST), &
+         southern = bc(SOUTH), &
+         northern = bc(NORTH))
 
     ! time discretization settings
     CALL InitTimedisc(Timedisc,Mesh,Physics,&
          method   = MODIFIED_EULER, &
          order    = 3, &
          cfl      = 0.4, &
-         stoptime = 0.05, &
+         stoptime = TSIM, &
          dtlimit  = 1.0E-13, &
          maxiter  = 100000)
 
@@ -141,22 +198,16 @@ CONTAINS
     ! initialize log input/output
     CALL InitFileIO(Logfile,Mesh,Physics,Timedisc,&
          fileformat = BINARY, &
-#ifdef PARALLEL
-         filename   = "/tmp/sedov3dlog", &
-#else
-         filename   = "sedov3dlog", &
-#endif
+         filename   = TRIM(ODIR) // TRIM(OFNAME) // 'log', &
          filecycles = 1)
 
     ! initialize data input/output
     CALL InitFileIO(Datafile,Mesh,Physics,Timedisc, &
-         fileformat = GNUPLOT, &
-#ifdef PARALLEL
-         filename   = "/tmp/sedov3d", &
-#else
-         filename   = "sedov3d", &
-#endif
-         count      = 10)
+         fileformat = VTK, &
+!!$         fileformat = GNUPLOT, &
+!!$         filecycles = 0, &
+         filename   = TRIM(ODIR) // TRIM(OFNAME), &
+         count      = ONUM)
  
   END SUBROUTINE InitProgram
 
@@ -170,39 +221,27 @@ CONTAINS
     !------------------------------------------------------------------------!
     ! Local variable declaration
     INTEGER           :: n
-    REAL              :: dr,rho0,P0,P1,E
-    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,2) :: cart
+    REAL              :: P1
     !------------------------------------------------------------------------!
     INTENT(IN)        :: Mesh,Physics
     INTENT(INOUT)     :: Timedisc
     !------------------------------------------------------------------------!
-
-    ! 3D Sedov explosion
-    n    = 3       ! 2D
-    E    = 1.0     ! total energy input
-    rho0 = 1.0     ! ambient density
-    P0   = 1.0E-05 ! ambient pressure
-
-    ! spatial with of the puls should be at least 5 cells
-    ! be careful, if you wish to compare with the polar
-    ! results dr should be the same
-    dr = 0.04
     ! peak pressure
-    P1 = 3.*(Physics%gamma-1.0) * E / ((n + 1) * PI * dr**n)
+    n  = 3 ! 3 for 3D
+    P1 = 3.*(Physics%gamma-1.0) * E1 / ((n + 1) * PI * R0**n)
 
-    CALL Convert2Cartesian(Mesh%geometry,Mesh%bcenter,cart)
-
-    WHERE ((cart(:,:,1)**2 + cart(:,:,2)**2).LE.dr**2)
-       Timedisc%pvar(:,:,Physics%DENSITY)   = rho0
-       Timedisc%pvar(:,:,Physics%XVELOCITY) = 0.
-       Timedisc%pvar(:,:,Physics%YVELOCITY) = 0.
-       Timedisc%pvar(:,:,Physics%ZVELOCITY) = 0.
+    ! uniform density
+    Timedisc%pvar(:,:,Physics%DENSITY)   = RHO0
+    ! vanishing initial velocities
+    Timedisc%pvar(:,:,Physics%XVELOCITY) = 0.
+    Timedisc%pvar(:,:,Physics%YVELOCITY) = 0.
+    Timedisc%pvar(:,:,Physics%ZVELOCITY) = 0.
+    ! pressure
+    WHERE ((Mesh%bccart(:,:,1)**2 + Mesh%bccart(:,:,2)**2).LE.R0**2)
+       ! behind the shock front
        Timedisc%pvar(:,:,Physics%PRESSURE)  = P1
     ELSEWHERE
-       Timedisc%pvar(:,:,Physics%DENSITY)   = rho0
-       Timedisc%pvar(:,:,Physics%XVELOCITY) = 0.
-       Timedisc%pvar(:,:,Physics%YVELOCITY) = 0.
-       Timedisc%pvar(:,:,Physics%ZVELOCITY) = 0.
+       ! in front of the shock front (ambient medium)
        Timedisc%pvar(:,:,Physics%PRESSURE)  = P0
     END WHERE
     

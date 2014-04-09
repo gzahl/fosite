@@ -30,7 +30,10 @@
 MODULE boundary_fixed
   USE mesh_common, ONLY : Mesh_TYP
   USE physics_common, ONLY : Physics_TYP
+  USE fluxes_common, ONLY : Fluxes_TYP
+  USE reconstruction_common, ONLY : Reconstruction_TYP, PrimRecon
   USE boundary_nogradients
+  USE physics_generic
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   PRIVATE
@@ -67,84 +70,87 @@ CONTAINS
     ! allocate memory for boundary data and mask
     SELECT CASE(GetDirection(this))
     CASE(WEST,EAST)
-       ALLOCATE(this%data(2,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum), &
-            this%fixed(Physics%vnum), &
+       ALLOCATE(this%data(Mesh%GNUM,Mesh%JMIN:Mesh%JMAX,Physics%VNUM), &
+            this%fixed(Mesh%JMIN:Mesh%JMAX,Physics%VNUM), &
             STAT=err)
     CASE(SOUTH,NORTH)
-       ALLOCATE(this%data(Mesh%IGMIN:Mesh%IGMAX,2,Physics%vnum), &
-            this%fixed(Physics%vnum), &
+       ALLOCATE(this%data(Mesh%IMIN:Mesh%IMAX,Mesh%GNUM,Physics%VNUM), &
+            this%fixed(Mesh%IMIN:Mesh%IMAX,Physics%VNUM), &
             STAT=err)
     END SELECT
     IF (err.NE.0) THEN
        CALL Error(this,"InitBoundary_fixed", "Unable to allocate memory.")
     END IF
-    ! fixed(:) defaults to NO_GRADIENTS everywhere, so that fixed boundaries
-    ! work even if the boundary data remains undefined
-    this%fixed(:) = .FALSE.
+    ! fixed(:,:) defaults to EXTRAPOLATION everywhere
+    this%fixed(:,:) = .FALSE.
   END SUBROUTINE InitBoundary_fixed
 
 
-  PURE SUBROUTINE CenterBoundary_fixed(this,Mesh,Physics,rvar)
+  PURE SUBROUTINE CenterBoundary_fixed(this,Mesh,Physics,Fluxes,pvar)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Boundary_TYP) :: this
     TYPE(Mesh_TYP)     :: Mesh
     TYPE(Physics_TYP)  :: Physics
-    REAL :: rvar(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum)
+    TYPE(Fluxes_TYP)   :: Fluxes
+    REAL :: pvar(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum)
     !------------------------------------------------------------------------!
     INTEGER       :: i,j
     !------------------------------------------------------------------------!
-    INTENT(IN)    :: this,Mesh,Physics
-    INTENT(INOUT) :: rvar   
+    INTENT(IN)    :: this,Mesh,Physics,Fluxes
+    INTENT(INOUT) :: pvar  
     !------------------------------------------------------------------------!
     SELECT CASE(GetDirection(this))
     CASE(WEST)
-       DO j=Mesh%JGMIN,Mesh%JGMAX
-          DO i=1,Mesh%GNUM
-             WHERE(this%fixed)
-                ! set fixed boundary data
-                rvar(Mesh%IMIN-i,j,:) = this%data(i,j,:)
-             ELSEWHERE
-                ! first order extrapolation
-                rvar(Mesh%IMIN-i,j,:) = 2.0*rvar(Mesh%IMIN-i+1,j,:) - rvar(Mesh%IMIN-i+2,j,:)
-             END WHERE
-          END DO
+       ! UNROLL=Mesh%GNUM would be sufficient, but the compiler does
+       ! not know the value of Mesh%GNUM, hence we set UNROLL=4 and
+       ! hope that nobody sets Mesh%GNUM to a value greater than 4
+!CDIR UNROLL=4
+       DO i=1,Mesh%GNUM
+          WHERE(this%fixed)
+             ! set fixed boundary data
+             pvar(Mesh%IMIN-i,Mesh%JMIN:Mesh%JMAX,:) = this%data(i,Mesh%JMIN:Mesh%JMAX,:)
+          ELSEWHERE
+             ! first order extrapolation
+             pvar(Mesh%IMIN-i,Mesh%JMIN:Mesh%JMAX,:) = (i+1)*pvar(Mesh%IMIN,Mesh%JMIN:Mesh%JMAX,:) &
+                  - i*pvar(Mesh%IMIN+1,Mesh%JMIN:Mesh%JMAX,:)
+          END WHERE
        END DO
     CASE(EAST)
-       DO j=Mesh%JGMIN,Mesh%JGMAX
-          DO i=1,Mesh%GNUM
-             WHERE(this%fixed)
-                ! set fixed boundary data
-                rvar(Mesh%IMAX+i,j,:) = this%data(i,j,:)
-             ELSEWHERE
-                ! first order extrapolation
-                rvar(Mesh%IMAX+i,j,:) = 2.0*rvar(Mesh%IMAX+i-1,j,:) - rvar(Mesh%IMAX+i-2,j,:)
-             END WHERE
-          END DO
+!CDIR UNROLL=4
+       DO i=1,Mesh%GNUM
+          WHERE(this%fixed)
+             ! set fixed boundary data
+             pvar(Mesh%IMAX+i,Mesh%JMIN:Mesh%JMAX,:) = this%data(i,Mesh%JMIN:Mesh%JMAX,:)
+          ELSEWHERE
+             ! first order extrapolation
+             pvar(Mesh%IMAX+i,Mesh%JMIN:Mesh%JMAX,:) = (i+1)*pvar(Mesh%IMAX,Mesh%JMIN:Mesh%JMAX,:) &
+                  - i*pvar(Mesh%IMAX-1,Mesh%JMIN:Mesh%JMAX,:)
+          END WHERE
        END DO
     CASE(SOUTH)
+!CDIR UNROLL=4
        DO j=1,Mesh%GNUM
-          DO i=Mesh%IGMIN,Mesh%IGMAX
-             WHERE(this%fixed)
-                ! set fixed boundary data
-                rvar(i,Mesh%JMIN-j,:) = this%data(i,j,:)
-             ELSEWHERE
-                ! first order extrapolation
-                rvar(i,Mesh%JMIN-j,:) = 2.0*rvar(i,Mesh%JMIN-j+1,:) - rvar(i,Mesh%JMIN-j+2,:)
-             END WHERE
-          END DO
-       ENd DO
+          WHERE(this%fixed)
+             ! set fixed boundary data
+             pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN-j,:) = this%data(Mesh%IMIN:Mesh%IMAX,j,:)
+          ELSEWHERE
+             ! first order extrapolation
+             pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN-j,:) = (j+1)*pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN,:) &
+                  - j*pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN+1,:)
+          END WHERE
+       END DO
     CASE(NORTH)
+!CDIR UNROLL=4
        DO j=1,Mesh%GNUM
-          DO i=Mesh%IGMIN,Mesh%IGMAX
-             WHERE(this%fixed)
-                ! set fixed boundary data
-                rvar(i,Mesh%JMAX+j,:) = this%data(i,j,:)
-             ELSEWHERE
-                ! first order extrapolation
-                rvar(i,Mesh%JMAX+j,:) = 2.0*rvar(i,Mesh%JMAX+j-1,:) - rvar(i,Mesh%JMAX+j-2,:)
-             END WHERE
-          END DO
+          WHERE(this%fixed)
+             ! set fixed boundary data
+             pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX+j,:) = this%data(Mesh%IMIN:Mesh%IMAX,j,:)
+          ELSEWHERE
+             ! first order extrapolation
+             pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX+j,:) = (j+1)*pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX,:) &
+                  - j*pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX-1,:)
+          END WHERE
        END DO
     END SELECT
   END SUBROUTINE CenterBoundary_fixed

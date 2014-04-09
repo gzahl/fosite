@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: mesh_generic.f90                                                  #
 !#                                                                           #
-!# Copyright (C) 2006-2008                                                   #
+!# Copyright (C) 2006-2009                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -42,7 +42,9 @@ MODULE mesh_generic
 #ifdef PARALLEL
        DEFAULT_MPI_REAL, &
 #endif
-       CARTESIAN, POLAR, LOGPOLAR, CYLINDRICAL, SPHERICAL, OBLATE_SPHEROIDAL, &
+       CARTESIAN, POLAR, LOGPOLAR, TANPOLAR, SINHPOLAR, &
+       CYLINDRICAL, TANCYLINDRICAL, SPHERICAL, SINHSPHERICAL, &
+       OBLATE_SPHEROIDAL, &
        ! methods
        InitMesh, &
        Convert2Cartesian, &
@@ -94,13 +96,15 @@ CONTAINS
 
     ! compute cartesian coordinates for bary center values
     CALL Convert2Cartesian(this%geometry,this%bcenter,this%bccart)
+    ! compute cartesian coordinates for corner positions
+    CALL Convert2Cartesian(this%geometry,this%cpos,this%cpcart)
 
     ! print some information
     WRITE (xres, '(I0)') this%INUM    ! this is just for better looking output
     WRITE (yres, '(I0)') this%JNUM
     CALL Info(this, " MESH-----> resolution:        " // TRIM(xres) // " x " // TRIM(yres))
-    WRITE (xres, '(ES8.1,A,ES8.1)') this%xmin, " ..", this%xmax
-    WRITE (yres, '(ES8.1,A,ES8.1)') this%ymin, " ..", this%ymax    
+    WRITE (xres, '(ES9.2,A,ES9.2)') this%xmin, " ..", this%xmax
+    WRITE (yres, '(ES9.2,A,ES9.2)') this%ymin, " ..", this%ymax
     CALL Info(this, "            computat. domain:  x=" // TRIM(xres) // ACHAR(10)  &
                  // "                               y="  // TRIM(yres))
   END SUBROUTINE InitMesh

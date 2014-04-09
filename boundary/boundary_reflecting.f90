@@ -28,6 +28,8 @@
 !----------------------------------------------------------------------------!
 MODULE boundary_reflecting
   USE mesh_common, ONLY : Mesh_TYP
+  USE fluxes_common, ONLY : Fluxes_TYP
+  USE reconstruction_common, ONLY : Reconstruction_TYP, PrimRecon
   USE boundary_nogradients
   USE physics_generic
   IMPLICIT NONE
@@ -44,7 +46,6 @@ MODULE boundary_reflecting
        InitBoundary, &
        InitBoundary_reflecting, &
        CenterBoundary_reflecting, &
-       FaceBoundary_reflecting, &
        CloseBoundary_reflecting, &
        GetType, &
        GetName, &
@@ -85,115 +86,63 @@ CONTAINS
   END SUBROUTINE InitBoundary_reflecting
 
 
-  PURE SUBROUTINE CenterBoundary_reflecting(this,Mesh,Physics,rvar)
+  PURE SUBROUTINE CenterBoundary_reflecting(this,Mesh,Physics,Fluxes,pvar)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Boundary_TYP) :: this
     TYPE(Mesh_TYP)     :: Mesh
     TYPE(Physics_TYP)  :: Physics
-    REAL :: rvar(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum)
+    TYPE(Fluxes_TYP)   :: Fluxes
+    REAL :: pvar(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum)
     !------------------------------------------------------------------------!
     INTEGER       :: i,j
     !------------------------------------------------------------------------!
-    INTENT(IN)    :: this,Mesh,Physics
-    INTENT(INOUT) :: rvar   
+    INTENT(IN)    :: this,Mesh,Physics,Fluxes
+    INTENT(INOUT) :: pvar 
     !------------------------------------------------------------------------!
     SELECT CASE(GetDirection(this))
     CASE(WEST)
-       FORALL (j=Mesh%JGMIN:Mesh%JGMAX)
+       FORALL (j=Mesh%JMIN:Mesh%JMAX)
           WHERE (this%reflX)
-             rvar(Mesh%IMIN-1,j,:) = -rvar(Mesh%IMIN,j,:)
-             rvar(Mesh%IMIN-2,j,:) = -rvar(Mesh%IMIN+1,j,:)
+             pvar(Mesh%IMIN-1,j,:) = -pvar(Mesh%IMIN,j,:)
+             pvar(Mesh%IMIN-2,j,:) = -pvar(Mesh%IMIN+1,j,:)
           ELSEWHERE
-             rvar(Mesh%IMIN-1,j,:) = rvar(Mesh%IMIN,j,:)
-             rvar(Mesh%IMIN-2,j,:) = rvar(Mesh%IMIN+1,j,:)
+             pvar(Mesh%IMIN-1,j,:) = pvar(Mesh%IMIN,j,:)
+             pvar(Mesh%IMIN-2,j,:) = pvar(Mesh%IMIN+1,j,:)
           END WHERE
        END FORALL
     CASE(EAST)
-       FORALL (j=Mesh%JGMIN:Mesh%JGMAX)
+       FORALL (j=Mesh%JMIN:Mesh%JMAX)
           WHERE (this%reflX)
-             rvar(Mesh%IMAX+1,j,:) = -rvar(Mesh%IMAX,j,:)
-             rvar(Mesh%IMAX+2,j,:) = -rvar(Mesh%IMAX-1,j,:)
+             pvar(Mesh%IMAX+1,j,:) = -pvar(Mesh%IMAX,j,:)
+             pvar(Mesh%IMAX+2,j,:) = -pvar(Mesh%IMAX-1,j,:)
           ELSEWHERE
-             rvar(Mesh%IMAX+1,j,:) = rvar(Mesh%IMAX,j,:)
-             rvar(Mesh%IMAX+2,j,:) = rvar(Mesh%IMAX-1,j,:)
+             pvar(Mesh%IMAX+1,j,:) = pvar(Mesh%IMAX,j,:)
+             pvar(Mesh%IMAX+2,j,:) = pvar(Mesh%IMAX-1,j,:)
           END WHERE
        END FORALL
     CASE(SOUTH)
-       FORALL (i=Mesh%IGMIN:Mesh%IGMAX)
+       FORALL (i=Mesh%IMIN:Mesh%IMAX)
           WHERE (this%reflY)
-             rvar(i,Mesh%JMIN-1,:) = -rvar(i,Mesh%JMIN,:)
-             rvar(i,Mesh%JMIN-2,:) = -rvar(i,Mesh%JMIN+1,:)
+             pvar(i,Mesh%JMIN-1,:) = -pvar(i,Mesh%JMIN,:)
+             pvar(i,Mesh%JMIN-2,:) = -pvar(i,Mesh%JMIN+1,:)
           ELSEWHERE
-             rvar(i,Mesh%JMIN-1,:) = rvar(i,Mesh%JMIN,:)
-             rvar(i,Mesh%JMIN-2,:) = rvar(i,Mesh%JMIN+1,:)
+             pvar(i,Mesh%JMIN-1,:) = pvar(i,Mesh%JMIN,:)
+             pvar(i,Mesh%JMIN-2,:) = pvar(i,Mesh%JMIN+1,:)
           END WHERE
        END FORALL
     CASE(NORTH)
-       FORALL (i=Mesh%IGMIN:Mesh%IGMAX)
+       FORALL (i=Mesh%IMIN:Mesh%IMAX)
           WHERE (this%reflY)
-             rvar(i,Mesh%JMAX+1,:) = -rvar(i,Mesh%JMAX,:)
-             rvar(i,Mesh%JMAX+2,:) = -rvar(i,Mesh%JMAX-1,:)
+             pvar(i,Mesh%JMAX+1,:) = -pvar(i,Mesh%JMAX,:)
+             pvar(i,Mesh%JMAX+2,:) = -pvar(i,Mesh%JMAX-1,:)
           ELSEWHERE
-             rvar(i,Mesh%JMAX+1,:) = rvar(i,Mesh%JMAX,:)
-             rvar(i,Mesh%JMAX+2,:) = rvar(i,Mesh%JMAX-1,:)
+             pvar(i,Mesh%JMAX+1,:) = pvar(i,Mesh%JMAX,:)
+             pvar(i,Mesh%JMAX+2,:) = pvar(i,Mesh%JMAX-1,:)
           END WHERE
        END FORALL
-    END SELECT
+    END SELECT 
   END SUBROUTINE CenterBoundary_reflecting
-
-
-  PURE SUBROUTINE FaceBoundary_reflecting(this,Mesh,Physics,we,ea,so,no,rstates)
-    IMPLICIT NONE
-    !------------------------------------------------------------------------!
-    TYPE(Boundary_TYP) :: this
-    TYPE(Mesh_TYP)     :: Mesh
-    TYPE(Physics_TYP)  :: Physics
-    INTEGER            :: we,ea,so,no
-    REAL :: rstates(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,4,Physics%vnum)
-    !------------------------------------------------------------------------!
-    INTEGER       :: i,j
-    !------------------------------------------------------------------------!
-    INTENT(IN)    :: this,Mesh,Physics,we,ea,so,no
-    INTENT(INOUT) :: rstates
-    !------------------------------------------------------------------------!
-    !************************************************************************!
-    ! Be careful! There is a problem with trapezoidal rule, because          !
-    ! SetFaceBoundary is called twice with different pairs of boundary values!
-    ! (1st call:sw/se,sw/nw; 2nd call:nw/ne,se/ne).                          !
-    !************************************************************************!
-    SELECT CASE(GetDirection(this))
-    CASE(WEST)
-       FORALL (j=Mesh%JGMIN:Mesh%JGMAX)
-          WHERE (this%reflX)
-             rstates(Mesh%IMIN,j,we,:) = 0.
-          END WHERE
-          rstates(Mesh%IMIN-1,j,ea,:) = rstates(Mesh%IMIN,j,we,:)
-       END FORALL
-    CASE(EAST)
-       FORALL (j=Mesh%JGMIN:Mesh%JGMAX)
-          WHERE (this%reflX)
-             rstates(Mesh%IMAX,j,ea,:) = 0.
-          END WHERE
-          rstates(Mesh%IMAX+1,j,we,:) = rstates(Mesh%IMAX,j,ea,:)
-       END FORALL
-    CASE(SOUTH)
-       FORALL (i=Mesh%IGMIN:Mesh%IGMAX)
-          WHERE (this%reflY)
-             rstates(i,Mesh%JMIN,so,:) = 0.
-          END WHERE
-          rstates(i,Mesh%JMIN-1,no,:) = rstates(i,Mesh%JMIN,so,:) 
-       END FORALL
-    CASE(NORTH)
-       FORALL (i=Mesh%IGMIN:Mesh%IGMAX)
-          WHERE (this%reflY)
-             rstates(i,Mesh%JMAX,no,:) = 0.
-          END WHERE
-          rstates(i,Mesh%JMAX+1,so,:) = rstates(i,Mesh%JMAX,no,:) 
-       END FORALL
-    END SELECT
-  END SUBROUTINE FaceBoundary_reflecting
-
 
   SUBROUTINE CloseBoundary_reflecting(this)
     IMPLICIT NONE

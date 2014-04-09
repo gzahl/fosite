@@ -33,6 +33,9 @@ MODULE geometry_common
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   PRIVATE
+  ! global constants
+  REAL, PARAMETER :: PI = 3.1415926535897932384626433832795028842
+  !--------------------------------------------------------------------------!
   INTERFACE GetType
      MODULE PROCEDURE GetCoordsys, GetType_common
   END INTERFACE
@@ -54,18 +57,23 @@ MODULE geometry_common
   !--------------------------------------------------------------------------!
   TYPE Geometry_TYP
      TYPE(Common_TYP) :: coordsys                   ! cartesian, polar, etc. !
-     REAL             :: scalefactor !scale factor, e.g. for oblate-spheroi. !
+     REAL             :: geoparam                   ! geometry parameter     !
+     LOGICAL          :: spherical_like  ! <e_eta,r> = 0 ?  (is eta ortho. to pos. vector?)!
   END TYPE Geometry_TYP
   SAVE
   !--------------------------------------------------------------------------!
   PUBLIC :: &
        ! types
        Geometry_TYP, &
+       ! constants
+       PI, &
        ! methods
        InitGeometry, &
        GetType, &
        GetName, &
        GetRank, &
+       GetScale, &
+       LikeSpherical, &
        Info, &
        Warning, &
        Error
@@ -84,6 +92,8 @@ CONTAINS
     INTENT(INOUT)      :: this
     !------------------------------------------------------------------------!
     CALL InitCommon(this%coordsys,cs,cn)
+    ! set geometry parameter to default value
+    this%geoparam = 1.0
   END SUBROUTINE InitGeometry
 
 
@@ -115,6 +125,26 @@ CONTAINS
     !------------------------------------------------------------------------!
     r = GetRank_common(this%coordsys)
   END FUNCTION GetGeometryRank
+
+
+  PURE FUNCTION GetScale(this) RESULT(gp)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Geometry_TYP), INTENT(IN) :: this
+    REAL :: gp
+    !------------------------------------------------------------------------!
+    gp = this%geoparam
+  END FUNCTION GetScale
+
+
+  PURE FUNCTION LikeSpherical(this) RESULT(ls)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Geometry_TYP), INTENT(IN) :: this
+    LOGICAL :: ls
+    !------------------------------------------------------------------------!
+    ls = this%Spherical_like
+  END FUNCTION LikeSpherical
 
 
   SUBROUTINE GeometryInfo(this,msg)

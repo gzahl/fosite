@@ -3,7 +3,8 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: mesh_midpoint.f90                                                 #
 !#                                                                           #
-!# Copyright (C) 2007 Tobias Illenseer <tillense@astrophysik.uni-kiel.de>    #
+!# Copyright (C) 2006-2009                                                   #
+!# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
 !# it under the terms of the GNU General Public License as published by      #
@@ -124,11 +125,7 @@ CONTAINS
     ! cell bary centers
     this%bcenter(:,:,:)  = this%center(:,:,:)
 
-    ! commutator coefficients at cell centers
-!!$    this%cyxy(:,:,1) = this%bhz(:,:)*(this%fhy(:,:,2)-this%fhy(:,:,1)) * this%dydV(:,:)
-!!$    this%cxyx(:,:,1) = this%bhz(:,:)*(this%fhx(:,:,4)-this%fhx(:,:,3)) * this%dxdV(:,:)
-!!$    this%czxz(:,:,1) = this%bhy(:,:)*(this%fhz(:,:,2)-this%fhz(:,:,1)) * this%dydV(:,:)
-!!$    this%czyz(:,:,1) = this%bhx(:,:)*(this%fhz(:,:,4)-this%fhz(:,:,3)) * this%dxdV(:,:)
+    ! commutator coefficients 
     this%cyxy(:,:,1) = 0.5*(this%fhz(:,:,2)+this%fhz(:,:,1)) &
          * (this%fhy(:,:,2)-this%fhy(:,:,1)) * this%dydV(:,:)
     this%cxyx(:,:,1) = 0.5*(this%fhz(:,:,4)+this%fhz(:,:,3)) &

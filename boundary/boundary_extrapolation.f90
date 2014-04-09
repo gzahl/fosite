@@ -29,7 +29,10 @@
 MODULE boundary_extrapolation
   USE mesh_common, ONLY : Mesh_TYP
   USE physics_common, ONLY : Physics_TYP
+  USE fluxes_common, ONLY : Fluxes_TYP
+  USE reconstruction_common, ONLY : Reconstruction_TYP, PrimRecon
   USE boundary_nogradients
+  USE physics_generic
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   PRIVATE
@@ -61,30 +64,48 @@ CONTAINS
   END SUBROUTINE InitBoundary_extrapolation
 
 
-  PURE SUBROUTINE CenterBoundary_extrapolation(this,Mesh,Physics,rvar)
+  PURE SUBROUTINE CenterBoundary_extrapolation(this,Mesh,Physics,Fluxes,pvar)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Boundary_TYP) :: this
     TYPE(Mesh_TYP)     :: Mesh
     TYPE(Physics_TYP)  :: Physics
-    REAL :: rvar(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum)
+    TYPE(Fluxes_TYP)   :: Fluxes
+    REAL :: pvar(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum)
     !------------------------------------------------------------------------!
-    INTENT(IN)    :: this,Mesh,Physics
-    INTENT(INOUT) :: rvar   
+    INTEGER       :: i,j
+    !------------------------------------------------------------------------!
+    INTENT(IN)    :: this,Mesh,Physics,Fluxes
+    INTENT(INOUT) :: pvar
     !------------------------------------------------------------------------!
     SELECT CASE(GetDirection(this))
     CASE(WEST)
-       rvar(Mesh%IMIN-1,:,:) = 2.*rvar(Mesh%IMIN,:,:) - rvar(Mesh%IMIN+1,:,:)
-       rvar(Mesh%IMIN-2,:,:) = 2.*rvar(Mesh%IMIN-1,:,:) - rvar(Mesh%IMIN,:,:)
+       ! UNROLL=Mesh%GNUM would be sufficient, but the compiler does
+       ! not know the value of Mesh%GNUM, hence we set UNROLL=4 and
+       ! hope that nobody sets Mesh%GNUM to a value greater than 4
+!CDIR UNROLL=4
+       DO i=1,Mesh%GNUM
+          pvar(Mesh%IMIN-i,Mesh%JMIN:Mesh%JMAX,:) = (i+1)*pvar(Mesh%IMIN,Mesh%JMIN:Mesh%JMAX,:) &
+               - i*pvar(Mesh%IMIN+1,Mesh%JMIN:Mesh%JMAX,:)
+       END DO
     CASE(EAST)
-       rvar(Mesh%IMAX+1,:,:) = 2.*rvar(Mesh%IMAX,:,:) - rvar(Mesh%IMAX-1,:,:)
-       rvar(Mesh%IMAX+2,:,:) = 2.*rvar(Mesh%IMAX+1,:,:) - rvar(Mesh%IMAX,:,:)
+!CDIR UNROLL=4
+       DO i=1,Mesh%GNUM
+          pvar(Mesh%IMAX+i,Mesh%JMIN:Mesh%JMAX,:) = (i+1)*pvar(Mesh%IMAX,Mesh%JMIN:Mesh%JMAX,:) &
+               - i*pvar(Mesh%IMAX-1,Mesh%JMIN:Mesh%JMAX,:)
+       END DO
     CASE(SOUTH)
-       rvar(:,Mesh%JMIN-1,:) = 2.*rvar(:,Mesh%JMIN,:) - rvar(:,Mesh%JMIN+1,:)
-       rvar(:,Mesh%JMIN-2,:) = 2.*rvar(:,Mesh%JMIN-1,:) - rvar(:,Mesh%JMIN,:)
+!CDIR UNROLL=4
+       DO j=1,Mesh%GNUM
+          pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN-j,:) = (j+1)*pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN,:) &
+               - j*pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN+1,:)
+       END DO
     CASE(NORTH)
-       rvar(:,Mesh%JMAX+1,:) = 2.*rvar(:,Mesh%JMAX,:) - rvar(:,Mesh%JMAX-1,:)
-       rvar(:,Mesh%JMAX+2,:) = 2.*rvar(:,Mesh%JMAX+1,:) - rvar(:,Mesh%JMAX,:)
+!CDIR UNROLL=4
+       DO j=1,Mesh%GNUM
+          pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX+j,:) = (j+1)*pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX,:) &
+               - j*pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX-1,:)
+       END DO
     END SELECT
   END SUBROUTINE CenterBoundary_extrapolation
 

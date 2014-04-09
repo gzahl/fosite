@@ -55,6 +55,12 @@ MODULE physics_common
      MODULE PROCEDURE PhysicsError, Error_common
   END INTERFACE
   !--------------------------------------------------------------------------!
+  TYPE PhysicsStruc_TYP
+     CHARACTER(LEN=16)      :: name
+     INTEGER                :: pos
+     INTEGER                :: dim
+     INTEGER                :: rank     
+  END TYPE PhysicsStruc_TYP
   TYPE Physics_TYP
      TYPE(Common_TYP)       :: advproblem            ! advection problem     !
      TYPE(Constants_TYP)    :: constants             ! physical constants    !
@@ -72,8 +78,12 @@ MODULE physics_common
      INTEGER                :: XVELOCITY, XMOMENTUM  !    conservative       !
      INTEGER                :: YVELOCITY, YMOMENTUM  !    variables          !
      INTEGER                :: ZVELOCITY, ZMOMENTUM  !                       !
+     TYPE(PhysicsStruc_TYP),DIMENSION(:), POINTER &
+                            :: structure             ! structure of variables!
+     INTEGER                :: nstruc                ! number of structure elem.!
      CHARACTER(LEN=16), DIMENSION(:), POINTER &
                             :: pvarname,cvarname     ! names of variables    !
+     CHARACTER(LEN=1), DIMENSION(:), POINTER :: errormap !mapping of errors to char !
      REAL, DIMENSION(:,:,:), POINTER &
                             :: csound                ! sound speed           !
      REAL, DIMENSION(:,:), POINTER &
@@ -87,12 +97,14 @@ MODULE physics_common
   PUBLIC :: &
        ! types
        Physics_TYP, &
+       PhysicsStruc_TYP, &
        ! methods
        InitPhysics, &
        ClosePhysics, &
        GetType, &
        GetName, &
        GetRank, &
+       GetErrorMap, &
        Info, &
        Warning, &
        Error
@@ -150,6 +162,15 @@ CONTAINS
     r = GetRank_common(this%advproblem)
   END FUNCTION GetPhysicsRank
 
+  PURE FUNCTION GetErrorMap(this, error) RESULT(c)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Physics_TYP), INTENT(IN) :: this
+    INTEGER, INTENT(IN):: error
+    CHARACTER(LEN=1) :: c
+    !------------------------------------------------------------------------!
+    c = this%errormap(error)
+  END FUNCTION GetErrorMap
 
   SUBROUTINE PhysicsInfo(this,msg)
     IMPLICIT NONE
@@ -159,7 +180,6 @@ CONTAINS
     !------------------------------------------------------------------------!
     CALL Info_common(this%advproblem,msg)
   END SUBROUTINE PhysicsInfo
-
 
   SUBROUTINE PhysicsWarning(this,modproc,msg)
     IMPLICIT NONE

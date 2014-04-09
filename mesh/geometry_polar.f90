@@ -30,10 +30,10 @@ MODULE geometry_polar
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   INTERFACE Convert2Cartesian_polar
-     MODULE PROCEDURE Convert2Cartesian_coords, Convert2Cartesian_vectors
+     MODULE PROCEDURE Polar2Cartesian_coords, Polar2Cartesian_vectors
   END INTERFACE
   INTERFACE Convert2Curvilinear_polar
-     MODULE PROCEDURE Convert2Curvilinear_coords, Convert2Curvilinear_vectors
+     MODULE PROCEDURE Cartesian2Polar_coords, Cartesian2Polar_vectors
   END INTERFACE
   PRIVATE
   CHARACTER(LEN=32), PARAMETER :: geometry_name = "polar"
@@ -42,7 +42,11 @@ MODULE geometry_polar
        InitGeometry_polar, &
        ScaleFactors_polar, &
        Convert2Cartesian_polar, &
-       Convert2Curvilinear_polar
+       Convert2Curvilinear_polar, &
+       Polar2Cartesian_coords, &
+       Polar2Cartesian_vectors, &
+       Cartesian2Polar_coords, &
+       Cartesian2Polar_vectors
   !--------------------------------------------------------------------------!
 
 CONTAINS
@@ -69,9 +73,8 @@ CONTAINS
   END SUBROUTINE ScaleFactors_polar
 
 
-  ! coordinate transformation
-  ! polar -> cartesian
-  ELEMENTAL SUBROUTINE Convert2Cartesian_coords(r,phi,x,y)
+  ! coordinate transformations
+  ELEMENTAL SUBROUTINE Polar2Cartesian_coords(r,phi,x,y)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     REAL, INTENT(IN)  :: r,phi
@@ -79,24 +82,21 @@ CONTAINS
     !------------------------------------------------------------------------!
     x = r*COS(phi)
     y = r*SIN(phi)
-  END SUBROUTINE Convert2Cartesian_coords
+  END SUBROUTINE Polar2Cartesian_coords
 
-
-  ! cartesian -> polar
-  ELEMENTAL SUBROUTINE Convert2Curvilinear_coords(x,y,r,phi)
+  ELEMENTAL SUBROUTINE Cartesian2Polar_coords(x,y,r,phi)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     REAL, INTENT(IN)  :: x,y
     REAL, INTENT(OUT) :: r,phi
     !------------------------------------------------------------------------!
     r = SQRT(x*x+y*y)
-    phi = ATAN(y/x)
-  END SUBROUTINE Convert2Curvilinear_coords
+    phi = ATAN2(y,x)+pi
+  END SUBROUTINE Cartesian2Polar_coords
 
 
-  ! vector transformation
-  ! polar -> cartesian  
-  ELEMENTAL SUBROUTINE Convert2Cartesian_vectors(phi,vr,vphi,vx,vy)
+  ! vector transformations
+  ELEMENTAL SUBROUTINE Polar2Cartesian_vectors(phi,vr,vphi,vx,vy)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     REAL, INTENT(IN)  :: phi,vr,vphi
@@ -104,11 +104,9 @@ CONTAINS
     !------------------------------------------------------------------------!
     vx = vr * COS(phi) - vphi * SIN(phi)
     vy = vr * SIN(phi) + vphi * COS(phi)
-  END SUBROUTINE Convert2Cartesian_vectors
+  END SUBROUTINE Polar2Cartesian_vectors
 
-
-  ! cartesian -> polar
-  ELEMENTAL SUBROUTINE Convert2Curvilinear_vectors(phi,vx,vy,vr,vphi)
+  ELEMENTAL SUBROUTINE Cartesian2Polar_vectors(phi,vx,vy,vr,vphi)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     REAL, INTENT(IN)  :: phi,vx,vy
@@ -116,6 +114,6 @@ CONTAINS
     !------------------------------------------------------------------------!
     vr   = vx * COS(phi) + vy * SIN(phi)
     vphi = -vx * SIN(phi) + vy * COS(phi)
-  END SUBROUTINE Convert2Curvilinear_vectors
+  END SUBROUTINE Cartesian2Polar_vectors
   
 END MODULE geometry_polar

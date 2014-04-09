@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# program file: main.f90                                                    #
 !#                                                                           #
-!# Copyright (C) 2006-2008                                                   #
+!# Copyright (C) 2006 - 2010                                                 #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -99,9 +99,6 @@ PROGRAM fosite
   wall_time = start_time
   log_time  = wall_time
 
-  ! set boundary values
-  CALL SetBoundaries(Timedisc,Mesh,Physics,Fluxes)
-
   IF (myrank.EQ.0) THEN
      PRINT *, "==================================================================="
      PRINT *, "Starting calculation..."
@@ -109,7 +106,7 @@ PROGRAM fosite
 
   ! store initial data
   IF (Timedisc%time.EQ.0.0) THEN
-     CALL WriteDataset(Datafile,Mesh,Physics,Timedisc)
+     CALL WriteDataset(Datafile,Mesh,Physics,Fluxes,Timedisc)
      IF (myrank.EQ.0) CALL PrintInfo(0,0.0,0.0,Timedisc%n_adj)
   END IF
 
@@ -119,7 +116,7 @@ PROGRAM fosite
      IF (ABS(Timedisc%stoptime-Timedisc%time).LE.1.0E-05*Timedisc%stoptime) EXIT
 
      ! calculate timestep
-     CALL CalcTimestep(Timedisc,Mesh,Physics)
+     CALL CalcTimestep(Timedisc,Mesh,Physics,Fluxes)
 
      ! adjust timestep for output
      ! and calculate the wall clock time
@@ -140,7 +137,7 @@ PROGRAM fosite
 
      ! write output to data file
      IF (ABS(Datafile%time-Timedisc%time).LE.1.0E-5*Datafile%time) THEN
-        CALL WriteDataset(Datafile,Mesh,Physics,Timedisc)
+        CALL WriteDataset(Datafile,Mesh,Physics,Fluxes,Timedisc)
         CALL PrintInfo(n,Timedisc%time,Timedisc%dtmin,Timedisc%n_adj)
         ! reset dt_min and n_adj
         Timedisc%dtmin = Timedisc%stoptime
@@ -149,7 +146,7 @@ PROGRAM fosite
 
      ! write output to log file
      IF (wall_time.GE.log_time) THEN
-        CALL WriteDataset(Logfile,Mesh,Physics,Timedisc)
+        CALL WriteDataset(Logfile,Mesh,Physics,Fluxes,Timedisc)
         log_time = wall_time + Logfile%dtwall
      END IF
 
@@ -171,9 +168,9 @@ PROGRAM fosite
   CALL CloseTimedisc(Timedisc)
 
   IF (ASSOCIATED(Physics%sources)) CALL CloseSources(Physics%sources,Fluxes)
-  CALL CloseFluxes(Fluxes)
   CALL ClosePhysics(Physics)
   CALL CloseMesh(Mesh,Fluxes)
+  CALL CloseFluxes(Fluxes)
   CALL CloseIntegration
 
 #ifdef PARALLEL
@@ -203,11 +200,9 @@ CONTAINS
     INTEGER :: k
     REAL, DIMENSION(Physics%VNUM,4) :: bflux
     !------------------------------------------------------------------------!
-    bflux(:,:) = 0.0
-    bflux(:,WEST)  = GetBoundaryFlux(Timedisc,Mesh,Physics,WEST)
-    bflux(:,EAST)  = GetBoundaryFlux(Timedisc,Mesh,Physics,EAST)
-    bflux(:,SOUTH) = GetBoundaryFlux(Timedisc,Mesh,Physics,SOUTH)
-    bflux(:,NORTH) = GetBoundaryFlux(Timedisc,Mesh,Physics,NORTH)
+    DO k=1,4
+       bflux(:,k) = GetBoundaryFlux(Fluxes,Mesh,Physics,k)
+    END DO
     IF (myrank.EQ.0) THEN
        PRINT *, "-------------------------------------------------------------------"
        PRINT *, "total boundary fluxes:"

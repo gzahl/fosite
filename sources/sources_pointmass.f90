@@ -29,13 +29,16 @@
 MODULE sources_pointmass
   USE common_types, ONLY : Common_TYP, InitCommon
   USE sources_common, InitSources_common => InitSources
-  USE fluxes_common, ONLY : Fluxes_TYP
+  USE boundary_common, ONLY : WEST,EAST,SOUTH,NORTH
+  USE fluxes_generic, ONLY : Fluxes_TYP, GetBoundaryFlux
   USE physics_generic
   USE mesh_generic
   IMPLICIT NONE
+#ifdef PARALLEL
+  include 'mpif.h'
+#endif
   !--------------------------------------------------------------------------!
   PRIVATE
-  REAL, PARAMETER :: TINY = 1.0E-30              ! to avoid division by 0    !
   CHARACTER(LEN=32), PARAMETER :: source_name = "central point mass"
   INTEGER, PARAMETER :: NEWTON = 1
   INTEGER, PARAMETER :: WIITA  = 2
@@ -49,6 +52,7 @@ MODULE sources_pointmass
        InitSources, &
        InitSources_pointmass, &
        ExternalSources_pointmass, &
+       CalcTimestep_pointmass, &
        CloseSources_pointmass, &
        GetSourcesPointer, &
        GetType, &
@@ -94,7 +98,7 @@ CONTAINS
   END SUBROUTINE InitSources
 
 
-  SUBROUTINE InitSources_pointmass(this,Mesh,Physics,stype,potential,mass)
+  SUBROUTINE InitSources_pointmass(this,Mesh,Physics,stype,potential,mass,cvis)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Sources_TYP), POINTER :: this
@@ -104,18 +108,22 @@ CONTAINS
     INTEGER           :: stype
     INTEGER           :: potential
     REAL              :: mass
+    REAL              :: cvis
     !------------------------------------------------------------------------!
     REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,2) :: accel
     REAL              :: r,a
+    REAL              :: invdt_x, invdt_y
     INTEGER           :: err
     INTEGER           :: i,j
     !------------------------------------------------------------------------!
-    INTENT(IN)        :: Mesh,Physics,stype,potential,mass
+    INTENT(IN)        :: Mesh,Physics,stype,potential,mass,cvis
     !------------------------------------------------------------------------!
     CALL InitSources(this,stype,source_name)
 
     ! set mass
     this%mass = mass
+    ! reset mass flux
+    this%mdot = 0.0
 
     ALLOCATE(this%accel(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,2), &
          STAT = err)
@@ -140,7 +148,7 @@ CONTAINS
           r = SQRT(Mesh%bccart(i,j,1)**2 + Mesh%bccart(i,j,2)**2)
           ! calculate cartesian components
           accel(i,j,:) = -(Physics%constants%GN * this%mass) * Mesh%bccart(i,j,:) &
-               / ((r+TINY)*((r-a)**2+TINY))
+               / ((r+TINY(1.0))*((r-a)**2+TINY(1.0)))
        END DO
     END DO
     accel(Mesh%IGMIN:Mesh%IMIN-1,:,:) = 0.0
@@ -150,10 +158,48 @@ CONTAINS
 
     ! convert to curvilinear vector components
     CALL Convert2Curvilinear(Mesh%geometry,Mesh%bcenter,accel,this%accel)
+
+    ! timestep control
+    ! x-direction
+    IF (Mesh%INUM.GT.1) THEN
+       invdt_x = MAXVAL(ABS(this%accel(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN:Mesh%JMAX,1) &
+            / Mesh%dlx(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN:Mesh%JMAX)))
+    ELSE
+       ! set to zero, i.e. no limit in x-direction due to pointmass
+       invdt_x = 0.0
+    END IF
+    ! y-direction
+    IF (Mesh%JNUM.GT.1) THEN
+       invdt_y = MAXVAL(ABS(this%accel(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN:Mesh%JMAX,2) &
+            / Mesh%dly(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN:Mesh%JMAX)))
+    ELSE
+       ! set to zero, i.e. no limit in y-direction due to pointmass
+       invdt_y = 0.0
+    END IF
+    invdt_x = MAX(invdt_x, invdt_y)
+    IF (invdt_x.LT.TINY(invdt_x)) THEN
+       ! set time step to huge value, i.e. no limitation due do the
+       ! pointmass module
+       this%cvis = HUGE(this%cvis)
+    ELSE
+       ! this factor is constant throughout the simulation;
+       ! devide it by SQRT(this%mass) to get the time step limit
+       this%cvis = cvis * SQRT(this%mass/MAX(invdt_x, invdt_y))
+    END IF
+
+    SELECT CASE(GetType(Mesh%geometry))
+    CASE(POLAR,LOGPOLAR,TANPOLAR,SINHPOLAR,SPHERICAL,OBLATE_SPHEROIDAL,SINHSPHERICAL)
+       this%outbound = WEST
+    CASE(CYLINDRICAL,TANCYLINDRICAL)
+       this%outbound = SOUTH
+    CASE DEFAULT
+       this%outbound = 0 ! disable growth of central point mass
+       CALL WARNING(this,"ExternalSources_pointmass","geometry not supported")
+    END SELECT
   END SUBROUTINE InitSources_pointmass
 
 
-  PURE SUBROUTINE ExternalSources_pointmass(this,Mesh,Physics,pvar,cvar,sterm)
+  SUBROUTINE ExternalSources_pointmass(this,Mesh,Physics,Fluxes,pvar,cvar,sterm)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Sources_TYP) :: this
@@ -163,26 +209,64 @@ CONTAINS
     REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum) &
                       :: cvar,pvar,sterm
     !------------------------------------------------------------------------!
-    INTEGER           :: i,j,k
+    REAL, DIMENSION(Physics%VNUM) :: bflux
+    REAL              :: oldmass
     !------------------------------------------------------------------------!
-    INTENT(IN)        :: Mesh,Physics,cvar,pvar
+    INTENT(IN)        :: Mesh,Physics,Fluxes,cvar,pvar
     INTENT(INOUT)     :: this
     INTENT(OUT)       :: sterm
     !------------------------------------------------------------------------!
+    IF (this%outbound.NE.0) THEN
+       ! get boundary flux
+#ifdef PARALLEL
+       bflux(:)  = GetBoundaryFlux(Fluxes,Mesh,Physics,this%outbound,MPI_COMM_WORLD)
+#else
+       bflux(:)  = GetBoundaryFlux(Fluxes,Mesh,Physics,this%outbound)
+#endif       
+       ! store old mass
+       oldmass = this%mass
+       ! compute new mass
+       this%mass = this%mass + (bflux(Physics%DENSITY) - this%mdot)
+       ! multiply gravitational acceleration with newmass/oldmass
+       this%accel(:,:,:) = this%accel(:,:,:) * this%mass/oldmass
+       ! store actual total mass flux
+       this%mdot = bflux(Physics%DENSITY)
+    END IF
     ! gravitational source terms
     CALL ExternalSources(Physics,Mesh,this%accel,pvar,cvar,sterm)
   END SUBROUTINE ExternalSources_pointmass
 
- 
-  SUBROUTINE CloseSources_pointmass(this,Fluxes)
+
+  PURE SUBROUTINE CalcTimestep_pointmass(this,Mesh,Physics,pvar,cvar,dt)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Sources_TYP) :: this
-    TYPE(Fluxes_TYP)  :: Fluxes
+    TYPE(Mesh_TYP)    :: Mesh
+    TYPE(Physics_TYP) :: Physics
+    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum) &
+                      :: pvar,cvar
+    REAL              :: dt
     !------------------------------------------------------------------------!
-    INTENT(IN)        :: Fluxes
+    INTENT(IN)        :: Mesh,Physics,pvar,cvar
+    INTENT(INOUT)     :: this
+    INTENT(OUT)       :: dt
+    !------------------------------------------------------------------------!
+    ! largest time step due to gravitational time scale
+    dt = this%cvis / SQRT(this%mass)
+  END SUBROUTINE CalcTimestep_pointmass
+
+
+  SUBROUTINE CloseSources_pointmass(this)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Sources_TYP) :: this
+    !------------------------------------------------------------------------!
     INTENT(INOUT)     :: this
     !------------------------------------------------------------------------!
+    IF (GetRank(this).EQ.0) THEN
+       PRINT *, "-------------------------------------------------------------------"
+       PRINT "(A,(ES11.3))", " central mass: ", this%mass
+    END IF
     DEALLOCATE(this%accel)
   END SUBROUTINE CloseSources_pointmass
 

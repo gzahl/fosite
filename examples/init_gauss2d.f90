@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: init_gauss2d.f90                                                  #
 !#                                                                           #
-!# Copyright (C) 2006-2008                                                   #
+!# Copyright (C) 2006-2010                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -36,11 +36,36 @@ MODULE Init
   USE sources_generic
   USE timedisc_generic
   IMPLICIT NONE
-#ifdef PARALLEL
-  include 'mpif.h'
-#endif
   !--------------------------------------------------------------------------!
   PRIVATE
+  ! simulation parameter
+  REAL, PARAMETER :: TSIM   = 0.3         ! simulation time
+  REAL, PARAMETER :: GAMMA  = 1.4         ! ratio of specific heats
+  REAL, PARAMETER :: CSISO  = 0.0         ! if .ne. 0.0 -> isothermal simulation
+                                          !   with CSISO as sound speed
+  ! initial condition (dimensionless units)
+  REAL, PARAMETER :: RHO0   = 1.0         ! ambient density
+  REAL, PARAMETER :: P0     = 1.0         ! ambient pressure
+  REAL, PARAMETER :: AMP    = 1.0         ! amplitude of the pulse
+  REAL, PARAMETER :: PWIDTH = 0.06        ! half width of the Gaussian
+  REAL, PARAMETER :: ETA    = 0.0         ! dynamic viscosity (0.0 disables)
+  ! mesh settings
+  INTEGER, PARAMETER :: MGEO = CARTESIAN   ! geometry of the mesh
+!!$  INTEGER, PARAMETER :: MGEO = POLAR
+!!$  INTEGER, PARAMETER :: MGEO = LOGPOLAR
+!!$  INTEGER, PARAMETER :: MGEO = TANPOLAR
+!!$  INTEGER, PARAMETER :: MGEO = SINHPOLAR
+  INTEGER, PARAMETER :: XRES = 100         ! resolution
+  INTEGER, PARAMETER :: YRES = 100
+  REAL, PARAMETER    :: RMIN = 1.0E-2      ! inner radius for polar grids
+  REAL, PARAMETER    :: RMAX = 0.3         ! outer radius
+  REAL, PARAMETER    :: GPAR = 0.2         ! geometry scaling parameter
+  ! output file parameter
+  INTEGER, PARAMETER :: ONUM = 10        ! number of output time steps
+  CHARACTER(LEN=256), PARAMETER :: ODIR &! output directory
+                                 = "./"
+  CHARACTER(LEN=256), PARAMETER &          ! output data file name
+                     :: OFNAME = 'gauss2d' 
   !--------------------------------------------------------------------------!
   PUBLIC :: &
        ! methods
@@ -61,182 +86,187 @@ CONTAINS
     TYPE(FileIO_TYP)  :: Logfile
     !------------------------------------------------------------------------!
     ! Local variable declaration
-    INTEGER           :: geometry
+    INTEGER           :: bc(4)
+    REAL              :: x1,x2,y1,y2
     !------------------------------------------------------------------------!
     INTENT(OUT)       :: Mesh,Physics,Fluxes,Timedisc,Datafile,Logfile
     !------------------------------------------------------------------------!
-
-    ! set the geometry
-    geometry = CARTESIAN
-!    geometry = POLAR
-!    geometry = LOGPOLAR
-
     ! physics settings
-    CALL InitPhysics(Physics, &
-         problem   = EULER2D, &
-         gamma     = 1.4, &         ! ratio of specific heats        !
-         dpmax     = 1.0)           ! for advanced time step control !
-!!$    CALL InitPhysics(Physics, &
-!!$         problem = EULER2D_ISOTHERM, &
-!!$         cs      = 1.0)           ! isothermal sound speed  !
+    IF (CSISO.GT.TINY(CSISO)) THEN
+       CALL InitPhysics(Physics, &
+            problem = EULER2D_ISOTHERM, &
+            cs      = CSISO)                       ! isothermal sound speed  !
+    ELSE
+       CALL InitPhysics(Physics, &
+            problem   = EULER2D, &
+            gamma     = GAMMA, &            ! ratio of specific heats        !
+            dpmax     = 1.0)                ! for advanced time step control !
+    END IF
 
     ! numerical scheme for flux calculation
     CALL InitFluxes(Fluxes, &
-         scheme = MIDPOINT)         ! quadrature rule                !
+         scheme = MIDPOINT)                 ! quadrature rule                !
 
     ! reconstruction method
     CALL InitReconstruction(Fluxes%reconstruction, &
          order     = LINEAR, &
          variables = CONSERVATIVE, &! vars. to use for reconstruction!
          limiter   = MONOCENT, &    ! one of: minmod, monocent,...   !
-         theta     = 1.3)           ! optional parameter for limiter !
+         theta     = 1.2)           ! optional parameter for limiter !
 
-    SELECT CASE(geometry)
+    ! mesh settings
+    SELECT CASE(MGEO)
     CASE(CARTESIAN)
-       ! mesh settings
-       CALL InitMesh(Mesh,Fluxes, &
-            geometry = CARTESIAN, &
-                inum = 100, &       ! resolution in x and            !
-                jnum = 100, &       !   y direction                  !             
-                xmin = -0.5, &
-                xmax = 0.5, &
-                ymin = -0.5, &
-                ymax = 0.5)
-       ! boundary conditions
-    CALL InitBoundary(Timedisc%boundary,Mesh,Physics, &
-         western  = NO_GRADIENTS, &
-         eastern  = NO_GRADIENTS, &
-         southern = NO_GRADIENTS, &
-         northern = NO_GRADIENTS)
+       x1 = -0.5
+       x2 = 0.5
+       y1 = -0.5
+       y2 = 0.5
+       bc(WEST)  = NO_GRADIENTS
+       bc(EAST)  = NO_GRADIENTS
+       bc(SOUTH) = NO_GRADIENTS
+       bc(NORTH) = NO_GRADIENTS
     CASE(POLAR)
-       ! mesh settings
-       CALL InitMesh(Mesh,Fluxes, &
-            geometry = POLAR, &
-                inum = 50, &        ! resolution in x and            !
-                jnum = 30, &        !   y direction                  !             
-                xmin = 0.001, &
-                xmax = 0.5, &
-                ymin = 0.0, &
-                ymax = 2*PI)
-       ! boundary conditions
-       CALL InitBoundary(Timedisc%boundary,Mesh,Physics, &
-         western  = AXIS, &
-         eastern  = NO_GRADIENTS, &
-         southern = PERIODIC, &
-         northern = PERIODIC)
+       x1 = RMIN
+       x2 = 0.5*SQRT(2.0)
+       y1 = 0.0
+       y2 = 2*PI
+       bc(WEST)  = NO_GRADIENTS
+       bc(EAST)  = NO_GRADIENTS
+       bc(SOUTH) = PERIODIC
+       bc(NORTH) = PERIODIC
     CASE(LOGPOLAR)
-       ! mesh settings
-       CALL InitMesh(Mesh,Fluxes, &
-            geometry = LOGPOLAR, &
-                inum = 50, &        ! resolution in x and            !
-                jnum = 120, &       !   y direction                  !             
-                xmin = LOG(0.1), &
-                xmax = LOG(5.0), &
-                ymin = 0.0, &
-                ymax = 2*PI, &
-              gparam = 0.1)
-       ! boundary conditions
-       CALL InitBoundary(Timedisc%boundary,Mesh,Physics, &
-         western  = AXIS, &
-         eastern  = NO_GRADIENTS, &
-         southern = PERIODIC, &
-         northern = PERIODIC)
+       x1 = LOG(RMIN/GPAR)
+       x2 = LOG(0.5*SQRT(2.0)/GPAR)
+       y1 = 0.0
+       y2 = 2*PI
+       bc(WEST)  = NO_GRADIENTS
+       bc(EAST)  = NO_GRADIENTS
+       bc(SOUTH) = PERIODIC
+       bc(NORTH) = PERIODIC
+    CASE(TANPOLAR)
+       x1 = ATAN(RMIN/GPAR)
+       x2 = ATAN(0.5*SQRT(2.0)/GPAR)
+       y1 = 0.0
+       y2 = 2*PI
+       bc(WEST)  = NO_GRADIENTS
+       bc(EAST)  = NO_GRADIENTS
+       bc(SOUTH) = PERIODIC
+       bc(NORTH) = PERIODIC
+    CASE(SINHPOLAR)
+       x1 = RMIN/GPAR                ! temporary
+       x1 = LOG(x1+SQRT(1.0+x1*x1))  ! = ASINH(RMIN/sc)
+       x2 = 0.5*SQRT(2.0)/GPAR       ! temporary
+       x2 = LOG(x2+SQRT(1.0+x2*x2))  ! = ASINH(RMAX/sc)
+       y1 = 0.0
+       y2 = 2*PI
+       bc(WEST)  = NO_GRADIENTS
+       bc(EAST)  = NO_GRADIENTS
+       bc(SOUTH) = PERIODIC
+       bc(NORTH) = PERIODIC
     CASE DEFAULT
-       CALL Error(Mesh,"InitProgram","geometry should be either cartesian or (log)polar")
+       CALL Error(Physics,"InitProgram", &
+            " geometry should be one of cartesian,polar,logpolar,tanpolar,sinhpolar or bipolar")
     END SELECT
 
+    CALL InitMesh(Mesh,Fluxes, &
+         geometry = MGEO, &
+             inum = XRES, &       ! resolution in x and            !
+             jnum = YRES, &       !   y direction                  !             
+             xmin = x1, &
+             xmax = x2, &
+             ymin = y1, &
+             ymax = y2, &
+           gparam = GPAR)
+
+    ! boundary conditions (depends on the geometry, see above)
+    CALL InitBoundary(Timedisc%boundary,Mesh,Physics, &
+         western  = bc(WEST), &
+         eastern  = bc(EAST), &
+         southern = bc(SOUTH), &
+         northern = bc(NORTH))
+
     ! viscosity source term
-!!$    CALL InitSources(Physics%sources,Mesh,Fluxes,Physics, &
-!!$         stype    = VISCOSITY, &
-!!$         vismodel = MOLECULAR, &
-!!$         dynconst = 1.0E-1)
+    IF (ETA.GT.TINY(ETA)) THEN
+       CALL InitSources(Physics%sources,Mesh,Fluxes,Physics,Timedisc%boundary, &
+            stype    = VISCOSITY, &
+            vismodel = MOLECULAR, &
+            dynconst = ETA)
+    END IF
 
     ! time discretization settings
     CALL InitTimedisc(Timedisc,Mesh,Physics,&
          method   = MODIFIED_EULER, &
          order    = 3, &
          cfl      = 0.4, &
-         stoptime = 0.3, &
+         stoptime = TSIM, &
          dtlimit  = 1.0E-4, &
          maxiter  = 1000000)
 
     ! set initial condition
-    CALL InitData(Mesh,Physics,Timedisc%pvar,Timedisc%cvar)
+    CALL InitData(Mesh,Physics,Timedisc)
 
     ! initialize log input/output
     CALL InitFileIO(Logfile,Mesh,Physics,Timedisc,&
          fileformat = BINARY, &
-#ifdef PARALLEL
-         filename   = "/tmp/gauss2dlog", &
-#else
-         filename   = "gauss2dlog", &
-#endif
-         stoptime   = Timedisc%stoptime, &
-         dtwall     = 1800,&
+         filename   = TRIM(ODIR) // TRIM(OFNAME) // 'log', &
          filecycles = 1)
 
     ! initialize data input/output
     CALL InitFileIO(Datafile,Mesh,Physics,Timedisc, &
-         fileformat = GNUPLOT, &
-!         ncfmt      = NF90_CLASSIC_MODEL, &
-#ifdef PARALLEL
-         filename   = "/tmp/gauss2d", &
-#else
-         filename   = "gauss2d", &
-#endif
-         stoptime   = Timedisc%stoptime, &
-         count      = 10, &
-         filecycles = 0)
+         fileformat = VTK, &
+!!$         fileformat = GNUPLOT, &
+!!$         filecycles = 0, &
+         filename   = TRIM(ODIR) // TRIM(OFNAME), &
+         count      = ONUM)
   END SUBROUTINE InitProgram
 
 
-  SUBROUTINE InitData(Mesh,Physics,pvar,cvar)
+  SUBROUTINE InitData(Mesh,Physics,Timedisc)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    TYPE(Physics_TYP) :: Physics
-    TYPE(Mesh_TYP)    :: Mesh
-    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%VNUM)&
-                      :: pvar,cvar
+    TYPE(Physics_TYP)  :: Physics
+    TYPE(Mesh_TYP)     :: Mesh
+    TYPE(Timedisc_TYP) :: Timedisc
     !------------------------------------------------------------------------!
     ! Local variable declaration
+    TYPE(Sources_TYP), POINTER :: sp
     INTEGER           :: i,j
-    REAL              :: amplitude, hwidth, rho0, P0, x0, y0
+    REAL              :: x0, y0
+    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,2) :: dv
     !------------------------------------------------------------------------!
-    INTENT(IN)        :: Mesh,Physics
-    INTENT(OUT)       :: pvar,cvar
+    INTENT(IN)         :: Mesh,Physics
+    INTENT(INOUT)      :: Timedisc
     !------------------------------------------------------------------------!
-    ! 2D gaussian pressure pulse
-    rho0      = 1.0
-    P0        = 1.0
-    amplitude = 1.0
-    ! centered at cartesian position:
-    x0        = 0.0
-    y0        = 0.0
-    ! half width of the pulse
-    hwidth    = 0.06
+    ! center of the pressure pulse (give in cartesian coordinates)
+    x0 = 0.0
+    y0 = 0.0
 
-    pvar(:,:,Physics%XVELOCITY) = 0.
-    pvar(:,:,Physics%YVELOCITY) = 0.
+    ! velocities
+    Timedisc%pvar(:,:,Physics%XVELOCITY) = 0.
+    Timedisc%pvar(:,:,Physics%YVELOCITY) = 0.
 
     SELECT CASE(GetType(Physics))
-    CASE(EULER2D_ISOTHERM)
-       FORALL (i=Mesh%IGMIN:Mesh%IGMAX,j=Mesh%JGMIN:Mesh%JGMAX)
-          pvar(i,j,Physics%DENSITY) = rho0 + amplitude*EXP(-LOG(2.0) * &
-               ((Mesh%bccart(i,j,1)-x0)**2+(Mesh%bccart(i,j,2)-y0)**2)/hwidth**2)
-       END FORALL
-       CALL Info(Mesh, " DATA-----> initial condition: " // &
-            "2D gaussian density pulse")       
     CASE(EULER2D)
-       pvar(:,:,Physics%DENSITY)   = rho0
+       ! non-isothermal setup with constant density and pressure pulse
+       Timedisc%pvar(:,:,Physics%DENSITY)   = RHO0
        FORALL (i=Mesh%IGMIN:Mesh%IGMAX,j=Mesh%JGMIN:Mesh%JGMAX)
-          pvar(i,j,Physics%PRESSURE) = P0 + amplitude*EXP(-LOG(2.0) * &
-               ((Mesh%bccart(i,j,1)-x0)**2+(Mesh%bccart(i,j,2)-y0)**2)/hwidth**2)
+          Timedisc%pvar(i,j,Physics%PRESSURE) = P0 + AMP*EXP(-LOG(2.0) * &
+               ((Mesh%bccart(i,j,1)-x0)**2+(Mesh%bccart(i,j,2)-y0)**2)/PWIDTH**2)
        END FORALL
-       CALL Info(Mesh, " DATA-----> initial condition: " // &
-            "2D gaussian pressure pulse")
+    CASE(EULER2D_ISOTHERM)
+       ! in isothermal configurations the pressure is proportional to
+       ! the density; thus the pulse is applied to the density
+       FORALL (i=Mesh%IGMIN:Mesh%IGMAX,j=Mesh%JGMIN:Mesh%JGMAX)
+          Timedisc%pvar(i,j,Physics%DENSITY) = RHO0 + AMP*EXP(-LOG(2.0) * &
+               ((Mesh%bccart(i,j,1)-x0)**2+(Mesh%bccart(i,j,2)-y0)**2)/PWIDTH**2)
+       END FORALL
     END SELECT
 
-    CALL Convert2Conservative(Physics,Mesh,pvar,cvar)
+    CALL Convert2Conservative(Physics,Mesh,Timedisc%pvar,Timedisc%cvar)
+
+    CALL Info(Mesh, " DATA-----> initial condition: " // &
+         "2D gaussian pressure pulse")
+
   END SUBROUTINE InitData
 
 END MODULE Init

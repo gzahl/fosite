@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: init_vortex2d.f90                                                 #
 !#                                                                           #
-!# Copyright (C) 2006-2008                                                   #
+!# Copyright (C) 2006-2010                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -25,6 +25,10 @@
 
 !----------------------------------------------------------------------------!
 ! Program and data initialization for 2D isentropic vortex
+! References:
+! [1] Yee, H. C. et al.: Low-dissipative high-order shock-capturing methods
+!     using characteristic-based filters, J. Comput. Phys. 150 (1999), 199-238
+!     DOI: 10.1006/jcph.1998.6177
 !----------------------------------------------------------------------------!
 MODULE Init
   USE physics_generic
@@ -34,9 +38,38 @@ MODULE Init
   USE boundary_generic
   USE fileio_generic
   USE timedisc_generic
+  USE sources_generic
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   PRIVATE
+  ! simulation parameters
+  REAL, PARAMETER    :: TSIM    = 100.0    ! simulation stop time
+  REAL, PARAMETER    :: GAMMA   = 1.4      ! ratio of specific heats
+  ! initial condition (dimensionless units)
+  REAL, PARAMETER    :: RHOINF  = 1.       ! ambient density
+  REAL, PARAMETER    :: PINF    = 1.       ! ambient pressure
+  REAL, PARAMETER    :: VSTR    = 5.0      ! nondimensional vortex strength
+  REAL, PARAMETER    :: UINF    = 0.1      ! cartesian components of constant
+  REAL, PARAMETER    :: VINF    = 0.1      !   global velocity field
+  REAL, PARAMETER    :: X0      = 0.0      ! vortex position (cart. coords.)
+  REAL, PARAMETER    :: Y0      = 0.0
+  ! mesh settings
+  INTEGER, PARAMETER :: MGEO = CARTESIAN   ! geometry
+!!$  INTEGER, PARAMETER :: MGEO = POLAR    
+!!$  INTEGER, PARAMETER :: MGEO = LOGPOLAR
+!!$  INTEGER, PARAMETER :: MGEO = TANPOLAR
+!!$  INTEGER, PARAMETER :: MGEO = SINHPOLAR
+  INTEGER, PARAMETER :: XRES = 100         ! x-resolution
+  INTEGER, PARAMETER :: YRES = 100         ! y-resolution
+  REAL, PARAMETER    :: RMIN = 1.0E-2      ! inner radius for polar grids
+  REAL, PARAMETER    :: RMAX = 5.0         ! outer radius
+  REAL, PARAMETER    :: GPAR = 1.0         ! geometry scaling parameter     !
+  ! output parameters
+  INTEGER, PARAMETER :: ONUM = 100         ! number of output data sets
+  CHARACTER(LEN=256), PARAMETER &          ! output data dir
+                     :: ODIR = './'
+  CHARACTER(LEN=256), PARAMETER &          ! output data file name
+                     :: OFNAME = 'vortex2d' 
   !--------------------------------------------------------------------------!
   PUBLIC :: &
        ! methods
@@ -57,77 +90,103 @@ CONTAINS
     TYPE(FILEIO_TYP)  :: Logfile
     !------------------------------------------------------------------------!
     ! Local variable declaration
-    INTEGER           :: geometry
+    INTEGER           :: bc(4)
+    REAL              :: x1,x2,y1,y2
     !------------------------------------------------------------------------!
     INTENT(OUT)       :: Mesh,Physics,Fluxes,Timedisc,Datafile,Logfile
     !------------------------------------------------------------------------!
-
-    ! set the geometry
-    geometry = CARTESIAN
-!    geometry = POLAR
-
     ! physics settings
     CALL InitPhysics(Physics, &
          problem = EULER2D, &
-         gamma   = 1.4, &           ! ratio of specific heats        !
-         mu      = 0.602E-03, &     ! mean molecular weight          !
-         dpmax   = 1.0)             ! for advanced time step control !
+         gamma   = GAMMA, &                 ! ratio of specific heats        !
+         dpmax   = 1.0)                     ! for advanced time step control !
 
     ! numerical scheme for flux calculation
     CALL InitFluxes(Fluxes, &
-         scheme = MIDPOINT)         ! quadrature rule                !
+         scheme = MIDPOINT)                 ! quadrature rule                !
 
     ! reconstruction method
     CALL InitReconstruction(Fluxes%reconstruction, &
          order     = LINEAR, &
-         variables = CONSERVATIVE, &! vars. to use for reconstruction!
-         limiter   = MONOCENT, &    ! one of: minmod, monocent,...   !
-         theta     = 1.3)           ! optional parameter for limiter !
+         variables = CONSERVATIVE, &        ! vars. to use for reconstruction!
+         limiter   = MONOCENT, &            ! one of: minmod, monocent,...   !
+         theta     = 1.2)                   ! optional parameter for limiter !
 
-    SELECT CASE(geometry)
+    ! mesh settings and boundary conditions
+    SELECT CASE(MGEO)
     CASE(CARTESIAN)
-       ! mesh settings
-       CALL InitMesh(Mesh,Fluxes, &
-            geometry = CARTESIAN, &
-                inum = 100, &       ! resolution in x and            !
-                jnum = 100, &       !   y direction                  !             
-                xmin = -5.0, &
-                xmax = 5.0, &
-                ymin = -5.0, &
-                ymax = 5.0)
-       ! boundary conditions
-       CALL InitBoundary(Timedisc%boundary,Mesh,Physics, &
-         western  = PERIODIC, &
-         eastern  = PERIODIC, &
-         southern = PERIODIC, &
-         northern = PERIODIC)
+       x1 =-RMAX
+       x2 = RMAX
+       y1 =-RMAX 
+       y2 = RMAX
+       bc(WEST)  = PERIODIC
+       bc(EAST)  = PERIODIC
+       bc(SOUTH) = PERIODIC
+       bc(NORTH) = PERIODIC
     CASE(POLAR)
-       ! mesh settings
-       CALL InitMesh(Mesh,Fluxes, &
-            geometry = POLAR, &
-                inum = 50, &        ! resolution in x and            !
-                jnum = 30, &        !   y direction                  !             
-                xmin = 0.0, &
-                xmax = 5.0, &
-                ymin = 0.0, &
-                ymax = 2*PI)
-       ! boundary conditions
-       CALL InitBoundary(Timedisc%boundary,Mesh,Physics, &
-         western  = NO_GRADIENTS, &
-         eastern  = NO_GRADIENTS, &
-         southern = PERIODIC, &
-         northern = PERIODIC)
+       x1 = RMIN
+       x2 = RMAX
+       y1 = 0.0 
+       y2 = 2*PI       
+       bc(WEST)  = NO_GRADIENTS
+       bc(EAST)  = NO_GRADIENTS
+       bc(SOUTH) = PERIODIC
+       bc(NORTH) = PERIODIC
+    CASE(LOGPOLAR)
+       x1 = LOG(RMIN/GPAR)
+       x2 = LOG(RMAX/GPAR)
+       y1 = 0.0 
+       y2 = 2*PI       
+       bc(WEST)  = NO_GRADIENTS
+       bc(EAST)  = NO_GRADIENTS
+       bc(SOUTH) = PERIODIC
+       bc(NORTH) = PERIODIC
+    CASE(TANPOLAR)
+       x1 = ATAN(RMIN/GPAR)
+       x2 = ATAN(RMAX/GPAR)
+       y1 = 0.0 
+       y2 = 2*PI       
+       bc(WEST)  = NO_GRADIENTS
+       bc(EAST)  = NO_GRADIENTS
+       bc(SOUTH) = PERIODIC
+       bc(NORTH) = PERIODIC
+    CASE(SINHPOLAR)
+       x1 = RMIN/GPAR
+       x1 = LOG(x1+SQRT(1.0+x1*x1))  ! = ASINH(RMIN/GPAR))
+       x2 = RMAX/GPAR
+       x2 = LOG(x2+SQRT(1.0+x2*x2))  ! = ASINH(RMAX/GPAR))
+       y1 = 0.0 
+       y2 = 2*PI       
+       bc(WEST)  = NO_GRADIENTS
+       bc(EAST)  = NO_GRADIENTS
+       bc(SOUTH) = PERIODIC
+       bc(NORTH) = PERIODIC
     CASE DEFAULT
-       CALL Error(Physics,"InitProgram", &
-            "geometry should be either cartesian or polar")
+       CALL Error(Physics,"InitProgram","mesh geometry not supported for 2D isentropic vortex")
     END SELECT
 
+    CALL InitMesh(Mesh,Fluxes, &
+         geometry = MGEO, &
+             inum = XRES, &
+             jnum = YRES, &
+             xmin = x1, &
+             xmax = x2, &
+             ymin = y1, &
+             ymax = y2, &
+           gparam = GPAR)
+
+    CALL InitBoundary(Timedisc%boundary,Mesh,Physics, &
+         western  = bc(WEST), &
+         eastern  = bc(EAST), &
+         southern = bc(SOUTH), &
+         northern = bc(NORTH))
+ 
     ! time discretization settings
     CALL InitTimedisc(Timedisc,Mesh,Physics,&
          method   = MODIFIED_EULER, &
          order    = 3, &
          cfl      = 0.4, &
-         stoptime = 100.0, &
+         stoptime = TSIM, &
          dtlimit  = 1.0E-4, &
          maxiter  = 1000000)
 
@@ -137,22 +196,16 @@ CONTAINS
     ! initialize log input/output
     CALL InitFileIO(Logfile,Mesh,Physics,Timedisc,&
          fileformat = BINARY, &
-#ifdef PARALLEL
-         filename   = "/tmp/vortex2dlog", &
-#else
-         filename   = "vortex2dlog", &
-#endif
+         filename   = TRIM(ODIR) // TRIM(OFNAME) // 'log', &
          filecycles = 1)
 
     ! initialize data input/output
     CALL InitFileIO(Datafile,Mesh,Physics,Timedisc, &
-         fileformat = GNUPLOT, &
-#ifdef PARALLEL
-         filename   = "/tmp/vortex2d", &
-#else
-         filename   = "vortex2d", &
-#endif
-         count      = 10)
+         fileformat = VTK, &
+!!$         fileformat = GNUPLOT, &
+!!$         filecycles = 0, &
+         filename   = TRIM(ODIR) // TRIM(OFNAME), &
+         count      = ONUM)
 
   END SUBROUTINE InitProgram
 
@@ -166,61 +219,32 @@ CONTAINS
     !------------------------------------------------------------------------!
     ! Local variable declaration
     INTEGER           :: i,j
-    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,2) :: cart
     REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,2) :: vxy
-    REAL              :: x0,y0,x,y,r2
-    REAL              :: rho0,u0,v0,P0,T,T0,T0_nd,du,dv,T_nd,dT_nd,beta
+    REAL              :: x,y,r2
+    REAL              :: du,dv
     !------------------------------------------------------------------------!
     INTENT(IN)        :: Mesh,Physics
     INTENT(INOUT)     :: Timedisc
     !------------------------------------------------------------------------!
-
-    ! ambient values of primitive variables
-    rho0  = 1.
-    P0    = 1.
-    T0_nd = .2       ! nondimensional temperature
-    T0    = Physics%mu/Physics%constants%RG * P0/rho0
-    
-    ! vortex strength
-    beta = 5.
-
-    CALL Convert2Cartesian(Mesh%geometry,Mesh%bcenter,cart)
-    
-    SELECT CASE(GetType(Mesh%geometry))
-    CASE(CARTESIAN)
-       ! initial vortex position
-       x0 = 0.5*(Mesh%xmax+Mesh%xmin)
-       y0 = 0.5*(Mesh%ymax+Mesh%ymin)
-       ! global velocity field
-       u0 = 0.1
-       v0 = 0.1
-    CASE(POLAR)
-       ! vortex position
-       x0 = 0.0
-       y0 = 0.0
-       ! global velocity field should be zero in polar coords
-       u0 = 0.
-       v0 = 0.
-    CASE DEFAULT
-       CALL Error(Mesh,"InitProgram", "geometry should be either cartesian or polar")
-    END SELECT
-
+    ! initial condition
     DO j=Mesh%JGMIN,Mesh%JGMAX
        DO i=Mesh%IGMIN,Mesh%IGMAX
-          x  = cart(i,j,1) - x0
-          y  = cart(i,j,2) - y0
+          x  = Mesh%bccart(i,j,1) - X0
+          y  = Mesh%bccart(i,j,2) - Y0
           r2 = x*x + y*y
-          du = -y*beta/(2.*PI)*EXP(0.5*(1.-r2))
+          du = -0.5*VSTR/PI*y*EXP(0.5*(1.-r2))
           dv = -du*x/y
-          dT_nd = -(Physics%gamma-1.)*beta / (8.*Physics%gamma*PI*PI) * EXP(1.-r2)
-          T_nd = T0_nd + dT_nd
-          T = T0/T0_nd * T_nd
-          ! set primitive variables
-          Timedisc%pvar(i,j,Physics%DENSITY) = rho0*(T/T0)**(1./(Physics%gamma-1.))
-          vxy(i,j,1) = u0 + du
-          vxy(i,j,2) = v0 + dv
-          Timedisc%pvar(i,j,Physics%PRESSURE) = &
-               Physics%constants%RG/Physics%mu * T * Timedisc%pvar(i,j,Physics%DENSITY)
+          ! cartesian velocity components
+          vxy(i,j,1) = UINF + du
+          vxy(i,j,2) = VINF + dv
+          ! density
+          ! ATTENTION: there's a factor of 1/PI missing in the density
+          ! formula  eq. (3.3) in [1]
+          Timedisc%pvar(i,j,Physics%DENSITY) = RHOINF * (1.0 - (GAMMA-1.0)*VSTR**2 / &
+               (8*PI**2*GAMMA) * EXP(1.-r2) )**(1./(GAMMA-1.))
+          ! pressure
+          Timedisc%pvar(i,j,Physics%PRESSURE) = PINF &
+               * (Timedisc%pvar(i,j,Physics%DENSITY)/RHOINF)**GAMMA
        END DO
     END DO
 

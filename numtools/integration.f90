@@ -146,7 +146,7 @@ CONTAINS
     ! 1: adapt. Gauss recursive
     ! 2: adapt. Gauss iterative
     ! 3: Romberg
-    IF (PRESENT(method).AND.((method.GT.0).AND.method.LT.3)) THEN
+    IF (PRESENT(method).AND.((method.GT.0).AND.method.LE.3)) THEN
        meth = method
     ELSE
        ! default is recursive Gauss
@@ -391,7 +391,7 @@ CONTAINS
        res(1,1) = res(1,1) + fkt(i*h,plist)
     END DO
     res(1,1) = res(1,1) * h
-    
+
     DO j=2,jmax
        ! half step size
        h = 0.5 * h

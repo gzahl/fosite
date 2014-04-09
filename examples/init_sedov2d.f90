@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: init_sedov2d.f90                                                  #
 !#                                                                           #
-!# Copyright (C) 2006-2008                                                   #
+!# Copyright (C) 2006-2010                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -25,6 +25,11 @@
 
 !----------------------------------------------------------------------------!
 ! Program and data initialization for 2D Sedov explosion
+! References:
+! [1] Sedov, L. I.: Unsteady motions of compressible fluids,
+!     J. Appl. Math. Mech. 9 (1945)
+! [2] Sedov, L. I.: Similarity and Dimensional Methods in Mechanics
+!     Academic Press Ltd., New York (1959)
 !----------------------------------------------------------------------------!
 MODULE Init
   USE physics_generic
@@ -38,6 +43,34 @@ MODULE Init
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   PRIVATE
+  ! simulation parameters
+  REAL, PARAMETER    :: TSIM    = 0.05     ! simulation stop time
+  REAL, PARAMETER    :: GAMMA   = 1.4      ! ratio of specific heats
+  ! initial condition (dimensionless units)
+  REAL, PARAMETER    :: RHO0 = 1.0         ! ambient density
+  REAL, PARAMETER    :: P0   = 1.0E-05     ! ambient pressure
+  REAL, PARAMETER    :: E1   = 1.0         ! initial energy input
+  ! Spatial with of the initial pulse should be at least 5 cells;
+  ! if you wish to compare the results on different grids
+  ! R0 should be of the same order
+  REAL, PARAMETER    :: R0   = 3.0E-2
+  ! mesh settings
+  INTEGER, PARAMETER :: MGEO = CARTESIAN   ! geometry
+!!$  INTEGER, PARAMETER :: MGEO = POLAR
+!!$  INTEGER, PARAMETER :: MGEO = LOGPOLAR
+!!$  INTEGER, PARAMETER :: MGEO = TANPOLAR
+!!$  INTEGER, PARAMETER :: MGEO = SINHPOLAR
+  INTEGER, PARAMETER :: XRES = 100         ! x-resolution
+  INTEGER, PARAMETER :: YRES = 100         ! y-resolution
+  REAL, PARAMETER    :: RMIN = 1.0E-3      ! inner radius for polar grids
+  REAL, PARAMETER    :: RMAX = 0.3         ! outer radius
+  REAL, PARAMETER    :: GPAR = 0.2         ! geometry scaling parameter     !
+  ! output parameters
+  INTEGER, PARAMETER :: ONUM = 10          ! number of output data sets
+  CHARACTER(LEN=256), PARAMETER &          ! output data dir
+                     :: ODIR = './'
+  CHARACTER(LEN=256), PARAMETER &          ! output data file name
+                     :: OFNAME = 'sedov2d' 
   !--------------------------------------------------------------------------!
   PUBLIC :: &
        ! methods
@@ -58,108 +91,105 @@ CONTAINS
     TYPE(FILEIO_TYP)  :: Logfile
     !------------------------------------------------------------------------!
     ! Local variable declaration
-    INTEGER           :: geometry, testnum
+    INTEGER           :: bc(4)
+    REAL              :: x1,x2,y1,y2
     !------------------------------------------------------------------------!
     INTENT(OUT)       :: Mesh,Physics,Fluxes,Timedisc,Datafile,Logfile
     !------------------------------------------------------------------------!
-
-    ! set the geometry
-    geometry = CARTESIAN
-!    geometry = POLAR
-
-    ! 1: no viscosity, 2: only dyn. vis 3: only bulk vis. 4: both vis.
-    testnum = 1
-
     ! physics settings
     CALL InitPhysics(Physics, &
          problem = EULER2D, &
-         gamma   = 1.4, &           ! ratio of specific heats        !
-         dpmax   = 100.0)           ! for advanced time step control !
+         gamma   = GAMMA, &                 ! ratio of specific heats        !
+         dpmax   = 1.0e+08)                 ! for advanced time step control !
 
     ! numerical scheme for flux calculation
     CALL InitFluxes(Fluxes, &
-         scheme = MIDPOINT)         ! quadrature rule                !
+         scheme = MIDPOINT)                 ! quadrature rule                !
 
     ! reconstruction method
     CALL InitReconstruction(Fluxes%reconstruction, &
          order     = LINEAR, &
-         variables = CONSERVATIVE, &! vars. to use for reconstruction!
-         limiter   = MONOCENT, &    ! one of: minmod, monocent,...   !
-         theta     = 1.2)           ! optional parameter for limiter !
+         variables = CONSERVATIVE, &        ! vars. to use for reconstruction!
+         limiter   = MONOCENT, &            ! one of: minmod, monocent,...   !
+         theta     = 1.2)                   ! optional parameter for limiter !
 
-    SELECT CASE(geometry)
+    ! mesh settings and boundary conditions
+    SELECT CASE(MGEO)
     CASE(CARTESIAN)
-       ! mesh settings
-       CALL InitMesh(Mesh,Fluxes, &
-            geometry = CARTESIAN, &
-                inum = 100, &       ! resolution in x and            !
-                jnum = 100, &       !   y direction                  !             
-                xmin = -0.3, &
-                xmax = 0.3, &
-                ymin = -0.3, &
-                ymax = 0.3)
-       ! boundary conditions
-       CALL InitBoundary(Timedisc%boundary,Mesh,Physics, &
-         western  = NO_GRADIENTS, &
-         eastern  = NO_GRADIENTS, &
-         southern = NO_GRADIENTS, &
-         northern = NO_GRADIENTS)
+       x1 =-RMAX
+       x2 = RMAX
+       y1 =-RMAX 
+       y2 = RMAX
+       bc(WEST)  = NO_GRADIENTS
+       bc(EAST)  = NO_GRADIENTS
+       bc(SOUTH) = NO_GRADIENTS
+       bc(NORTH) = NO_GRADIENTS
     CASE(POLAR)
-       ! mesh settings
-       CALL InitMesh(Mesh,Fluxes, &
-            geometry = POLAR, &
-                inum = 50, &        ! resolution in x and            !
-                jnum = 60, &        !   y direction                  !             
-                xmin = 0.0, &
-                xmax = 0.3, &
-                ymin = 0.0, &
-                ymax = 2*PI)
-       ! boundary conditions
-       CALL InitBoundary(Timedisc%boundary,Mesh,Physics, &
-         western  = REFLECTING, &
-         eastern  = NO_GRADIENTS, &
-         southern = PERIODIC, &
-         northern = PERIODIC)
+       x1 = RMIN
+       x2 = RMAX
+       y1 = 0.0 
+       y2 = 2*PI       
+       bc(WEST)  = NO_GRADIENTS
+       bc(EAST)  = NO_GRADIENTS
+       bc(SOUTH) = PERIODIC
+       bc(NORTH) = PERIODIC
+    CASE(LOGPOLAR)
+       x1 = LOG(RMIN/GPAR)
+       x2 = LOG(RMAX/GPAR)
+       y1 = 0.0 
+       y2 = 2*PI       
+       bc(WEST)  = NO_GRADIENTS
+       bc(EAST)  = NO_GRADIENTS
+       bc(SOUTH) = PERIODIC
+       bc(NORTH) = PERIODIC
+    CASE(TANPOLAR)
+       x1 = ATAN(RMIN/GPAR)
+       x2 = ATAN(RMAX/GPAR)
+       y1 = 0.0 
+       y2 = 2*PI       
+       bc(WEST)  = NO_GRADIENTS
+       bc(EAST)  = NO_GRADIENTS
+       bc(SOUTH) = PERIODIC
+       bc(NORTH) = PERIODIC
+    CASE(SINHPOLAR)
+       x1 = RMIN/GPAR
+       x1 = LOG(x1+SQRT(1.0+x1*x1))  ! = ASINH(RMIN/GPAR))
+       x2 = RMAX/GPAR
+       x2 = LOG(x2+SQRT(1.0+x2*x2))  ! = ASINH(RMAX/GPAR))
+       y1 = 0.0 
+       y2 = 2*PI       
+       bc(WEST)  = NO_GRADIENTS
+       bc(EAST)  = NO_GRADIENTS
+       bc(SOUTH) = PERIODIC
+       bc(NORTH) = PERIODIC
     CASE DEFAULT
-       CALL Error(Physics,"InitProgram",&
-            "geometry should be either cartesian or polar")
+       CALL Error(Physics,"InitProgram","mesh geometry not supported for 2D Sedov explosion")
     END SELECT
 
-    IF (testnum .eq. 2) then
-    ! viscosity source term
-    CALL InitSources(Physics%sources,Mesh,Fluxes,Physics, &
-         stype    = VISCOSITY, &
-         vismodel = MOLECULAR, &
-         dynconst = 1E-3)
-    ENDIF
+    CALL InitMesh(Mesh,Fluxes, &
+         geometry = MGEO, &
+             inum = XRES, &
+             jnum = YRES, &
+             xmin = x1, &
+             xmax = x2, &
+             ymin = y1, &
+             ymax = y2, &
+           gparam = GPAR)
 
-    IF (testnum .eq. 3) then
-    ! viscosity source term
-    CALL InitSources(Physics%sources,Mesh,Fluxes,Physics, &
-         stype    = VISCOSITY, &
-         vismodel = MOLECULAR, &
-         dynconst = 0., &
-         bulkconst = -6.67E-4)
-    ENDIF
-    
-    IF (testnum .eq. 4) then
-    ! viscosity source term
-    CALL InitSources(Physics%sources,Mesh,Fluxes,Physics, &
-         stype    = VISCOSITY, &
-         vismodel = MOLECULAR, &
-         dynconst = 1E-3, &
-         bulkconst = -6.67E-4)
-    ENDIF
-
+    CALL InitBoundary(Timedisc%boundary,Mesh,Physics, &
+         western  = bc(WEST), &
+         eastern  = bc(EAST), &
+         southern = bc(SOUTH), &
+         northern = bc(NORTH))
 
     ! time discretization settings
     CALL InitTimedisc(Timedisc,Mesh,Physics,&
          method   = MODIFIED_EULER, &
          order    = 3, &
          cfl      = 0.4, &
-         stoptime = 0.05, &
+         stoptime = TSIM, &
          dtlimit  = 1.0E-13, &
-         maxiter  = 100000)
+         maxiter  = 1000000)
 
     ! set initial condition
     CALL InitData(Mesh,Physics,Timedisc)
@@ -167,22 +197,16 @@ CONTAINS
     ! initialize log input/output
     CALL InitFileIO(Logfile,Mesh,Physics,Timedisc,&
          fileformat = BINARY, &
-#ifdef PARALLEL
-         filename   = "/tmp/sedov2dlog", &
-#else
-         filename   = "sedov2dlog", &
-#endif
+         filename   = TRIM(ODIR) // TRIM(OFNAME) // 'log', &
          filecycles = 1)
 
     ! initialize data input/output
     CALL InitFileIO(Datafile,Mesh,Physics,Timedisc, &
-         fileformat = GNUPLOT, &
-#ifdef PARALLEL
-         filename   = "/tmp/sedov2d", &
-#else
-         filename   = "sedov2d", &
-#endif
-         count      = 10)
+         fileformat = VTK, &
+!!$         fileformat = GNUPLOT, &
+!!$         filecycles = 0, &
+         filename   = TRIM(ODIR) // TRIM(OFNAME), &
+         count      = ONUM)
 
   END SUBROUTINE InitProgram
 
@@ -196,37 +220,26 @@ CONTAINS
     !------------------------------------------------------------------------!
     ! Local variable declaration
     INTEGER           :: n
-    REAL              :: dr,rho0,P0,P1,E
-    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,2) :: cart
+    REAL              :: dr,P1
     !------------------------------------------------------------------------!
     INTENT(IN)        :: Mesh,Physics
     INTENT(INOUT)     :: Timedisc
     !------------------------------------------------------------------------!
-    ! 2D Sedov explosion parameters
-    n    = 2       ! 2D
-    E    = 1.0     ! total energy input
-    rho0 = 1.0     ! ambient density
-    P0   = 1.0E-05 ! ambient pressure
+    ! compute peak pressure
+    n  = 2 ! 2 for 2D
+    P1 = 3.*(Physics%gamma-1.0) * E1 / ((n + 1) * PI * R0**n)
 
-    ! spatial with of the puls should be at least 5 cells
-    ! be careful, if you wish to compare with the polar
-    ! results dr should be the same
-    dr = 0.03
-    ! peak pressure
-    P1 = 3.*(Physics%gamma-1.0) * E / ((n + 1) * PI * dr**n)
-
-    ! cartesian coordinates
-    CALL Convert2Cartesian(Mesh%geometry,Mesh%bcenter,cart)
-
-    WHERE ((cart(:,:,1)**2 + cart(:,:,2)**2).LE.dr**2)
-       Timedisc%pvar(:,:,Physics%DENSITY)   = rho0
-       Timedisc%pvar(:,:,Physics%XVELOCITY) = 0.
-       Timedisc%pvar(:,:,Physics%YVELOCITY) = 0.
+    ! uniform density
+    Timedisc%pvar(:,:,Physics%DENSITY)   = RHO0
+    ! vanishing initial velocities
+    Timedisc%pvar(:,:,Physics%XVELOCITY) = 0.
+    Timedisc%pvar(:,:,Physics%YVELOCITY) = 0.
+    ! pressure
+    WHERE ((Mesh%bccart(:,:,1)**2 + Mesh%bccart(:,:,2)**2).LE.R0**2)
+       ! behind the shock front
        Timedisc%pvar(:,:,Physics%PRESSURE)  = P1
     ELSEWHERE
-       Timedisc%pvar(:,:,Physics%DENSITY)   = rho0
-       Timedisc%pvar(:,:,Physics%XVELOCITY) = 0.
-       Timedisc%pvar(:,:,Physics%YVELOCITY) = 0.
+       ! in front of the shock front (ambient medium)
        Timedisc%pvar(:,:,Physics%PRESSURE)  = P0
     END WHERE
      

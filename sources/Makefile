@@ -19,8 +19,13 @@ clean :
 distclean :
 	rm -f $(OBJECTS) $(TARGET) *.mod *.bak *~
 
-sources_pointmass : ../common/sources_common.o
+sources_pointmass.o : ../common/sources_common.o
 sources_diskthomson.o : sources_pointmass.o
 sources_viscosity.o : sources_pointmass.o
+sources_cooling.o : sources_pointmass.o
+sources_boundary.o :
+sources_selfgravitation.o : sources_pointmass.o sources_boundary.o
+sources_c_accel.o : sources_pointmass.o
 sources_generic.o : sources_pointmass.o sources_diskthomson.o \
-	sources_viscosity.o
+	sources_c_accel.o sources_cooling.o sources_viscosity.o \
+        sources_selfgravitation.o

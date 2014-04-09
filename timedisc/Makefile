@@ -20,4 +20,4 @@ distclean :
 	rm -f $(OBJECTS) $(TARGET) *.mod *.bak *~
 
 timedisc_modeuler.o : ../common/timedisc_common.o
-timedisc_generic.o : timedisc_modeuler.o 
+timedisc_generic.o : timedisc_modeuler.o

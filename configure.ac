@@ -26,7 +26,7 @@
 #############################################################################
 
 AC_PREREQ(2.61)
-AC_INIT(fosite, 0.2.2, tillense@astrophysik.uni-kiel.de)
+AC_INIT(fosite, 0.3.0, tillense@astrophysik.uni-kiel.de)
 
 # set up configure switches.
 linkClibs="no"
@@ -293,7 +293,8 @@ AC_DEFUN_ONCE([AC_FC_CPPFLAG],[
 # The known flags are:
 #                -r8: Intel compiler (ifort, ifc) and g95 compiler
 #   -fdefault-real-8: GNU Fortran compiler (gfortran)
-#                -ew: NEC SX-8 compiler (sxf90)
+#                -dW: NEC SX-8 compiler (sxf90)
+#      -Wf"-A idbl4": NEC SX-9 compiler with MPI (sxmpif90)
 # --------------------------------------------------------------------------
 AC_DEFUN_ONCE([AC_FC_AUTODOUBLE],[
     AC_LANG_PUSH(Fortran)dnl
@@ -301,7 +302,7 @@ AC_DEFUN_ONCE([AC_FC_AUTODOUBLE],[
         ac_cv_fc_autodouble,[
 	ac_cv_fc_autodouble=unknown
 	ac_fc_autodouble_FCFLAGS_save="$FCFLAGS"
-	for ac_flag in -r8 -fdefault-real-8 -ew
+	for ac_flag in -r8 -fdefault-real-8 -dW '-Wf"-A idbl4"'
 	do
 	    test "x$ac_flag" != xnone && FCFLAGS="$ac_fc_autodouble_FCFLAGS_save $ac_flag"
 	    AC_COMPILE_IFELSE([AC_LANG_PROGRAM([],[
@@ -411,10 +412,10 @@ AC_DEFUN_ONCE([AC_FC_INLINE],[
     if test "x$ac_cv_fc_inline" = xunknown; then
         m4_default([$2],[
             AC_MSG_ERROR([Fortran compiler does not support function inlining])])
-    else
-        test "x$ac_cv_fc_inline" != xnone && \
-            FCFLAGS="$FCFLAGS $ac_cv_fc_inline"
-        $1
+#    else
+#        test "x$ac_cv_fc_inline" != xnone && \
+#            FCFLAGS="$FCFLAGS $ac_cv_fc_inline"
+#        $1
     fi
     AC_LANG_POP(Fortran)dnl
 ])# AC_FC_INLINE
@@ -431,19 +432,20 @@ AC_DEFUN_ONCE([AC_FC_INLINE],[
 # ac_cv_fc_advanced_debug holds the compiler flag otherwise the string "none".
 # Call ACTION-IF-SUCCESS (defaults to nothing) if successful (i.e. can 
 # compile code using the specific compiler flag) and ACTION-IF-FAILURE
-# (defaults to failing with an error message) if not.
+# (defaults to nothing) if not.
 #
 # The known flags are:
 #         -check all: ifort
 #       -ftrace=full: g95
+#                -eC: sxf90
 # --------------------------------------------------------------------------
 AC_DEFUN_ONCE([AC_FC_ADVANCED_DEBUG],[
     AC_LANG_PUSH(Fortran)dnl
-    AC_CACHE_CHECK([whether the Fortran compiler supports advanced debugging],
+    AC_CACHE_CHECK([whether $FC supports advanced debugging],
         ac_cv_fc_advanced_debug,[
 	ac_cv_fc_advanced_debug=no
 	ac_fc_advanced_debug_FCFLAGS_save="$FCFLAGS"
-	for ac_flag in "-check all" "-ftrace=full" 
+	for ac_flag in "-check all" "-ftrace=full" "-eC"
 	do
 	    test "x$ac_flag" != xnone && FCFLAGS="$ac_fc_advanced_debug_FCFLAGS_save $ac_flag"
 	    AC_LINK_IFELSE(AC_LANG_PROGRAM,[
@@ -456,6 +458,46 @@ AC_DEFUN_ONCE([AC_FC_ADVANCED_DEBUG],[
     AC_LANG_POP(Fortran)dnl
 ])# AC_FC_ADVANCED_DEBUG
 
+# --------------------------------------------------------------------------
+#
+# SYNOPSIS
+#
+#   AC_FC_STREAMS([ACTION-IF-SUPPORTED [, ACTION-IF-NOT-SUPPORTED]])
+#
+# Checks whether the compiler supports Fortran 2003 streams. This is
+# required for VDK io. Call ACTION-IF-SUCCESS (defaults to nothing) if
+# successful (i.e. can compile code) and ACTION-IF-FAILURE (defaults to 
+# nothing) if not.
+#
+# --------------------------------------------------------------------------
+#	AC_COMPILE_IFELSE([AC_LANG_PROGRAM([],[
+#open(10,FILE='test',ACCESS='STREAM',ACTION='READWRITE')
+AC_DEFUN_ONCE([AC_FC_STREAMS],[
+    AC_LANG_PUSH(Fortran)dnl
+    AC_CACHE_CHECK([whether $FC supports Fortran 2003 streams],
+    	ac_cv_fc_streams,[
+	ac_cv_fc_streams=no
+        AC_RUN_IFELSE(AC_LANG_PROGRAM([],[
+implicit none
+character :: c
+open(UNIT=10,FILE='conftest.txt',ACCESS='STREAM',ACTION='WRITE')
+write (UNIT=10) "A"
+close(10)
+open(UNIT=10,FILE='conftest.txt',ACCESS='STREAM',ACTION='WRITE',POSITION='APPEND')
+write (UNIT=10) "B"
+close(10)
+open(UNIT=10,FILE='conftest.txt',ACCESS='STREAM',ACTION='READ',POSITION='REWIND')
+read (UNIT=10) c
+if (c.NE."A") call exit(1)
+]),[ac_cv_fc_streams=yes],[],[
+		AC_MSG_WARN([cannot run test program while cross compiling])
+ 	])
+    ])
+    rm -f conftest.err conftest.$ac_objext conftest.$ac_ext conftest.txt
+    AS_IF([test "x$ac_cv_fc_streams" = xyes],[$1],[$2])
+    AC_LANG_POP(Fortran)dnl
+])# AC_FC_STREAMS
+
 
 # ===========================================================================
 # main configure script starts here!
@@ -464,6 +506,18 @@ AC_DEFUN_ONCE([AC_FC_ADVANCED_DEBUG],[
 # determine the target host architecture we are building for
 AC_CANONICAL_HOST
 
+# host specific settings
+AS_IF([test "x$host_cpu" = "xsx8"],[
+    FCFLAGS="$FCFLAGS -$host_cpu"
+    LDFLAGS="$LDFLAGS -$host_cpu"
+    DEFS_ALL="$DEFS_ALL -DNECSX8"]
+)
+
+AS_IF([test "x$host_cpu" = "xsx9"],[
+    FCFLAGS="$FCFLAGS -$host_cpu"
+    LDFLAGS="$LDFLAGS -$host_cpu"
+    DEFS_ALL="$DEFS_ALL -DNECSX9"]
+)
 # default programming language
 AC_LANG(Fortran)
 
@@ -516,6 +570,9 @@ AC_FC_FREEFORM
 
 # check preprocessor flag
 AC_FC_CPPFLAG
+
+# check Fortran 2003 streams
+AC_FC_STREAMS([DEFS_ALL="$DEFS_ALL -DFORTRAN_STREAMS"])
 
 # check for autodouble flag if requested
 AS_IF([test "x$arg_autodouble" = "xyes"],[
@@ -614,12 +671,16 @@ AS_IF([test "x$with_mpi" != "xno"],[
        	   LDFLAGS_MPI="$LDFLAGS_MPI -L$PVFSDIR/lib"
 	   LDFLAGS="$LDFLAGS $LDFLAGS_MPI"
        ])
+       AS_IF([test "x$ac_cv_fc_preservecase" = "xunknown"],[
+          AC_LANG_PUSH([C])])
        AC_CHECK_LIB(crypto, BIO_new,[
            MPILIBS=$MPILIBS" -lcrypto"])
        LIBS="$ac_mpi_LIBS_save $MPILIBS"
        AC_CHECK_LIB(pvfs2, PVFS_sys_io,[
            MPILIBS=$MPILIBS" -lpvfs2"])
        LIBS="$ac_mpi_LIBS_save $MPILIBS"
+       AS_IF([test "x$ac_cv_fc_preservecase" = "xunknown"],[
+          AC_LANG_POP([C])])
    ])
    FCFLAGS=$ac_mpi_FCFLAGS_save
    # test linking against MPI libraries
@@ -729,53 +790,32 @@ AS_IF([test "x$with_netcdf" != "xno"],[
       AC_CACHE_CHECK([for nf90_create in -lnetcdf...],
 	 ac_cv_lib_netcdf_nf90_create,[
 	 ac_cv_lib_netcdf_nf90_create=no
-	 LIBS="-lnetcdf $LIBS"
       	 ac_netcdf_LDFLAGS_nompi=$LDFLAGS
 	 ac_netcdf_LIBS_nompi=$LIBS
-	 AS_IF([test "x$LDFLAGS_MPI" != "x"],[
-            FCFLAGS="$LDFLAGS $LDFLAGS_MPI"
-	    LIBS="$LIBS $MPILIBS"
-         ])
-	 AC_LINK_IFELSE([AC_LANG_PROGRAM([],[
+	 for ac_netcdf_LIBS in none "-lnetcdf" "-lnetcdf -lnetcdff"
+	 do
+	    LIBS="$ac_netcdf_LIBS_nompi $ac_netcdf_LIBS"
+            AS_IF([test "x$LDFLAGS_MPI" != "x"],[
+              FCFLAGS="$LDFLAGS $LDFLAGS_MPI"
+              LIBS="$LIBS $MPILIBS"
+            ])
+     	    AC_LINK_IFELSE([AC_LANG_PROGRAM([],[
 use netcdf
 integer :: status,ncid
 status = nf90_create("test.nc",nf90_noclobber,ncid)
 ])],[
-	       ac_cv_lib_netcdf_nf90_create=yes
-	 ])
-  	 rm -f conftest.err conftest.$ac_objext conftest.$ac_ext
+	         ac_cv_lib_netcdf_nf90_create=yes ; break])
+         done
+	 rm -f conftest.err conftest.$ac_objext conftest.$ac_ext
       ])
    ])
-   # check for netcdf libraries with Fortran 77 bindings
-#   AS_IF([test "x$ac_cv_netcdf_module" = "xno" -a "x$ac_cv_netcdf_include" = "xyes"],[
-#      AC_CACHE_CHECK([for nf_create in -lnetcdf...],
-#	 ac_cv_lib_netcdf_nf_create,[
-#	 ac_cv_lib_netcdf_nf_create=no
-#	 LIBS="-lnetcdff -lnetcdf $LIBS"
-#      	 ac_netcdf_LDFLAGS_nompi=$LDFLAGS
-#	 ac_netcdf_LIBS_nompi=$LIBS
-#	 AS_IF([test "x$LDFLAGS_MPI" != "x"],[
-#            FCFLAGS="$LDFLAGS $LDFLAGS_MPI"
-#	    LIBS="$LIBS $MPILIBS"
-#         ])
-#	 AC_LINK_IFELSE([AC_LANG_PROGRAM([],[
-#include 'netcdf.inc'
-#integer :: status,ncid
-#status = nf_create("test.nc",nf_noclobber,ncid)
-#])],[
-#	       ac_cv_lib_netcdf_nf_create=yes
-#	 ])
-#  	 rm -f conftest.err conftest.$ac_objext conftest.$ac_ext
-#      ])
-#   ])
-   AS_IF([test "x$ac_cv_lib_netcdf_nf90_create" = "xno" \
-          -a "x$ac_cv_lib_netcdf_nf_create" = "xno"],[
+   AS_IF([test "x$ac_cv_lib_netcdf_nf90_create" = "xno"],[
       FCFLAGS=$ac_netcdf_FCFLAGS_save
       LDFLAGS=$ac_netcdf_LDFLAGS_save
       LIBS=$ac_netcdf_LIBS_save
       AC_MSG_WARN([NetCDF support disabled])],[
       LDFLAGS=$ac_netcdf_LDFLAGS_nompi
-      LIBS=$ac_netcdf_LIBS_nompi
+      LIBS=$ac_netcdf_LIBS
       DEFS_ALL="$DEFS_ALL -DHAVE_NETCDF"
 #      AS_IF([test "x$ac_cv_module_netcdf" = "xyes"],[
 #         DEFS_ALL="$DEFS_ALL -DHAVE_NETCDF_MOD"
@@ -787,10 +827,13 @@ status = nf90_create("test.nc",nf90_noclobber,ncid)
 # compiler and target specific flags
 case $FC in
 	sxf90)
-		FCFLAGS_OPT="-$host_cpu"
 		FCFLAGS_PROF="-ftrace"
 		LDFLAGS_PROF="-ftrace"
 		;;
+	sxmpif90)
+                FCFLAGS_PROF="-ftrace"
+                LDFLAGS_PROF="-ftrace"
+                ;;
 	ifort)
 		FCFLAGS_PROF="-p"
 		LDFLAGS_PROF="-p"

@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: init_gauss3d.f90                                                  #
 !#                                                                           #
-!# Copyright (C) 2006-2008                                                   #
+!# Copyright (C) 2006-2010                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -25,6 +25,11 @@
 
 !----------------------------------------------------------------------------!
 ! Program and data initialization for 3D Gaussian pressure or density pulse
+! with and without rotation
+! [1] Illenseer, T. F., Duschl, W. J.: Two-dimensional central-upwind schemes
+!     for curvilinear grids and application to gas dynamics with angular momentum,
+!     Comput. Phys. Comm. 180 (2009), 2283-2302
+!     DOI: 10.1016/j.cpc.2009.07.016
 !----------------------------------------------------------------------------!
 MODULE Init
   USE physics_generic
@@ -38,7 +43,37 @@ MODULE Init
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   PRIVATE
-  INTEGER :: testnum
+  ! simulation parameter
+  REAL, PARAMETER :: TSIM   = 0.6         ! simulation time
+  REAL, PARAMETER :: GAMMA  = 1.4         ! ratio of specific heats
+  ! initial condition (dimensionless units)
+  REAL, PARAMETER :: RHO0   = 1.0         ! ambient density
+  REAL, PARAMETER :: RHO1   = 0.0         ! peak density above RHO0
+  REAL, PARAMETER :: RWIDTH = 0.06        ! half width of the Gaussian
+  REAL, PARAMETER :: P0     = 1.0         ! ambient pressure
+  REAL, PARAMETER :: P1     = 1.0         ! peak pressure above P0
+  REAL, PARAMETER :: PWIDTH = 0.06        ! half width of the Gaussian
+  REAL, PARAMETER :: OMEGA0 = 0.0         ! angular velocity 
+  REAL, PARAMETER :: ETA    = 0.0         ! dynamic viscosity (0.0 disables)
+  ! location of the pulse in cylindrical coordinates
+  REAL, PARAMETER :: R0     = 0.0         ! radial position 
+  REAL, PARAMETER :: Z0     = 0.0         ! vertical position
+  ! mesh settings
+!!$  INTEGER, PARAMETER :: MGEO = SPHERICAL   ! geometry
+  INTEGER, PARAMETER :: MGEO = CYLINDRICAL
+!!$  INTEGER, PARAMETER :: MGEO = OBLATE_SPHEROIDAL
+!!$  INTEGER, PARAMETER :: MGEO = SINHSPHERICAL
+  INTEGER, PARAMETER :: XRES  = 100       ! x-resolution
+  INTEGER, PARAMETER :: YRES  = 100       ! y-resolution
+  REAL, PARAMETER    :: RMAX  = 1.0       ! width of square that fits into
+                                          !   computational domain
+  REAL, PARAMETER    :: GPAR  = 0.8       ! geometry scaling parameter
+  ! output parameters
+  INTEGER, PARAMETER :: ONUM = 10         ! number of output data sets
+  CHARACTER(LEN=256), PARAMETER &         ! output data dir
+                     :: ODIR = './'
+  CHARACTER(LEN=256), PARAMETER &         ! output data file name
+                     :: OFNAME = 'gauss3d' 
   !--------------------------------------------------------------------------!
   PUBLIC :: &
        ! methods
@@ -59,168 +94,104 @@ CONTAINS
     TYPE(FILEIO_TYP)  :: Logfile
     !------------------------------------------------------------------------!
     ! Local variable declaration
-    CHARACTER(LEN=32) :: ofname,lfname
-    INTEGER           :: geometry
-    INTEGER           :: onum
-    REAL              :: test_stoptime
+    REAL              :: x1,x2,y1,y2
+    INTEGER           :: bc(4)
     !------------------------------------------------------------------------!
     INTENT(OUT)       :: Mesh,Physics,Fluxes,Timedisc,Datafile,Logfile
     !------------------------------------------------------------------------!
-
-    ! 3D tests with continous initial condition
-    ! 1. Gaussian pressure pulse
-    ! 2. Rotating Gaussian density pulse
-    testnum=1
-
-    ! set the geometry
-    geometry = CYLINDRICAL
-!    geometry = SPHERICAL
-!    geometry = OBLATE_SPHEROIDAL
-
-    SELECT CASE(testnum)
-    CASE(1) ! Gaussian pressure pulse
-       test_stoptime = 0.6
-       onum = 10
-    CASE(2) ! Rotating Gaussian density pulse
-       test_stoptime = 1.0
-       onum = 10
-     CASE DEFAULT
-       PRINT *, "ERROR in InitProgram: testnum should be one of 1, 2"
-       STOP
-    END SELECT
-
     ! physics settings
     CALL InitPhysics(Physics, &
          problem = EULER3D_ROTSYM, &
-         gamma   = 1.4, &           ! ratio of specific heats        !
-         dpmax   = 1.0)             ! for advanced time step control !
+         gamma   = GAMMA, &                ! ratio of specific heats        !
+         dpmax   = 1.0)                    ! for advanced time step control !
 
     ! numerical scheme for flux calculation
     CALL InitFluxes(Fluxes, &
-         scheme = MIDPOINT)         ! quadrature rule                !
+         scheme = MIDPOINT)                ! quadrature rule                !
 
     ! reconstruction method
     CALL InitReconstruction(Fluxes%reconstruction, &
          order     = LINEAR, &
-!!$         variables = PRIMITIVE, &   ! vars. to use for reconstruction!
+!!$         variables = PRIMITIVE, &       ! vars. to use for reconstruction!
          variables = CONSERVATIVE, &
-         limiter   = MONOCENT, &    ! one of: minmod, monocent,...   !
-         theta     = 1.3)           ! optional parameter for limiter !
+         limiter   = MONOCENT, &           ! one of: minmod, monocent,...   !
+         theta     = 1.2)                  ! optional parameter for limiter !
 
-    SELECT CASE(geometry)
-    CASE(CYLINDRICAL)
-       ! mesh settings
-       CALL InitMesh(Mesh,Fluxes, &
-            geometry = CYLINDRICAL, &
-                inum = 100, &       ! resolution in x and            !
-                jnum = 100, &       !   y direction                  !             
-                xmin = 0.0, &
-                xmax = 1.0, &
-                ymin = 0.0, &
-                ymax = 1.0)
-       ! boundary conditions
-       IF (testnum.EQ.1) THEN
-          ! file names
-          ofname = 'gauss3d_cyl'
-          lfname = 'gauss3d_cyl-log'
-          CALL InitBoundary(Timedisc%boundary,Mesh,Physics, &
-               western  = REFLECTING, &
-               eastern  = NO_GRADIENTS, &
-               southern = AXIS, &
-               northern = NO_GRADIENTS)
-       ELSE
-          ! file names
-          ofname = 'gauss3drot_cyl'
-          lfname = 'gauss3drot_cyl-log'
-          CALL InitBoundary(Timedisc%boundary,Mesh,Physics, &
-               western  = REFLECTING, &
-               eastern  = REFLECTING, &
-               southern = AXIS, &
-               northern = REFLECTING)
-       END IF
+    ! mesh settings and boundary conditions
+    SELECT CASE(MGEO)
     CASE(SPHERICAL)
-       ! mesh settings
-       CALL InitMesh(Mesh,Fluxes,SPHERICAL,60,30,0.0,1.5,0.0,0.5*PI)
-       ! boundary conditions
-       IF (testnum.EQ.1) THEN
-          ! file names
-          ofname = 'gauss3d_spher'
-          lfname = 'gauss3d_spher-log'
-          CALL InitBoundary(Timedisc%boundary,Mesh,Physics, &
-               western  = REFLECTING, &
-               eastern  = REFLECTING, &
-               southern = AXIS, &
-               northern = REFLECTING)
-       ELSE
-          ! file names
-          ofname = 'gauss3drot_spher'
-          lfname = 'gauss3drot_spher-log'
-          CALL InitBoundary(Timedisc%boundary,Mesh,Physics, &
-               western  = REFLECTING, &
-               eastern  = NO_GRADIENTS, &
-               southern = AXIS, &
-               northern = REFLECTING)
-       END IF
+       x1 = 0.0
+       x2 = SQRT(2.0)*RMAX
+       y1 = 0.0
+       y2 = 0.5*PI
+       bc(WEST)  = REFLECTING
+       bc(EAST)  = NO_GRADIENTS
+       bc(SOUTH) = AXIS
+       bc(NORTH) = REFLECTING
+    CASE(CYLINDRICAL)
+       x1 = 0.0
+       x2 = RMAX
+       y1 = 0.0
+       y2 = RMAX
+       bc(WEST)  = REFLECTING
+       bc(EAST)  = NO_GRADIENTS
+       bc(SOUTH) = AXIS
+       bc(NORTH) = NO_GRADIENTS
     CASE(OBLATE_SPHEROIDAL)
-       IF (testnum.EQ.1) THEN
-          ! file names
-          ofname = 'gauss3d_obsph'
-          lfname = 'gauss3d_obsph-log'
-          ! mesh settings
-          CALL InitMesh(Mesh,Fluxes, &
-               geometry = OBLATE_SPHEROIDAL, &
-                   inum = 100, &
-                   jnum = 120, &
-                   xmin = 0.0, &
-                   xmax = 1.4, &
-                   ymin = 0.0, &
-                   ymax = 0.5*PI, &
-                 gparam = 0.75)       ! optional geometry parameter    !
-          ! boundary conditions
-          CALL InitBoundary(Timedisc%boundary,Mesh,Physics, &
-               western  = REFLECTING, &
-               eastern  = NO_GRADIENTS, &
-               southern = REFLECTING, &
-               northern = AXIS)
-       ELSE
-          ! file names
-          ofname = 'gauss3drot_obsph'
-          lfname = 'gauss3drot_obsph-log'
-          ! mesh settings
-          CALL InitMesh(Mesh,Fluxes, &
-               geometry = OBLATE_SPHEROIDAL, &
-                   inum = 100, &
-                   jnum = 100, &
-                   xmin = 0.0, &
-                   xmax = 0.88, &
-                   ymin = PI/8, &
-                   ymax = PI/2, &
-                 gparam = 1.0)        ! optional geometry parameter    !
-          ! boundary conditions
-          CALL InitBoundary(Timedisc%boundary,Mesh,Physics, &
-               western  = REFLECTING, &
-               eastern  = REFLECTING, &
-               southern = REFLECTING, &
-               northern = AXIS)
-       END IF
+       x1 = 0.0
+       x2 = 2./GPAR**2 * (1.0 + SQRT(1.0+0.25*GPAR**4))
+       x2 = 0.5*LOG(x2+SQRT(x2**2-1.0)) ! = 0.5*ACOSH(RMAX/GPAR)
+       y1 = 0.0
+       y2 = 0.5*PI
+       bc(WEST)  = REFLECTING
+       bc(EAST)  = NO_GRADIENTS
+       bc(SOUTH) = REFLECTING
+       bc(NORTH) = AXIS
+    CASE(SINHSPHERICAL)
+       x1 = 0.0
+       x2 = SQRT(2.0)*RMAX/GPAR
+       x2 = LOG(x2+SQRT(x2**2+1.0)) ! = ASINH(RMAX/GPAR)
+       y1 = 0.0
+       y2 = 0.5*PI
+       bc(WEST)  = REFLECTING
+       bc(EAST)  = NO_GRADIENTS
+       bc(SOUTH) = AXIS
+       bc(NORTH) = REFLECTING
     CASE DEFAULT
-       CALL Error(Physics,"InitProgram", "geometry should be either " // ACHAR(13) // &
-            "cylindrical, spherical or oblate spheroidal")
+       CALL Error(Physics,"InitProgram","geometry not supported for this test")
     END SELECT
+    ! mesh settings
+    CALL InitMesh(Mesh,Fluxes, &
+         geometry = MGEO, &
+             inum = XRES, &
+             jnum = YRES, &
+             xmin = x1, &
+             xmax = x2, &
+             ymin = y1, &
+             ymax = y2, &
+           gparam = GPAR)
+
+    ! boundary conditions
+    CALL InitBoundary(Timedisc%boundary,Mesh,Physics, &
+         western  = bc(WEST), &
+         eastern  = bc(EAST), &
+         southern = bc(SOUTH), &
+         northern = bc(NORTH))
 
     ! viscosity source term
-!!$    CALL InitSources(Physics%sources,Mesh,Fluxes,Physics, &
-!!$         stype    = VISCOSITY, &
-!!$         vismodel = MOLECULAR, &
-!!$         cvis     = 0.5, &
-!!$         dynconst = 1.0E-2)
+    IF (ETA.GT.TINY(ETA)) THEN
+       CALL InitSources(Physics%sources,Mesh,Fluxes,Physics,Timedisc%boundary, &
+            stype    = VISCOSITY, &
+            vismodel = MOLECULAR, &
+            dynconst = ETA)
+    END IF
 
     ! time discretization settings
     CALL InitTimedisc(Timedisc,Mesh,Physics,&
          method   = MODIFIED_EULER, &
          order    = 3, &
          cfl      = 0.4, &
-         stoptime = test_stoptime, &
+         stoptime = TSIM, &
          dtlimit  = 1.0E-8, &
          maxiter  = 10000000)
 
@@ -228,27 +199,18 @@ CONTAINS
     CALL InitData(Mesh,Physics,Timedisc%pvar,Timedisc%cvar)
 
     ! initialize log input/output
-    CALL InitFileIO(Logfile,Mesh,Physics,Timedisc, &
+    CALL InitFileIO(Logfile,Mesh,Physics,Timedisc,&
          fileformat = BINARY, &
-#ifdef PARALLEL
-         filename   = "/tmp/" // TRIM(lfname), &
-#else
-         filename   = TRIM(lfname), &
-#endif
-         dtwall     = 1740, &
+         filename   = TRIM(ODIR) // TRIM(OFNAME) // 'log', &
          filecycles = 1)
 
     ! initialize data input/output
     CALL InitFileIO(Datafile,Mesh,Physics,Timedisc, &
-         fileformat = GNUPLOT, &
-#ifdef PARALLEL
-         filename   = "/tmp/" // TRIM(ofname), &
-#else
-         filename   = TRIM(ofname), &
-#endif
-         stoptime   = Timedisc%stoptime, &
-         count      = onum)
-
+         fileformat = VTK, &
+!!$         fileformat = GNUPLOT, &
+!!$         filecycles = 0, &
+         filename   = TRIM(ODIR) // TRIM(OFNAME), &
+         count      = ONUM)
   END SUBROUTINE InitProgram
 
 
@@ -262,49 +224,16 @@ CONTAINS
     !------------------------------------------------------------------------!
     ! Local variable declaration
     INTEGER           :: i,j
-    REAL              :: x0, y0
-    REAL              :: rho0, rho1, P0, P1, hwidth, omega
-    CHARACTER(LEN=80) :: teststr
     !------------------------------------------------------------------------!
     INTENT(IN)        :: Mesh,Physics
     INTENT(OUT)       :: pvar,cvar
     !------------------------------------------------------------------------!
-    SELECT CASE(testnum)
-    CASE(1) ! 3D pressure pulse
-       teststr = "3D Gaussian pressure pulse"
-       ! position
-       x0        = 0.0
-       y0        = 0.0
-       ! density
-       rho0      = 1.0
-       rho1      = 0.0
-       ! pressure
-       P0        = 1.0
-       P1        = 1.0
-       hwidth    = 0.06
-       ! angular velocity
-       omega     = 0.0
-    CASE(2) ! 3D density pulse with angular motion
-       teststr = "3D Gaussian density pulse w/ rotation"
-       ! position
-       x0        = 0.0
-       y0        = 0.4
-       ! density
-       rho0      = 1.0e-2
-       rho1      = 10.0
-       ! pressure
-       P0        = 1.0
-       P1        = 0.0
-       hwidth    = 0.1
-       ! angular velocity
-       omega     = 10.0
-    END SELECT
-
+    ! initial density and pressure
     FORALL (i=Mesh%IGMIN:Mesh%IGMAX,j=Mesh%JGMIN:Mesh%JGMAX)
-       pvar(i,j,Physics%DENSITY) = rho0 + rho1*EXP(-LOG(2.0) &
-            * ((Mesh%bccart(i,j,1)-x0)**2 + (Mesh%bccart(i,j,2)-y0)**2)/hwidth**2)
+       pvar(i,j,Physics%DENSITY) = RHO0 + RHO1*EXP(-LOG(2.0) &
+            * ((Mesh%bccart(i,j,1)-R0)**2 + (Mesh%bccart(i,j,2)-Z0)**2)/RWIDTH**2)
        pvar(i,j,Physics%PRESSURE) = P0 + P1*EXP(-LOG(2.0) &
-            * ((Mesh%bccart(i,j,1)-x0)**2 + (Mesh%bccart(i,j,2)-y0)**2)/hwidth**2)
+            * ((Mesh%bccart(i,j,1)-R0)**2 + (Mesh%bccart(i,j,2)-Z0)**2)/PWIDTH**2)
     END FORALL
 
     ! velocities in the x-y-plane
@@ -312,7 +241,7 @@ CONTAINS
     pvar(:,:,Physics%YVELOCITY) = 0.
 
     ! rotational velocity
-    pvar(:,:,Physics%ZVELOCITY) = omega * Mesh%bhz(:,:)
+    pvar(:,:,Physics%ZVELOCITY) = OMEGA0 * Mesh%bhz(:,:)
 
     ! for specific angular momentum transport
     IF (GetType(Physics).EQ.EULER3D_ROTAMT) THEN
@@ -322,7 +251,7 @@ CONTAINS
     
     CALL Convert2Conservative(Physics,Mesh,pvar,cvar)
 
-    CALL Info(Mesh, " DATA-----> initial condition: " // TRIM(teststr))
+    CALL Info(Mesh, " DATA-----> initial condition: 3D Gaussian pulse")
 
   END SUBROUTINE InitData
 

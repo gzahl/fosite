@@ -3,8 +3,9 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: sources_generic.f90                                               #
 !#                                                                           #
-!# Copyright (C) 2007-2008                                                   #
+!# Copyright (C) 2007 - 2010                                                 #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
+!# Björn Sperling   <sperling@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
 !# it under the terms of the GNU General Public License as published by      #
@@ -31,28 +32,37 @@ MODULE sources_generic
   USE sources_diskthomson
   USE sources_viscosity
   USE sources_c_accel
+  USE sources_selfgravitation
+  USE sources_boundary
+  USE sources_cooling
   USE physics_generic, GeometricalSources_Physics => GeometricalSources, &
        ExternalSources_Physics => ExternalSources
   USE fluxes_generic
   USE mesh_common, ONLY : Mesh_TYP
+  USE boundary_common, ONLY : Boundary_TYP
+  USE timedisc_common, ONLY : Timedisc_TYP
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   PRIVATE
   ! tempory storage for source terms
   REAL, DIMENSION(:,:,:), ALLOCATABLE, SAVE :: temp_sterm
   ! flags for source terms
-  INTEGER, PARAMETER :: POINTMASS    = 1
-  INTEGER, PARAMETER :: DISK_THOMSON = 2
-  INTEGER, PARAMETER :: VISCOSITY    = 3
-  INTEGER, PARAMETER :: C_ACCEL      = 4
+  INTEGER, PARAMETER :: POINTMASS        = 1
+  INTEGER, PARAMETER :: DISK_THOMSON     = 2
+  INTEGER, PARAMETER :: VISCOSITY        = 3
+  INTEGER, PARAMETER :: C_ACCEL          = 4
+  INTEGER, PARAMETER :: COOLING          = 5
+  INTEGER, PARAMETER :: SELFGRAVITATION  = 6
   !--------------------------------------------------------------------------!
   PUBLIC :: &
        ! types
        Sources_TYP, &
        ! constants
-       POINTMASS, DISK_THOMSON, VISCOSITY, C_ACCEL, &
+       POINTMASS, DISK_THOMSON, VISCOSITY, C_ACCEL, COOLING, SELFGRAVITATION, &
        NEWTON, WIITA, &
        MOLECULAR, ALPHA, BETA, PRINGLE, &
+       SPHERMULTEXPAN, SPHERMULTEXPANFAST, &
+       CYLINMULTEXPAN, CYLINMULTEXPANFAST, &
        ! methods
        InitSources, &
        MallocSources, &
@@ -72,29 +82,41 @@ MODULE sources_generic
 
 CONTAINS
 
-  SUBROUTINE InitSources(list,Mesh,Fluxes,Physics,stype,potential,vismodel, &
-       mass,mdot,rin,rout,dynconst,bulkconst,cvis,xaccel,yaccel)
+  SUBROUTINE InitSources(list,Mesh,Fluxes,Physics,Boundary,stype,potential,vismodel, &
+       mass,mdot,rin,rout,dynconst,bulkconst,cvis,xaccel,yaccel, &
+       maxresidnorm,maxagmnorm,maxmult,bndrytype,MGminlevel)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Sources_TYP), POINTER :: list
     TYPE(Mesh_TYP)    :: Mesh
     TYPE(Fluxes_TYP)  :: Fluxes
     TYPE(Physics_TYP) :: Physics
+    TYPE(Boundary_TYP), DIMENSION(4) :: Boundary
     INTEGER           :: stype
-    INTEGER, OPTIONAL :: potential,vismodel
-    REAL, OPTIONAL    :: mass,mdot,rin,rout,dynconst,bulkconst,cvis,xaccel,yaccel
+    INTEGER, OPTIONAL :: potential,vismodel,maxmult,bndrytype,MGminlevel
+    REAL, OPTIONAL    :: mass,mdot,rin,rout,dynconst,bulkconst,cvis, &
+                         xaccel,yaccel,maxresidnorm,maxagmnorm
     !------------------------------------------------------------------------!
-    TYPE(Sources_TYP), POINTER :: srcptr
-    INTEGER           :: potential_def,vismodel_def
+    INTEGER           :: potential_def,vismodel_def,maxmult_def,bndrytype_def, &
+                         MGminlevel_def
     REAL              :: mass_def,mdot_def,rin_def,rout_def,dynconst_def, &
-                         bulkconst_def,cvis_def,xaccel_def,yaccel_def
+                         bulkconst_def,cvis_def,xaccel_def,yaccel_def, &
+                         maxresidnorm_def,maxagmnorm_def
     !------------------------------------------------------------------------!
-    INTENT(IN)        :: Mesh,Fluxes,Physics,stype,potential,vismodel,mass, &
-                         mdot,rin,rout,dynconst,bulkconst,cvis,xaccel,yaccel
+    INTENT(IN)        :: Mesh,Fluxes,Physics,Boundary,stype,potential,vismodel, &
+                         mass,mdot,rin,rout,dynconst,bulkconst,cvis,xaccel,yaccel, &
+                         maxresidnorm,maxagmnorm,maxmult,bndrytype,MGminlevel
     !------------------------------------------------------------------------!
     ! allocate common memory for all sources
     IF (.NOT.ALLOCATED(temp_sterm)) THEN
        CALL MallocSources(list,Mesh,Physics)
+    END IF
+
+    ! Courant number for source terms
+    IF (PRESENT(cvis)) THEN
+       cvis_def=cvis
+    ELSE
+       cvis_def=0.5
     END IF
 
     SELECT CASE(stype)
@@ -111,8 +133,14 @@ CONTAINS
        ELSE
           potential_def=NEWTON
        END IF
-       CALL InitSources_pointmass(list,Mesh,Physics,stype,potential_def,mass_def)
+       CALL InitSources_pointmass(list,Mesh,Physics,stype,potential_def,mass_def,cvis_def)
     CASE(DISK_THOMSON)
+       ! default central mass
+       IF (PRESENT(mass)) THEN
+          mass_def = mass
+       ELSE
+          mass_def = 1.0
+       END IF
        ! accretion rate
        IF (PRESENT(mdot)) THEN
           mdot_def = mdot
@@ -151,17 +179,10 @@ CONTAINS
        ELSE
           bulkconst_def=0.0
        END IF
-       ! viscous Courant number
-       IF (PRESENT(cvis)) THEN
-          cvis_def=cvis
-       ELSE
-          cvis_def=0.5
-       END IF
-       ! this is necessary for alpha viscosity
-       srcptr => GetSourcesPointer(list,POINTMASS)
        CALL InitSources_viscosity(list,Mesh,Physics,Fluxes,stype,vismodel_def, &
-            dynconst_def,bulkconst_def,cvis_def,srcptr)
+            dynconst_def,bulkconst_def,cvis_def)
     CASE(C_ACCEL)
+       ! constant acceleration in x and y
        IF (PRESENT(xaccel)) THEN
           xaccel_def = xaccel
        ELSE
@@ -173,6 +194,42 @@ CONTAINS
           yaccel_def = 0.
        END IF
        CALL InitSources_c_accel(list,Mesh,Physics,stype,xaccel_def,yaccel_def)
+    CASE(COOLING)
+       ! simple cooling function
+       CALL InitSources_cooling(list,Mesh,Physics,stype,cvis_def)
+    CASE(SELFGRAVITATION)
+       ! number of multipol moments (in case of spherical grids)
+       IF (PRESENT(maxmult)) THEN
+          maxmult_def = maxmult
+       ELSE
+          maxmult_def = 5
+       END IF
+       ! accuracy of multigrid solver
+       IF (PRESENT(maxresidnorm)) THEN
+          maxresidnorm_def = maxresidnorm
+       ELSE
+          maxresidnorm_def = 1.0E-5
+       END IF
+       ! accuracy of arithmetic-geometric mean
+       IF (PRESENT(maxagmnorm)) THEN
+          maxagmnorm_def = maxagmnorm
+       ELSE
+          maxagmnorm_def = 5.0E-7
+       END IF
+       ! type of multipol expansion (spherical, cylindrical)
+       IF (PRESENT(bndrytype)) THEN
+          bndrytype_def = bndrytype
+       ELSE
+          bndrytype_def = CYLINMULTEXPANFAST
+       END IF
+       ! level of coarsest grid i(multigrid solver)
+       IF (PRESENT(MGminlevel)) THEN
+          MGminlevel_def = MGminlevel
+       ELSE
+          MGminlevel_def = 2
+       END IF  
+       CALL InitSources_selfgravitation(list,Mesh,Physics,Boundary,stype, &
+            maxmult_def,maxresidnorm_def,maxagmnorm_def,bndrytype_def,MGminlevel_def)
     CASE DEFAULT
        CALL Error(list,"InitSources", "unknown source term")
     END SELECT
@@ -251,13 +308,17 @@ CONTAINS
        ! call specific subroutine
        SELECT CASE(GetType(srcptr))
        CASE(POINTMASS)
-          CALL ExternalSources_pointmass(srcptr,Mesh,Physics,pvar,cvar,temp_sterm)
+          CALL ExternalSources_pointmass(srcptr,Mesh,Physics,Fluxes,pvar,cvar,temp_sterm)
        CASE(DISK_THOMSON)
           CALL ExternalSources_diskthomson(srcptr,Mesh,Physics,pvar,cvar,temp_sterm)
        CASE(VISCOSITY)
           CALL ExternalSources_viscosity(srcptr,Mesh,Physics,pvar,cvar,temp_sterm)
        CASE(C_ACCEL)
           CALL ExternalSources_c_accel(srcptr,Mesh,Physics,pvar,cvar,temp_sterm)
+       CASE(COOLING)
+          CALL ExternalSources_cooling(srcptr,Mesh,Physics,pvar,cvar,temp_sterm)
+       CASE(SELFGRAVITATION)
+          CALL ExternalSources_selfgravitation(srcptr,Mesh,Physics,pvar,cvar,temp_sterm)
        CASE DEFAULT
           CALL Error(srcptr,"ExternalSources", "unknown source term")
        END SELECT
@@ -269,20 +330,21 @@ CONTAINS
   END SUBROUTINE ExternalSources
 
 
-  SUBROUTINE CalcTimestep(this,Mesh,Physics,pvar,dt)
+  SUBROUTINE CalcTimestep(this,Mesh,Physics,pvar,cvar,dt)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Sources_TYP), POINTER :: this
     TYPE(Mesh_TYP)    :: Mesh
     TYPE(Physics_TYP) :: Physics
     REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum) &
-                      :: pvar
+                      :: pvar,cvar
     REAL              :: dt
     !------------------------------------------------------------------------!
     TYPE(Sources_TYP), POINTER :: srcptr
+    REAL              :: dt_new
     !------------------------------------------------------------------------!
-    INTENT(IN)        :: Mesh,Physics,pvar
-    INTENT(OUT)       :: dt
+    INTENT(IN)        :: Mesh,pvar,cvar
+    INTENT(INOUT)     :: dt,Physics
     !------------------------------------------------------------------------!
     ! go through all source terms in the list
     srcptr => this
@@ -290,13 +352,21 @@ CONTAINS
        IF (.NOT.ASSOCIATED(srcptr)) EXIT
        ! call specific subroutine
        SELECT CASE(GetType(srcptr))
-       CASE(POINTMASS,DISK_THOMSON,C_ACCEL)
+       CASE(DISK_THOMSON,C_ACCEL)
           ! do nothing
+          dt_new = dt
+       CASE(POINTMASS)
+          CALL CalcTimestep_pointmass(srcptr,Mesh,Physics,pvar,cvar,dt_new)
        CASE(VISCOSITY)
-          CALL CalcTimestep_viscosity(srcptr,Mesh,Physics,pvar,dt)
+          CALL CalcTimestep_viscosity(srcptr,Mesh,Physics,pvar,cvar,dt_new)
+       CASE(COOLING)
+          CALL CalcTimestep_cooling(srcptr,Mesh,Physics,pvar,dt_new)
+       CASE(SELFGRAVITATION)
+          CALL CalcTimestep_selfgravitation(srcptr,Mesh,Physics,pvar,dt_new)
        CASE DEFAULT
           CALL Error(srcptr,"CalcTimestep", "unknown source term")
        END SELECT
+       dt = MIN(dt,dt_new)
        ! next source term
        srcptr => srcptr%next
     END DO    
@@ -321,11 +391,15 @@ CONTAINS
        ! call specific deconstructor
        SELECT CASE(GetType(srcptr))
        CASE(POINTMASS)
-          CALL CloseSources_pointmass(srcptr,Fluxes)
+          CALL CloseSources_pointmass(srcptr)
+       CASE(DISK_THOMSON)
+          CALL CloseSources_diskthomson(srcptr)
        CASE(VISCOSITY)
           CALL CloseSources_viscosity(srcptr)
        CASE(C_ACCEL)
           CALL CloseSources_c_accel(srcptr,Fluxes)
+       CASE(SELFGRAVITATION)
+          CALL CloseSources_selfgravitation(srcptr)
        END SELECT
        ! deallocate source term structure
        DEALLOCATE(srcptr)

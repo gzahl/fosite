@@ -60,30 +60,31 @@ CONTAINS
   END SUBROUTINE InitBoundary_periodic
 
 
-  PURE SUBROUTINE CenterBoundary_periodic(this,Mesh,Physics,rvar)
+  PURE SUBROUTINE CenterBoundary_periodic(this,Mesh,Physics,pvar)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Boundary_TYP) :: this
     TYPE(Mesh_TYP)     :: Mesh
     TYPE(Physics_TYP)  :: Physics
-    REAL :: rvar(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum)
+    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum) &
+                       :: pvar
     !------------------------------------------------------------------------!
-    INTENT(IN)    :: this,Mesh,Physics
-    INTENT(INOUT) :: rvar   
+    INTENT(IN)         :: this,Mesh,Physics
+    INTENT(INOUT)      :: pvar   
     !------------------------------------------------------------------------!
     SELECT CASE(GetDirection(this))
     CASE(WEST)
-       rvar(Mesh%IMIN-1,:,:) = rvar(Mesh%IMAX,:,:)
-       rvar(Mesh%IMIN-2,:,:) = rvar(Mesh%IMAX-1,:,:)
+       pvar(Mesh%IMIN-1,Mesh%JMIN:Mesh%JMAX,:) = pvar(Mesh%IMAX,Mesh%JMIN:Mesh%JMAX,:)
+       pvar(Mesh%IMIN-2,Mesh%JMIN:Mesh%JMAX,:) = pvar(Mesh%IMAX-1,Mesh%JMIN:Mesh%JMAX,:)
     CASE(EAST)
-       rvar(Mesh%IMAX+1,:,:) = rvar(Mesh%IMIN,:,:)
-       rvar(Mesh%IMAX+2,:,:) = rvar(Mesh%IMIN+1,:,:)
+       pvar(Mesh%IMAX+1,Mesh%JMIN:Mesh%JMAX,:) = pvar(Mesh%IMIN,Mesh%JMIN:Mesh%JMAX,:)
+       pvar(Mesh%IMAX+2,Mesh%JMIN:Mesh%JMAX,:) = pvar(Mesh%IMIN+1,Mesh%JMIN:Mesh%JMAX,:)
     CASE(SOUTH)
-       rvar(:,Mesh%JMIN-1,:) = rvar(:,Mesh%JMAX,:)
-       rvar(:,Mesh%JMIN-2,:) = rvar(:,Mesh%JMAX-1,:)
+       pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN-1,:) = pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX,:)
+       pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN-2,:) = pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX-1,:)
     CASE(NORTH)
-       rvar(:,Mesh%JMAX+1,:) = rvar(:,Mesh%JMIN,:)
-       rvar(:,Mesh%JMAX+2,:) = rvar(:,Mesh%JMIN+1,:)
+       pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX+1,:) = pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN,:)
+       pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX+2,:) = pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN+1,:)
     END SELECT
   END SUBROUTINE CenterBoundary_periodic
 

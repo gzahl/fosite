@@ -3,8 +3,9 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: timedisc_generic.f90                                              #
 !#                                                                           #
-!# Copyright (C) 2007-2008                                                   #
+!# Copyright (C) 2007-2010                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
+!# Björn Sperling   <sperling@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
 !# it under the terms of the GNU General Public License as published by      #
@@ -27,9 +28,10 @@
 ! generic subroutines for time discretization
 !----------------------------------------------------------------------------!
 MODULE timedisc_generic
-  USE timedisc_modeuler, SetBoundaries => SetBoundaries_modeuler
+  USE timedisc_modeuler
   USE boundary_generic
   USE mesh_generic
+  USE physics_common, ONLY : GetErrorMap
   USE physics_generic
   USE fluxes_generic
   USE sources_generic, CalcTimestep_sources => CalcTimestep
@@ -47,8 +49,6 @@ MODULE timedisc_generic
        InitTimedisc, &
        CalcTimestep, &
        SolveODE, &
-       SetBoundaries, &
-       GetBoundaryFlux, &
        CloseTimedisc, &
        GetType, &
        GetName, &
@@ -56,6 +56,7 @@ MODULE timedisc_generic
        GetCFL, &
        GetRank, &
        GetNumProcs, &
+       Print_Checkdata, &
        Info, &
        Warning, &
        Error
@@ -113,10 +114,6 @@ CONTAINS
          this%yflux(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum), &
          this%dxflux(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum), &
          this%dyflux(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum), &
-         this%bxflux(Mesh%JGMIN:Mesh%JGMAX,2,Physics%vnum), &
-         this%byflux(Mesh%IGMIN:Mesh%IGMAX,2,Physics%vnum), &
-         this%bxfold(Mesh%JGMIN:Mesh%JGMAX,2,Physics%vnum), &
-         this%byfold(Mesh%IGMIN:Mesh%IGMAX,2,Physics%vnum), &
          this%amax(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,2), &
          STAT = err)
     IF (err.NE.0) THEN
@@ -132,8 +129,6 @@ CONTAINS
     this%geo_src = 0.
     this%xflux = 0.
     this%yflux = 0.
-    this%bxflux = 0.
-    this%byflux = 0.
     this%amax = 0.
 
     ! print some information
@@ -145,12 +140,13 @@ CONTAINS
   END SUBROUTINE InitTimedisc
 
 
-  SUBROUTINE CalcTimestep(this,Mesh,Physics)
+  SUBROUTINE CalcTimestep(this,Mesh,Physics,Fluxes)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Timedisc_TYP) :: this
     TYPE(Mesh_TYP)     :: Mesh
     TYPE(Physics_TYP)  :: Physics
+    TYPE(Fluxes_TYP)   :: Fluxes
     !------------------------------------------------------------------------!
     REAL               :: invdt_x, invdt_y
     REAL               :: dt_cfl, dt_src
@@ -161,13 +157,13 @@ CONTAINS
     ! store old values
     this%cold(:,:,:) = this%cvar(:,:,:)
     this%pold(:,:,:) = this%pvar(:,:,:)
-    this%bxfold(:,:,:) = this%bxflux(:,:,:)
-    this%byfold(:,:,:) = this%byflux(:,:,:)
+    Fluxes%bxfold(:,:,:) = Fluxes%bxflux(:,:,:)
+    Fluxes%byfold(:,:,:) = Fluxes%byflux(:,:,:)
 
     ! CFL condition:
     ! maximal wave speeds in each direction
     CALL MaxWaveSpeeds(Physics,Mesh,this%pvar,this%amax)
-    
+
     ! inverse of time step in each direction
     IF (Mesh%INUM.GT.1) THEN
        invdt_x = MAXVAL(this%amax(:,:,1) / Mesh%dlx(:,:))
@@ -187,7 +183,7 @@ CONTAINS
     
     ! initialize this to be sure dt_src > 0
     dt_src = dt_cfl
-    CALL CalcTimestep_sources(Physics%sources,Mesh,Physics,this%pvar,dt_src)
+    CALL CalcTimestep_sources(Physics%sources,Mesh,Physics,this%pvar,this%cvar,dt_src)
     this%dt = MIN(dt_cfl,dt_src)
   END SUBROUTINE CalcTimestep
 
@@ -224,6 +220,7 @@ CONTAINS
        IF (bad_data.NE.0) THEN
           IF ((this%dt * 0.5).LT.this%dtlimit) THEN
              PRINT *,"Return value of CheckData: ", bad_data
+             CALL Print_Checkdata(this,Mesh,Physics)
              CALL Error(this,"SolveODE", "Time step to small, aborting.",GetRank(this))
           END IF
        END IF
@@ -242,8 +239,8 @@ CONTAINS
           ! set data to old values
           this%cvar(:,:,:) = this%cold(:,:,:)
           this%pvar(:,:,:) = this%pold(:,:,:)
-          this%bxflux(:,:,:) = this%bxfold(:,:,:)
-          this%byflux(:,:,:) = this%byfold(:,:,:)
+          Fluxes%bxflux(:,:,:) = Fluxes%bxfold(:,:,:)
+          Fluxes%byflux(:,:,:) = Fluxes%byfold(:,:,:)
        ELSE
           ! just for information
           this%dtmin = MIN(this%dt,this%dtmin)
@@ -252,6 +249,88 @@ CONTAINS
        END IF
     END DO
   END SUBROUTINE SolveODE
+
+ SUBROUTINE Print_Checkdata(this,Mesh,Physics)
+   IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Timedisc_TYP) :: this
+    TYPE(Mesh_TYP)     :: Mesh
+    TYPE(Physics_TYP)  :: Physics
+    !------------------------------------------------------------------------!
+    INTEGER, DIMENSION(2,6) :: mapping 
+    INTEGER  :: i, j                
+    REAL     :: rhomin, pmin
+    INTEGER, DIMENSION(4) :: meshrange
+    !------------------------------------------------------------------------!
+
+    IF ((Mesh%JNUM > 3) .AND. (Mesh%INUM > 3)) THEN
+       !print boundary mark (North)
+       write(*, '(A)', advance='YES') "       N"
+       j = 5
+       mapping(1,:) = (/ Mesh%IGMIN, Mesh%IMIN, Mesh%IMIN+1, Mesh%IMAX, Mesh%IMAX+1, Mesh%IGMAX+1 /)
+       mapping(2,:) = (/ Mesh%JGMIN, Mesh%JMIN, Mesh%JMIN+1, Mesh%JMAX, Mesh%JMAX+1, Mesh%JGMAX+1 /)
+    ELSE IF (Mesh%JNUM > 3) THEN
+       !print boundary mark (North)
+       write(*, '(A)', advance='YES') "    N"
+       j = 5
+       mapping(1,3:4) = (/ Mesh%IGMIN, Mesh%IGMAX+1 /)
+       mapping(2,:) = (/ Mesh%JGMIN, Mesh%JMIN, Mesh%JMIN+1, Mesh%JMAX, Mesh%JMAX+1, Mesh%JGMAX+1 /)
+    ELSE
+       j = 3
+       mapping(1,:) = (/ Mesh%IGMIN, Mesh%IMIN, Mesh%IMIN+1, Mesh%IMAX, Mesh%IMAX+1, Mesh%IGMAX+1 /)
+       mapping(2,3:4) = (/ Mesh%JGMIN, Mesh%JGMAX+1 /)
+    END IF
+    
+    DO
+      !print seperator
+      IF ((Mesh%INUM > 3) .AND. (j == 1 .or. j == 4)) THEN
+         write(*, '(A)', advance='YES') "    -------"     
+      ELSE IF (j == 1 .or. j == 4) THEN
+         write(*, '(A)', advance='YES') "    -" 
+      END IF
+      !print boundary mark (West)
+      IF ((Mesh%INUM > 3) .AND. (j == 3)) THEN
+         write(*,'(A)',advance='NO') " W  "
+      ELSE 
+         write(*,'(A)',advance='NO') "    "
+      END IF
+
+      IF (Mesh%INUM > 3) THEN 
+         i = 1
+      ELSE 
+         i = 3
+      END IF
+      DO 
+         !print seperator
+         IF (i == 2 .or. i == 5) write(*, '(A)', advance='NO') "|"     
+      
+         meshrange(1) = mapping(1,i)
+         meshrange(2) = mapping(1,i+1)-1
+         meshrange(3) = mapping(2,j)
+         meshrange(4) = mapping(2,j+1)-1
+      
+         write(*,'(A)',advance='NO') GetErrorMap(Physics, CheckData(Physics,Mesh,this%pvar,this%pold,meshrange))
+         i = i+1
+         if ((i > 5) .OR. .NOT.(Mesh%INUM > 3)) exit
+      END DO
+      !print boundary mark (East)
+      IF ((Mesh%INUM > 3) .AND. (j == 3)) THEN 
+         write (*,*) " E"
+      ELSE 
+         write (*,*) "  "
+      END IF
+      j = j-1
+      if ((j < 1) .OR. .NOT.(Mesh%JNUM > 3)) exit
+    END DO
+
+    IF ((Mesh%JNUM > 3) .AND. (Mesh%INUM > 3)) THEN
+       !print boundary mark (South)
+       write(*, '(A)', advance='YES') "       S"
+    ELSE IF (Mesh%JNUM > 3) THEN
+       write(*, '(A)', advance='YES') "    S"
+    END IF
+
+  END SUBROUTINE Print_Checkdata
 
 
   SUBROUTINE CloseTimedisc(this)
@@ -273,7 +352,6 @@ CONTAINS
 
     DEALLOCATE(this%pvar,this%cvar,this%pold,this%cold, &
          this%geo_src,this%src,this%xflux,this%yflux,this%dxflux,this%dyflux, &
-         this%bxflux,this%byflux,this%bxfold,this%byfold,&
          this%amax)
   END SUBROUTINE CloseTimedisc
 

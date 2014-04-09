@@ -30,76 +30,83 @@ MODULE geometry_oblatespheroidal
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   INTERFACE Convert2Cartesian_oblatespher
-     MODULE PROCEDURE Convert2Cartesian_coords, Convert2Cartesian_vectors
+     MODULE PROCEDURE Oblatespher2Cartesian_coords, Oblatespher2Cartesian_vectors
   END INTERFACE
   INTERFACE Convert2Curvilinear_oblatespher
-     MODULE PROCEDURE Convert2Curvilinear_coords, Convert2Curvilinear_vectors
+     MODULE PROCEDURE Cartesian2Oblatespher_coords, Cartesian2Oblatespher_vectors
   END INTERFACE
   PRIVATE
   CHARACTER(LEN=32), PARAMETER :: geometry_name = "oblate spheroidal"
   !--------------------------------------------------------------------------!
   PUBLIC :: &
        InitGeometry_oblatespher, &
-       GetScale, &
        ScaleFactors_oblatespher, &
        Convert2Cartesian_oblatespher, &
-       Convert2Curvilinear_oblatespher
+       Convert2Curvilinear_oblatespher, & 
+       Oblatespher2Cartesian_coords, &
+       Oblatespher2Cartesian_vectors, &
+       Cartesian2Oblatespher_coords, &
+       Cartesian2Oblatespher_vectors
   !--------------------------------------------------------------------------!
 
 CONTAINS
 
-  SUBROUTINE InitGeometry_oblatespher(this,gt,gs)
+  SUBROUTINE InitGeometry_oblatespher(this,gt,gp)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Geometry_TYP), INTENT(INOUT) :: this
     INTEGER, INTENT(IN) :: gt
-    REAL, INTENT(IN) :: gs
+    REAL, INTENT(IN) :: gp
     !------------------------------------------------------------------------!
     CALL InitGeometry(this,gt,geometry_name)
-    this%scalefactor = gs
+    this%geoparam = gp
   END SUBROUTINE InitGeometry_oblatespher
     
 
-  PURE FUNCTION GetScale(this) RESULT(gs)
+  ELEMENTAL SUBROUTINE ScaleFactors_oblatespher(gp,xi,eta,hxi,heta,hphi)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    TYPE(Geometry_TYP), INTENT(IN) :: this
-    REAL :: gs
-    !------------------------------------------------------------------------!
-    gs = this%scalefactor
-  END FUNCTION GetScale
-
-
-  ELEMENTAL SUBROUTINE ScaleFactors_oblatespher(gs,xi,eta,hxi,heta,hphi)
-    IMPLICIT NONE
-    !------------------------------------------------------------------------!
-    REAL, INTENT(IN)  :: gs,xi,eta
+    REAL, INTENT(IN)  :: gp,xi,eta
     REAL, INTENT(OUT) :: hxi,heta,hphi
     !------------------------------------------------------------------------!
-
-    hxi  = gs*SQRT(SINH(xi)**2+SIN(eta)**2)
+    hxi  = gp*SQRT(SINH(xi)**2+SIN(eta)**2)
     heta = hxi
-    hphi = gs*COSH(xi)*COS(eta)
+    hphi = gp*COSH(xi)*COS(eta)
   END SUBROUTINE ScaleFactors_oblatespher
 
   
-  ! coordinate transformation
-  ! oblate spheroidal -> cartesian
-  ELEMENTAL SUBROUTINE Convert2Cartesian_coords(gs,xi,eta,x,y)
+  ! coordinate transformations
+  ELEMENTAL SUBROUTINE Oblatespher2Cartesian_coords(gp,xi,eta,x,y)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    REAL, INTENT(IN)  :: gs,xi,eta
+    REAL, INTENT(IN)  :: gp,xi,eta
     REAL, INTENT(OUT) :: x,y
     !------------------------------------------------------------------------!
-    x = gs*COSH(xi)*COS(eta)
-    y = gs*SINH(xi)*SIN(eta)
-  END SUBROUTINE Convert2Cartesian_coords
+    x = gp*COSH(xi)*COS(eta)
+    y = gp*SINH(xi)*SIN(eta)
+  END SUBROUTINE Oblatespher2Cartesian_coords
 
-
-  ELEMENTAL SUBROUTINE Convert2Cartesian_vectors(gs,xi,eta,vxi,veta,vx,vy)
+  ELEMENTAL SUBROUTINE Cartesian2Oblatespher_coords(gp,x,y,xi,eta)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    REAL, INTENT(IN)  :: gs,xi,eta,vxi,veta
+    REAL, INTENT(IN)  :: gp,x,y
+    REAL, INTENT(OUT) :: xi,eta
+    !------------------------------------------------------------------------!
+    ! local variables
+    REAL :: xa,ya,coshxi
+    !------------------------------------------------------------------------!
+    xa = x/gp
+    ya = y/gp
+    coshxi = 0.5*(SQRT((1.0+xa)**2+ya*ya) + SQRT((1.0-xa)**2+ya*ya))
+    xi = LOG(coshxi+SQRT(coshxi*coshxi-1.0))    ! = ACOSH(coshxi)
+    eta=ACOS(xa/coshxi)
+  END SUBROUTINE Cartesian2Oblatespher_coords
+
+  ! vector transformations
+  ELEMENTAL SUBROUTINE Oblatespher2Cartesian_vectors(gp,xi,eta,vxi,veta,vx,vy)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    REAL, INTENT(IN)  :: gp,xi,eta,vxi,veta
     REAL, INTENT(OUT) :: vx,vy
     !------------------------------------------------------------------------!
     ! local variables
@@ -108,33 +115,12 @@ CONTAINS
     hh = SQRT(SINH(xi)**2+SIN(eta)**2)
     vx = (vxi*SINH(xi)*COS(eta) - veta*COSH(xi)*SIN(eta))/hh
     vy = (vxi*COSH(xi)*SIN(eta) + veta*SINH(xi)*COS(eta))/hh
-  END SUBROUTINE Convert2Cartesian_vectors
+  END SUBROUTINE Oblatespher2Cartesian_vectors
 
-
-  ! vector transformation
-  ! cartesian -> oblate spheroidal
-  ELEMENTAL SUBROUTINE Convert2Curvilinear_coords(gs,x,y,xi,eta)
+  ELEMENTAL SUBROUTINE Cartesian2Oblatespher_vectors(xi,eta,vx,vy,vxi,veta)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    REAL, INTENT(IN)  :: gs,x,y
-    REAL, INTENT(OUT) :: xi,eta
-    !------------------------------------------------------------------------!
-    ! local variables
-    REAL :: r2,a2,tmp,sinhxi,sinhxi2
-    !------------------------------------------------------------------------!
-    a2=gs*gs
-    r2=.5*(a2 - x*x - y*y)
-    sinhxi2=(SQRT(1.+(gs*y/r2)**2)-1.)*r2/a2
-    sinhxi=SQRT(sinhxi2)
-    xi=LOG(sinhxi+SQRT(sinhxi2+1.))             ! = ASINH(SQRT(sinhxi2))
-    eta=ASIN(y/(gs*sinhxi))
-  END SUBROUTINE Convert2Curvilinear_coords
-
-
-  ELEMENTAL SUBROUTINE Convert2Curvilinear_vectors(gs,xi,eta,vx,vy,vxi,veta)
-    IMPLICIT NONE
-    !------------------------------------------------------------------------!
-    REAL, INTENT(IN)  :: gs,xi,eta,vx,vy
+    REAL, INTENT(IN)  :: xi,eta,vx,vy
     REAL, INTENT(OUT) :: vxi,veta
     !------------------------------------------------------------------------!
     ! local variables
@@ -143,6 +129,6 @@ CONTAINS
     hh = SQRT(SINH(xi)**2+SIN(eta)**2) 
     vxi = (vx*SINH(xi)*COS(eta) + vy*COSH(xi)*SIN(eta))/hh
     veta = (-vx*COSH(xi)*SIN(eta) + vy*SINH(xi)*COS(eta))/hh 
-  END SUBROUTINE Convert2Curvilinear_vectors
+  END SUBROUTINE Cartesian2Oblatespher_vectors
 
 END MODULE geometry_oblatespheroidal

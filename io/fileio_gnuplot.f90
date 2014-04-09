@@ -92,7 +92,7 @@ MODULE fileio_gnuplot
 CONTAINS
   
   SUBROUTINE InitFileIO(this,Mesh,Physics,fmt,fmtname,filename,extension, &
-       stoptime,dtwall,count,fcycles)
+       stoptime,dtwall,count,fcycles,sepfiles,unit)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(FileIO_TYP)  :: this
@@ -104,13 +104,15 @@ CONTAINS
     INTEGER           :: dtwall
     INTEGER           :: count
     INTEGER           :: fcycles
+    LOGICAL           :: sepfiles
+    INTEGER, OPTIONAL :: unit
     !------------------------------------------------------------------------!
     INTENT(IN)    :: Mesh,Physics,fmt,fmtname,filename,extension,stoptime, &
-         dtwall,count,fcycles
+         dtwall,count,fcycles,sepfiles,unit
     INTENT(INOUT) :: this
     !------------------------------------------------------------------------!
     ! basic FileIO initialization
-    CALL InitFileIO_common(this,fmt,fmtname,filename,extension,fcycles)
+    CALL InitFileIO_common(this,fmt,fmtname,filename,extension,fcycles,sepfiles,unit)
     this%stoptime = stoptime
     this%dtwall   = dtwall
     this%time     = 0.
@@ -147,7 +149,7 @@ CONTAINS
 
 
   SUBROUTINE InitFileIO_gnuplot(this,Mesh,Physics,fmt,filename,stoptime,dtwall,&
-       count,fcycles)
+       count,fcycles,unit)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(FileIO_TYP)  :: this
@@ -159,17 +161,18 @@ CONTAINS
     INTEGER           :: dtwall
     INTEGER           :: count
     INTEGER           :: fcycles
+    INTEGER, OPTIONAL :: unit
     !------------------------------------------------------------------------!
 #ifdef PARALLEL
     INTEGER           :: i
     INTEGER, DIMENSION(Mesh%IMAX-Mesh%IMIN+1) :: blocklen,indices
 #endif
     !------------------------------------------------------------------------!
-    INTENT(IN)    :: Mesh,Physics,fmt,filename,stoptime,dtwall,count,fcycles
+    INTENT(IN)    :: Mesh,Physics,fmt,filename,stoptime,dtwall,count,fcycles,unit
     INTENT(INOUT) :: this
     !------------------------------------------------------------------------!
     CALL InitFileIO(this,Mesh,Physics,fmt,"GNUPLOT",filename,"dat",stoptime,&
-         dtwall,count,fcycles)
+         dtwall,count,fcycles,.FALSE.,unit)
 
     ! length of one output line
     this%linelen = this%cols * FLEN

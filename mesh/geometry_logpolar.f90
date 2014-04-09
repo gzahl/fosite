@@ -23,20 +23,20 @@
 !#############################################################################
 
 !----------------------------------------------------------------------------!
-! define properties of a logarithmic 2D polar mesh
-!    x = r0 * exp(r) * cos(phi)  
-!    y = r0 * exp(r) * sin(phi)
+! define properties of a logarithmic 2D polar mesh with dimensionless radial
+! coordinate rho according to:
+!    x = r0 * exp(rho) * cos(phi)  
+!    y = r0 * exp(rho) * sin(phi)
 !----------------------------------------------------------------------------!
 MODULE geometry_logpolar
   USE geometry_cartesian
-  USE geometry_oblatespheroidal
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   INTERFACE Convert2Cartesian_logpolar
-     MODULE PROCEDURE Convert2Cartesian_coords, Convert2Cartesian_vectors
+     MODULE PROCEDURE Logpolar2Cartesian_coords, Logpolar2Cartesian_vectors
   END INTERFACE
   INTERFACE Convert2Curvilinear_logpolar
-     MODULE PROCEDURE Convert2Curvilinear_coords, Convert2Curvilinear_vectors
+     MODULE PROCEDURE Cartesian2Logpolar_coords, Cartesian2Logpolar_vectors
   END INTERFACE
   PRIVATE
   CHARACTER(LEN=32), PARAMETER :: geometry_name = "logpolar"
@@ -45,89 +45,87 @@ MODULE geometry_logpolar
        InitGeometry_logpolar, &
        ScaleFactors_logpolar, &
        Convert2Cartesian_logpolar, &
-       Convert2Curvilinear_logpolar
+       Convert2Curvilinear_logpolar, &
+       Logpolar2Cartesian_coords, &
+       Logpolar2Cartesian_vectors, &
+       Cartesian2Logpolar_coords, &
+       Cartesian2Logpolar_vectors
   !--------------------------------------------------------------------------!
 
 CONTAINS
 
-  SUBROUTINE InitGeometry_logpolar(this,gt,gs)
+  SUBROUTINE InitGeometry_logpolar(this,gt,gp)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Geometry_TYP), INTENT(INOUT) :: this
     INTEGER, INTENT(IN) :: gt
-    REAL, INTENT(IN) :: gs
+    REAL, INTENT(IN) :: gp
     !------------------------------------------------------------------------!
     CALL InitGeometry(this,gt,geometry_name)
-    this%scalefactor = gs
+    this%geoparam = gp
   END SUBROUTINE InitGeometry_logpolar
     
 
-  ELEMENTAL SUBROUTINE ScaleFactors_logpolar(gs,r,hr,hphi,hz)
+  ELEMENTAL SUBROUTINE ScaleFactors_logpolar(gp,rho,hrho,hphi,hz)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    REAL, INTENT(IN)  :: gs,r
-    REAL, INTENT(OUT) :: hr,hphi,hz
+    REAL, INTENT(IN)  :: gp,rho
+    REAL, INTENT(OUT) :: hrho,hphi,hz
     !------------------------------------------------------------------------!
-    hr   = gs*EXP(r)
-    hphi = hr
+    hrho = gp*EXP(rho)
+    hphi = hrho
     hz   = 1.
   END SUBROUTINE ScaleFactors_logpolar
 
 
-  ! coordinate transformation
-  ! logpolar -> cartesian
-  ELEMENTAL SUBROUTINE Convert2Cartesian_coords(gs,r,phi,x,y)
+  ! coordinate transformations
+  ELEMENTAL SUBROUTINE Logpolar2Cartesian_coords(gp,rho,phi,x,y)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    REAL, INTENT(IN)  :: gs,r,phi
+    REAL, INTENT(IN)  :: gp,rho,phi
     REAL, INTENT(OUT) :: x,y
     !------------------------------------------------------------------------!
-    REAL :: r0
+    REAL :: r
     !------------------------------------------------------------------------!
-    r0 = gs*EXP(r)
-    x = r0*COS(phi)
-    y = r0*SIN(phi)
-  END SUBROUTINE Convert2Cartesian_coords
+    r = gp*EXP(rho)
+    x = r*COS(phi)
+    y = r*SIN(phi)
+  END SUBROUTINE Logpolar2Cartesian_coords
 
-
-  ! cartesian -> logpolar
-  ELEMENTAL SUBROUTINE Convert2Curvilinear_coords(gs,x,y,r,phi)
+  ELEMENTAL SUBROUTINE Cartesian2Logpolar_coords(gp,x,y,rho,phi)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    REAL, INTENT(IN)  :: gs,x,y
-    REAL, INTENT(OUT) :: r,phi
+    REAL, INTENT(IN)  :: gp,x,y
+    REAL, INTENT(OUT) :: rho,phi
     !------------------------------------------------------------------------!
     REAL :: x1,y1
     !------------------------------------------------------------------------!
-    x1 = x/gs
-    y1 = y/gs
-    r = 0.5*LOG(x1*x1+y1*y1)
-    phi = ATAN(y1/x1) ! = ATAN(y/x)
-  END SUBROUTINE Convert2Curvilinear_coords
+    x1 = x/gp
+    y1 = y/gp
+    rho = 0.5*LOG(x1*x1+y1*y1)
+    phi = ATAN2(y1,x1)+pi
+  END SUBROUTINE Cartesian2Logpolar_coords
 
 
-  ! vector transformation
-  ! logpolar -> cartesian  
-  ELEMENTAL SUBROUTINE Convert2Cartesian_vectors(gs,phi,vr,vphi,vx,vy)
+  ! vector transformations
+  ELEMENTAL SUBROUTINE Logpolar2Cartesian_vectors(gp,phi,vrho,vphi,vx,vy)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    REAL, INTENT(IN)  :: gs,phi,vr,vphi
+    REAL, INTENT(IN)  :: gp,phi,vrho,vphi
     REAL, INTENT(OUT) :: vx,vy
     !------------------------------------------------------------------------!
-    vx = vr * COS(phi) - vphi * SIN(phi)
-    vy = vr * SIN(phi) + vphi * COS(phi)
-  END SUBROUTINE Convert2Cartesian_vectors
-
-
-  ! cartesian -> logpolar
-  ELEMENTAL SUBROUTINE Convert2Curvilinear_vectors(gs,phi,vx,vy,vr,vphi)
+    vx = vrho * COS(phi) - vphi * SIN(phi)
+    vy = vrho * SIN(phi) + vphi * COS(phi)
+  END SUBROUTINE Logpolar2Cartesian_vectors
+  
+  ELEMENTAL SUBROUTINE Cartesian2Logpolar_vectors(gp,phi,vx,vy,vrho,vphi)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    REAL, INTENT(IN)  :: gs,phi,vx,vy
-    REAL, INTENT(OUT) :: vr,vphi
+    REAL, INTENT(IN)  :: gp,phi,vx,vy
+    REAL, INTENT(OUT) :: vrho,vphi
     !------------------------------------------------------------------------!
-    vr   = vx * COS(phi) + vy * SIN(phi)
+    vrho = vx * COS(phi) + vy * SIN(phi)
     vphi = -vx * SIN(phi) + vy * COS(phi)
-  END SUBROUTINE Convert2Curvilinear_vectors
+  END SUBROUTINE Cartesian2Logpolar_vectors
   
 END MODULE geometry_logpolar

@@ -22,4 +22,5 @@ distclean :
 fileio_gnuplot.o : ../common/fileio_common.o
 fileio_binary.o : fileio_gnuplot.o 
 fileio_netcdf.o : fileio_gnuplot.o 
-fileio_generic.o : fileio_binary.o fileio_netcdf.o fileio_gnuplot.o 
+fileio_vtk.o : fileio_gnuplot.o 
+fileio_generic.o : fileio_binary.o fileio_netcdf.o fileio_gnuplot.o fileio_vtk.o

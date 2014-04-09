@@ -35,6 +35,8 @@ MODULE geometry_cartesian
   PUBLIC :: &
        ! types
        Geometry_TYP, &
+       ! constants
+       PI, &
        ! methods
        InitGeometry, &
        InitGeometry_cartesian, &
@@ -42,6 +44,7 @@ MODULE geometry_cartesian
        GetType, &
        GetName, &
        GetRank, &
+       GetScale, &
        Info, &
        Warning, &
        Error

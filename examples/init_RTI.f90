@@ -1,9 +1,9 @@
 !#############################################################################
 !#                                                                           #
 !# fosite - 2D hydrodynamical simulation program                             #
-!# module: init_RTI.f90                                                  #
+!# module: init_RTI.f90                                                      #
 !#                                                                           #
-!# Copyright (C) 2006-2008                                                   # 
+!# Copyright (C) 2008-2010                                                   # 
 !# Björn Sperling   <sperling@astrophysik.uni-kiel.de>                       #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
@@ -25,6 +25,18 @@
 !#############################################################################
 !----------------------------------------------------------------------------!
 ! Program and data initialization for Rayleight-Taylor instability
+! References: 
+! [1] Rayleigh, Lord (1883) "Investigation of the character of the equilibrium 
+!     of an incompressible heavy fluid of variable density"
+!     Proceedings of the London Mathematical Society 14: 170–177 
+!     DOI: 10.1112/plms/s1-14.1.170
+! [2] Taylor, Sir Geoffrey Ingram (1950). "The instability of liquid surfaces
+!     when accelerated in a direction perpendicular to their planes"
+!     Proceedings of the Royal Society of London. Series A, (1065): 192–196
+!     DOI: 10.1098/rspa.1950.0052
+! [3] D.H. Sharp "An overview of Rayleigh-Taylor instability" 
+!     Physica D: Nonlinear Phenomena, vol. 12, Issues 1-3, July 1984, Pages 3-10
+!     DOI: 10.1016/0167-2789(84)90510-4
 !----------------------------------------------------------------------------!
 MODULE Init
   USE physics_generic
@@ -38,9 +50,30 @@ MODULE Init
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   PRIVATE
-  INTEGER :: testnum
-  REAL    :: g
-  !--------------------------------------------------------------------------!
+  ! simulation parameters
+  REAL,    PARAMETER  :: TSIM    = 10.0     ! simulation time
+  REAL,    PARAMETER  :: DYNVIS  = 0.0      ! dynamic viscosity constant
+  REAL,    PARAMETER  :: BULKVIS = 0.0      ! bulk viscosity constant
+!!$  REAL,    PARAMETER  :: DYNVIS  = 1.0E-4   
+!!$  REAL,    PARAMETER  :: BULKVIS = -6.67E-5
+  ! initial condition (SI units)
+  REAL,    PARAMETER  :: RHO0    = 2.0      ! density: upper region
+  REAL,    PARAMETER  :: RHO1    = 1.0      ! density: lower region
+  REAL,    PARAMETER  :: YACC    = 0.2      ! grav. acceleration
+  REAL,    PARAMETER  :: P0      = 1.2      ! pressure at the top
+  REAL,    PARAMETER  :: A0      = 0.02     ! amplitude of initial disturbance
+  ! mesh settings
+  INTEGER, PARAMETER  :: XRES    = 50       ! resolution in x
+  INTEGER, PARAMETER  :: YRES    = 100      ! resolution in y
+  REAL, PARAMETER     :: WIDTH   = 1.0      ! width of comp. domain
+  REAL, PARAMETER     :: HEIGHT  = 2.0      ! height of comp. domain
+  ! output parameters
+  INTEGER, PARAMETER :: ONUM = 10           ! number of output data sets
+  CHARACTER(LEN=256), PARAMETER &           ! output data dir
+                     :: ODIR = './'
+  CHARACTER(LEN=256), PARAMETER &           ! output data file name
+                     :: OFNAME = 'RTI' 
+ !--------------------------------------------------------------------------!
   PUBLIC :: &
        ! methods
        InitProgram
@@ -64,17 +97,6 @@ CONTAINS
     INTENT(OUT)       :: Mesh,Physics,Fluxes,Timedisc,Datafile,Logfile
     !------------------------------------------------------------------------!
 
-    ! 1. no viscosity old version
-    ! 2. viscosity
-     !air               18.27E-6
-     !nitrogen          17.81E-6
-     !oxygen            20.18E-6
-     !carbon dioxide    14.8E-6
-     !water by 10°C     1.308E−3
-
-    g = 0.2
-    testnum=2
-
     ! physics settings
     CALL InitPhysics(Physics, &
          problem = EULER2D, &
@@ -90,17 +112,17 @@ CONTAINS
          order     = LINEAR, &
          variables = CONSERVATIVE, &! vars. to use for reconstruction!
          limiter   = MONOCENT, &    ! one of: minmod, monocent,...   !
-         theta     = 1.3)           ! optional parameter for limiter !
+         theta     = 1.2)           ! optional parameter for limiter !
 
     ! mesh settings
     CALL InitMesh(Mesh,Fluxes, &
          geometry = CARTESIAN, &
-             inum = 50, &          ! resolution in x and            !
-             jnum = 200, &          !   y direction                  !             
+             inum = XRES, &          ! resolution in x and            !
+             jnum = YRES, &          !   y direction                  !             
              xmin = 0., &
-             xmax = 1.0/6.0, &
+             xmax = WIDTH, &
              ymin = 0., &
-             ymax = 1.0)
+             ymax = HEIGHT)
 
     ! boundary conditions
     CALL InitBoundary(Timedisc%boundary,Mesh,Physics, &
@@ -109,25 +131,24 @@ CONTAINS
          southern = REFLECTING, &
          northern = REFLECTING)
 
-    CALL InitSources(Physics%sources,Mesh,Fluxes,Physics, &
+    CALL InitSources(Physics%sources,Mesh,Fluxes,Physics,Timedisc%Boundary, &
          stype  = C_ACCEL, & 
-         yaccel = -g )      ! yaccel 
+         yaccel = -YACC )            ! acceleration in y-direction
 
-    IF (testnum .eq. 2) then
     ! viscosity source term
-    CALL InitSources(Physics%sources,Mesh,Fluxes,Physics, &
-         stype    = VISCOSITY, &
-         vismodel = MOLECULAR, &
-         dynconst = 1E-3, &
-         bulkconst = -6.67E-4)
-    ENDIF
+    IF ((DYNVIS.GT.TINY(DYNVIS)).OR.(BULKVIS.GT.TINY(BULKVIS))) &
+       CALL InitSources(Physics%sources,Mesh,Fluxes,Physics,Timedisc%Boundary, &
+            stype    = VISCOSITY, &
+            vismodel = MOLECULAR, &
+            dynconst = DYNVIS, &
+           bulkconst = BULKVIS)
 
     ! time discretization settings
     CALL InitTimedisc(Timedisc,Mesh,Physics,&
          method   = MODIFIED_EULER, &
          order    = 3, &
          cfl      = 0.4, &
-         stoptime = 10.0, &
+         stoptime = TSIM, &
          dtlimit  = 1.0E-4, &
          maxiter  = 100000)
 
@@ -135,29 +156,20 @@ CONTAINS
     CALL InitData(Mesh,Physics,Timedisc%pvar,Timedisc%cvar)
 
 
-  ! initialize log input/output
+    ! initialize log input/output
     CALL InitFileIO(Logfile,Mesh,Physics,Timedisc,&
          fileformat = BINARY, &
-#ifdef PARALLEL
-         filename   = "/tmp/RTIlog", &
-#else
-         filename   = "RTIlog", &
-#endif
-         stoptime   = Timedisc%stoptime, &
+         filename   = TRIM(ODIR) // TRIM(OFNAME) // "log", &
          dtwall     = 1800,&
          filecycles = 1)
 
     ! initialize data input/output
     CALL InitFileIO(Datafile,Mesh,Physics,Timedisc, &
-         fileformat = GNUPLOT, &
-#ifdef PARALLEL
-         filename   = "/tmp/RTI", &
-#else
-         filename   = "RTI", &
-#endif
-         stoptime   = Timedisc%stoptime, &
-         count      = 25, &
-         filecycles = 0)
+         fileformat = VTK, &
+!!$         fileformat = GNUPLOT, &
+!!$         filecycles = 0, &
+         filename   = TRIM(ODIR) // TRIM(OFNAME), &
+         count      = ONUM)
   END SUBROUTINE InitProgram
 
 
@@ -171,44 +183,26 @@ CONTAINS
     !------------------------------------------------------------------------!
     ! Local variable declaration
     INTEGER           :: i,j
-    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX):: d
-    REAL              :: rho0, rho1, p0, A
+    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX):: y0
     REAL, DIMENSION(2) :: accel
     !------------------------------------------------------------------------!
     INTENT(IN)        :: Mesh, Physics
     INTENT(OUT)       :: pvar, cvar
     !------------------------------------------------------------------------!
+    ! this marks the line between the two fluids
+    y0(:,:) = 0.5*Mesh%ymax + A0*COS(2*PI*Mesh%bcenter(:,:,1)/Mesh%xmax)
 
-    p0 = 1.2
-
-    ! upper regions
-    rho0 = 2.0 
-
-    ! lower region
-    rho1 = 1.0
-
-    A=0.01
-
-    do j = Mesh%JGMIN, Mesh%JGMAX, 1
-       do i = Mesh%IGMIN, Mesh%IGMAX, 1
-          if (Mesh%bcenter(i,j,2) .LT. Mesh%ymax/2.0) then
-            pvar(i,j,4) = rho1 * g * (Mesh%ymax/2.0 - Mesh%bcenter(i,j,2))&
-                          + rho0 * g * Mesh%ymax/2.0 +p0
-          else
-            pvar(i,j,4) = rho0 * g * (Mesh%ymax - Mesh%bcenter(i,j,2)) + p0
-          end if
-       end do
-    end do
-
-    do  j = Mesh%JGMIN, Mesh%JGMAX, 1
-       do i = Mesh%IGMIN, Mesh%IGMAX, 1
-          if (Mesh%bcenter(i,j,2) .LT. A*cos(2*3.1415*Mesh%bcenter(i,j,1)/Mesh%xmax)+Mesh%ymax/2.0) then
-            pvar(i,j,Physics%DENSITY) = rho1 
-          else
-            pvar(i,j,Physics%DENSITY) = rho0 
-          end if
-       end do
-    end do
+    ! initial hydrostatic stratification
+    WHERE (Mesh%bcenter(:,:,2).GT.y0(:,:))
+       ! upper fluid
+       pvar(:,:,Physics%DENSITY)  = RHO0
+       pvar(:,:,Physics%PRESSURE) = P0 + YACC * RHO0 * (Mesh%ymax-Mesh%bcenter(:,:,2))
+    ELSEWHERE
+       ! lower fluid
+       pvar(:,:,Physics%DENSITY)  = RHO1
+       pvar(:,:,Physics%PRESSURE) = P0 + YACC * (RHO1 * (y0(:,:)-Mesh%bcenter(:,:,2)) &
+            + RHO0 * (Mesh%ymax-y0(:,:)))
+    END WHERE
 
     ! velocity vanishes everywhere
     pvar(:,:,Physics%XVELOCITY:Physics%YVELOCITY) = 0.

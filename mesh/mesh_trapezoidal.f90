@@ -69,7 +69,6 @@ CONTAINS
          this%cxyx(this%IGMIN:this%IGMAX,this%JGMIN:this%JGMAX,4), &
          this%czxz(this%IGMIN:this%IGMAX,this%JGMIN:this%JGMAX,4), &
          this%czyz(this%IGMIN:this%IGMAX,this%JGMIN:this%JGMAX,4), &
-         this%cpos(this%IGMIN:this%IGMAX,this%JGMIN:this%JGMAX,4,2), &
          this%chx(this%IGMIN:this%IGMAX,this%JGMIN:this%JGMAX,4), &
          this%chy(this%IGMIN:this%IGMAX,this%JGMIN:this%JGMAX,4), &
          this%chz(this%IGMIN:this%IGMAX,this%JGMIN:this%JGMAX,4), &
@@ -80,16 +79,6 @@ CONTAINS
        CALL Error(this,"InitMesh_trapezoidal", "Unable to allocate memory.")
     END IF
 
-    ! corner positions
-    this%cpos(:,:,1,1) = this%fpos(:,:,1,1)      ! south-west
-    this%cpos(:,:,1,2) = this%fpos(:,:,3,2)
-    this%cpos(:,:,2,1) = this%fpos(:,:,2,1)      ! south-east
-    this%cpos(:,:,2,2) = this%fpos(:,:,3,2)
-    this%cpos(:,:,3,1) = this%fpos(:,:,1,1)      ! north-west
-    this%cpos(:,:,3,2) = this%fpos(:,:,4,2)
-    this%cpos(:,:,4,1) = this%fpos(:,:,2,1)      ! north-east
-    this%cpos(:,:,4,2) = this%fpos(:,:,4,2)
-       
     ! corner scale factors
     CALL ScaleFactors(this%geometry,this%cpos,this%chx,this%chy,this%chz)
     
@@ -280,7 +269,7 @@ CONTAINS
     TYPE(Mesh_TYP)    :: this
     !------------------------------------------------------------------------!
 
-    DEALLOCATE(this%cpos,this%chx,this%chy,this%chz, &
+    DEALLOCATE(this%chx,this%chy,this%chz, &
          this%sqrtg,this%weights)
     CALL CloseMesh_midpoint(this)
   END SUBROUTINE CloseMesh_trapezoidal

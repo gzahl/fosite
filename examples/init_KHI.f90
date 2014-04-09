@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: init_KHI.f90                                                      #
 !#                                                                           #
-!# Copyright (C) 2006-2008                                                   #
+!# Copyright (C) 2006-2010                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -25,6 +25,11 @@
 
 !----------------------------------------------------------------------------!
 ! Program and data initialization for Kelvin-Helmholtz instability
+! References: 
+! [1] Lord Kelvin (William Thomson) (1871). "Hydrokinetic solutions and 
+!     observations" Philosophical Magazine 42: 362-377 
+! [2] Hermann von Helmholtz (1868). "On the discontinuous movements of fluids"
+!     Monthly Reports of the Royal Prussian Academy of Philosophy in Berlin 23: 215-228
 !----------------------------------------------------------------------------!
 MODULE Init
   USE physics_generic
@@ -38,6 +43,20 @@ MODULE Init
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   PRIVATE
+  ! simulation parameters
+  REAL, PARAMETER    :: TSIM  = 5.0        ! simulation time
+  REAL, PARAMETER    :: GAMMA = 1.4        ! ratio of specific heats
+  REAL, PARAMETER    :: ETA   = 0.0        ! dynamic viscosity (0.0 disables)           
+  ! mesh settings
+  INTEGER, PARAMETER :: MGEO = CARTESIAN   ! geometry of the mesh
+  INTEGER, PARAMETER :: XRES = 100         ! resolution
+  INTEGER, PARAMETER :: YRES = 100
+  ! output file parameter
+  INTEGER, PARAMETER :: ONUM = 100         ! number of output data sets
+  CHARACTER(LEN=256), PARAMETER &          ! output data dir
+                     :: ODIR = './'
+  CHARACTER(LEN=256), PARAMETER &          ! output data file name
+                     :: OFNAME = 'KHI' 
   !--------------------------------------------------------------------------!
   PUBLIC :: &
        ! methods
@@ -58,36 +77,31 @@ CONTAINS
     TYPE(FILEIO_TYP)  :: Logfile
     !------------------------------------------------------------------------!
     ! Local variable declaration
-    INTEGER           :: testnum
     !------------------------------------------------------------------------!
     INTENT(OUT)       :: Mesh,Physics,Fluxes,Timedisc,Datafile,Logfile
     !------------------------------------------------------------------------!
-
-    !viscosity: without=1 / with=2 
-    testnum = 2
-
     ! physics settings
     CALL InitPhysics(Physics, &
          problem = EULER2D, &
-         gamma   = 1.4, &           ! ratio of specific heats        !
-         dpmax   = 1.0)             ! for advanced time step control !
+         gamma   = GAMMA, &                 ! ratio of specific heats        !
+         dpmax   = 1.0)                     ! for advanced time step control !
 
     ! numerical scheme for flux calculation
     CALL InitFluxes(Fluxes, &
-         scheme = MIDPOINT)         ! quadrature rule                !
+         scheme = MIDPOINT)                 ! quadrature rule                !
 
     ! reconstruction method
     CALL InitReconstruction(Fluxes%reconstruction, &
          order     = LINEAR, &
-         variables = CONSERVATIVE, &! vars. to use for reconstruction!
-         limiter   = MONOCENT, &    ! one of: minmod, monocent,...   !
-         theta     = 1.3)           ! optional parameter for limiter !
+         variables = CONSERVATIVE, &        ! vars. to use for reconstruction!
+         limiter   = MONOCENT, &            ! one of: minmod, monocent,...   !
+         theta     = 1.2)                   ! optional parameter for limiter !
 
     ! mesh settings
     CALL InitMesh(Mesh,Fluxes, &
-         geometry = CARTESIAN, &
-             inum = 100, &          ! resolution in x and            !
-             jnum = 100, &          !   y direction                  !             
+         geometry = MGEO, &
+             inum = XRES, &                 ! resolution in x and            !
+             jnum = YRES, &                 !   y direction                  !             
              xmin = -0.5, &
              xmax = 0.5, &
              ymin = -0.5, &
@@ -100,22 +114,21 @@ CONTAINS
          southern = PERIODIC, &
          northern = PERIODIC)
 
-    IF (testnum .eq. 2) then
     ! viscosity source term
-    CALL InitSources(Physics%sources,Mesh,Fluxes,Physics, &
-         stype    = VISCOSITY, &
-         vismodel = MOLECULAR, &
-         dynconst = 1E-3, &
-         bulkconst = -6.67E-4)
-    ENDIF 
-
+    IF (ETA.GT.TINY(ETA)) THEN
+       CALL InitSources(Physics%sources,Mesh,Fluxes,Physics,Timedisc%boundary, &
+            stype    = VISCOSITY, &
+            vismodel = MOLECULAR, &
+            dynconst = ETA, &
+           bulkconst = -2./3.*ETA)
+    END IF
 
     ! time discretization settings
     CALL InitTimedisc(Timedisc,Mesh,Physics,&
          method   = MODIFIED_EULER, &
          order    = 3, &
          cfl      = 0.4, &
-         stoptime = 5.0, &
+         stoptime = TSIM, &
          dtlimit  = 1.0E-4, &
          maxiter  = 100000)
 
@@ -123,27 +136,18 @@ CONTAINS
     CALL InitData(Mesh,Physics,Timedisc)
 
     ! initialize log input/output
-    CALL InitFileIO(Logfile,Mesh,Physics,Timedisc, &
+    CALL InitFileIO(Logfile,Mesh,Physics,Timedisc,&
          fileformat = BINARY, &
-#ifdef PARALLEL
-         filename   = "/tmp/KHIlog", &
-#else
-         filename   = "KHIog", &
-#endif
-         dtwall     = 1800, &
+         filename   = TRIM(ODIR) // TRIM(OFNAME) // 'log', &
          filecycles = 1)
 
     ! initialize data input/output
     CALL InitFileIO(Datafile,Mesh,Physics,Timedisc, &
-         fileformat = BINARY, &
-#ifdef PARALLEL
-         filename   = "/tmp/KHI", &
-#else
-         filename   = "KHI", &
-#endif
-         filecycles = 101, &
-         count      = 100)
-
+         fileformat = VTK, &
+!!$         fileformat = GNUPLOT, &
+!!$         filecycles = 0, &
+         filename   = TRIM(ODIR) // TRIM(OFNAME), &
+         count      = ONUM)
   END SUBROUTINE InitProgram
 
 
