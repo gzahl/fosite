@@ -28,8 +28,8 @@
 ! generic module for the advection problem
 !----------------------------------------------------------------------------!
 MODULE physics_generic
-  USE physics_euler2D
   USE physics_euler2Disothm
+  USE physics_euler2D
   USE physics_euler3Drotsym
   USE physics_euler3Drotamt
   USE constants_generic
@@ -53,6 +53,9 @@ MODULE physics_generic
      MODULE PROCEDURE Convert2Conservative_centsub
      MODULE PROCEDURE Convert2Conservative_faces
      MODULE PROCEDURE Convert2Conservative_facesub
+  END INTERFACE
+  INTERFACE GetSoundSpeed_adiabatic
+     MODULE PROCEDURE GetSoundSpeed_euler2D
   END INTERFACE
   !--------------------------------------------------------------------------!
   ! flags for advection problems

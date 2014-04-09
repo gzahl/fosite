@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: boundary_axis.f90                                                 #
 !#                                                                           #
-!# Copyright (C) 2006-2008                                                   #
+!# Copyright (C) 2006-2010                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -79,57 +79,5 @@ CONTAINS
     !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     CALL AxisMasks(Physics,this%reflX,this%reflY)
   END SUBROUTINE InitBoundary_axis
-
-
-  PURE SUBROUTINE FaceBoundary_axis(this,Mesh,Physics,we,ea,so,no,rstates)
-    IMPLICIT NONE
-    !------------------------------------------------------------------------!
-    TYPE(Boundary_TYP) :: this
-    TYPE(Mesh_TYP)     :: Mesh
-    TYPE(Physics_TYP)  :: Physics
-    INTEGER            :: we,ea,so,no
-    REAL :: rstates(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,4,Physics%vnum)
-    !------------------------------------------------------------------------!
-    INTEGER       :: i,j
-    !------------------------------------------------------------------------!
-    INTENT(IN)    :: this,Mesh,Physics,we,ea,so,no
-    INTENT(INOUT) :: rstates
-    !------------------------------------------------------------------------!
-    !************************************************************************!
-    ! Be careful! There is a problem with trapezoidal rule, because          !
-    ! SetFaceBoundary is called twice with different pairs of boundary values!
-    ! (1st call:sw/se,sw/nw; 2nd call:nw/ne,se/ne).                          !
-    !************************************************************************!
-    SELECT CASE(GetDirection(this))
-    CASE(WEST)
-       FORALL (j=Mesh%JGMIN:Mesh%JGMAX)
-          WHERE (this%reflX)
-             rstates(Mesh%IMIN,j,we,:) = 0.
-          END WHERE
-          rstates(Mesh%IMIN-1,j,ea,:) = rstates(Mesh%IMIN,j,we,:)
-       END FORALL
-    CASE(EAST)
-       FORALL (j=Mesh%JGMIN:Mesh%JGMAX)
-          WHERE (this%reflX)
-             rstates(Mesh%IMAX,j,ea,:) = 0.
-          END WHERE
-          rstates(Mesh%IMAX+1,j,we,:) = rstates(Mesh%IMAX,j,ea,:)
-       END FORALL
-    CASE(SOUTH)
-       FORALL (i=Mesh%IGMIN:Mesh%IGMAX)
-          WHERE (this%reflY)
-             rstates(i,Mesh%JMIN,so,:) = 0.
-          END WHERE
-          rstates(i,Mesh%JMIN-1,no,:) = rstates(i,Mesh%JMIN,so,:) 
-       END FORALL
-    CASE(NORTH)
-       FORALL (i=Mesh%IGMIN:Mesh%IGMAX)
-          WHERE (this%reflY)
-             rstates(i,Mesh%JMAX,no,:) = 0.
-          END WHERE
-          rstates(i,Mesh%JMAX+1,so,:) = rstates(i,Mesh%JMAX,no,:) 
-       END FORALL
-    END SELECT
-  END SUBROUTINE FaceBoundary_axis
 
 END MODULE boundary_axis

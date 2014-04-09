@@ -416,9 +416,9 @@ AC_DEFUN([AC_FC_ADVANCED_DEBUG],[
 # (defaults to nothing) if not.
 #
 # The known flags are:
+#            -ftrace: sxf90, sxmpif90
 #                -pg: gfortran, g95
 #                 -p: ifort
-#            -ftrace: sxf90, sxmpif90
 # --------------------------------------------------------------------------
 AC_DEFUN([AC_FC_PROFILING],[
     AC_LANG_PUSH(Fortran)dnl
@@ -426,7 +426,7 @@ AC_DEFUN([AC_FC_PROFILING],[
         ac_cv_fc_profiling,[
 	ac_cv_fc_profiling=no
 	ac_fc_profiling_FCFLAGS_save="$FCFLAGS"
-	for ac_flag in "-pg" "-p" "-ftrace"
+	for ac_flag in "-ftrace" "-pg" "-p"
 	do
             FCFLAGS="$ac_fc_profiling_FCFLAGS_save $ac_flag"
 	    AC_LINK_IFELSE(AC_LANG_PROGRAM,[

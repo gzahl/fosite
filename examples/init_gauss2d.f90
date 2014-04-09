@@ -56,7 +56,7 @@ MODULE Init
 !!$  INTEGER, PARAMETER :: MGEO = TANPOLAR
 !!$  INTEGER, PARAMETER :: MGEO = SINHPOLAR
   INTEGER, PARAMETER :: XRES = 100         ! resolution
-  INTEGER, PARAMETER :: YRES = 100 
+  INTEGER, PARAMETER :: YRES = 100
   REAL, PARAMETER    :: RMIN = 1.0E-2      ! inner radius for polar grids
   REAL, PARAMETER    :: RMAX = 0.3         ! outer radius
   REAL, PARAMETER    :: GPAR = 0.2         ! geometry scaling parameter

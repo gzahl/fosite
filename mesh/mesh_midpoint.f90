@@ -111,13 +111,13 @@ CONTAINS
     CALL ScaleFactors(this%geometry,this%fpos,this%fhx,this%fhy,this%fhz)   ! faces
     CALL ScaleFactors(this%geometry,this%center,this%bhx,this%bhy,this%bhz) ! centers
 
-    ! surface elements
-    this%dAx(:,:,1) = this%fhz(:,:,1)*this%fhy(:,:,1)*this%dy ! perpendicular to x-direction
-    this%dAy(:,:,1) = this%fhz(:,:,3)*this%fhx(:,:,3)*this%dx ! perpendicular to y-direction
-
     ! surface elements divided by dx or dy
     this%dAxdy(:,:,1) = this%fhz(:,:,1)*this%fhy(:,:,1)       ! perpendicular to x-direction
     this%dAydx(:,:,1) = this%fhz(:,:,3)*this%fhx(:,:,3)       ! perpendicular to y-direction
+
+    ! surface elements
+    this%dAx(:,:,1) = this%dAxdy(:,:,1)*this%dy               ! perpendicular to x-direction
+    this%dAy(:,:,1) = this%dAydx(:,:,1)*this%dx               ! perpendicular to y-direction
 
     ! volume elements
     this%volume(:,:) = this%bhx(:,:)*this%bhy(:,:)*this%bhz(:,:)*this%dx*this%dy

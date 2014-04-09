@@ -91,12 +91,8 @@ CONTAINS
     INTENT(INOUT) :: this
     !------------------------------------------------------------------------!
     ! allocate memory for all arrays used in reconstruction_linear
-    ALLOCATE(this%xslopes(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum), &
-         this%yslopes(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum), &
-         this%temp1(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum), &
-         this%temp2(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum), &
-         this%temp3(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum), &
-         this%temp4(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum), &
+    ALLOCATE(this%xslopes(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%VNUM), &
+         this%yslopes(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%VNUM), &
          STAT = err)
     IF (err.NE.0) THEN
        CALL Error(this, "MallocReconstruction_linear",  "Unable to allocate memory.")
@@ -306,7 +302,7 @@ CONTAINS
              END DO
           END DO
     END SELECT
-    
+
     CONTAINS
       
       ELEMENTAL FUNCTION minmod2_limiter(arg1,arg2) RESULT(limarg)
@@ -409,7 +405,7 @@ CONTAINS
           END DO
        END DO
     END DO
-
+ 
     CONTAINS
 
       ELEMENTAL FUNCTION reconstruct(cvar0,xslope0,yslope0,x0,y0,x,y) RESULT(rstate)
@@ -431,8 +427,7 @@ CONTAINS
     !------------------------------------------------------------------------!
     INTENT(INOUT)             :: this
     !------------------------------------------------------------------------!
-    DEALLOCATE(this%xslopes,this%yslopes,&
-         this%temp1,this%temp2,this%temp3,this%temp4)
+    DEALLOCATE(this%xslopes,this%yslopes)
   END SUBROUTINE CloseReconstruction_linear
   
 END MODULE reconstruction_linear

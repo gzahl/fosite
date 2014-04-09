@@ -71,7 +71,7 @@ CONTAINS
     !------------------------------------------------------------------------!
     hr     = 1.
     htheta = r
-    hphi   = r*sin(theta)
+    hphi   = r*SIN(theta)
   END SUBROUTINE ScaleFactors_spherical
 
   

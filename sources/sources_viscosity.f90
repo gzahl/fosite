@@ -230,13 +230,12 @@ CONTAINS
           this%dynvis(:,:) = etafkt_beta(this%dynconst, &
                cvar(:,:,Physics%ZMOMENTUM))
        END SELECT
-    CASE(PRINGLE)
-       ! constant kinematic viscosity
-       this%dynvis(:,:) = etafkt_pringle(pvar(:,:,Physics%DENSITY))
+    CASE(PRINGLE) ! constant kinematic viscosity
+       this%dynvis(:,:) = etafkt_pringle(this%dynconst,pvar(:,:,Physics%DENSITY))
     END SELECT
 
   CONTAINS
-    ! some elemental functions for computation of the viskosity
+    ! some elemental functions for computation of the viscosity
 
     ! Alpha viscosity
     ELEMENTAL FUNCTION etafkt_alpha(alpha,P,omega) RESULT(eta)
@@ -260,13 +259,13 @@ CONTAINS
     END FUNCTION etafkt_beta
     
     ! Pringle disk (kinematic viscosity is constant)
-    ELEMENTAL FUNCTION etafkt_pringle(rho) RESULT(eta)
+    ELEMENTAL FUNCTION etafkt_pringle(nu,rho) RESULT(eta)
       IMPLICIT NONE
       !----------------------------------------------------------------------!
-      REAL, INTENT(IN) :: rho
+      REAL, INTENT(IN) :: nu,rho
       REAL :: eta
       !----------------------------------------------------------------------!
-      eta = this%dynconst * rho   !here: dynconst is kinematic...
+      eta = nu * rho   !nu is the kinematic viscosity
     END FUNCTION etafkt_pringle
     
   END SUBROUTINE UpdateViscosity

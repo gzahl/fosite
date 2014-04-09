@@ -106,7 +106,8 @@ MODULE fileio_common
      INTEGER                :: ioffset             ! VTK: appended data offset!
      REAL                   :: stoptime            ! end of data output      !
      REAL                   :: time                ! output time             !
-     REAL, DIMENSION(:,:,:), POINTER :: vtktemp    ! vtk temp. data          !
+     REAL, DIMENSION(:,:,:), POINTER :: &
+                               vtktemp,vtktemp2    ! vtk temp. data          !
      REAL, DIMENSION(:,:,:), POINTER :: binout     ! binary data output buf. !
      REAL, DIMENSION(:,:) , POINTER  :: bflux      ! bound. flux data output !               
 #ifdef HAVE_NETCDF

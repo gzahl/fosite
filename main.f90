@@ -37,9 +37,16 @@ PROGRAM fosite
   USE timedisc_generic
   USE init
   USE integration
+#ifdef PARALLEL
+#ifdef HAVE_MPI_MOD
+  USE mpi
+#endif
+#endif
   IMPLICIT NONE
 #ifdef PARALLEL
-    include 'mpif.h'
+#ifdef HAVE_MPIF_H
+  include 'mpif.h'
+#endif
 #endif
   !--------------------------------------------------------------------------!
   TYPE(Mesh_TYP)       :: Mesh
@@ -89,7 +96,7 @@ PROGRAM fosite
 
 #ifdef PARALLEL
   wall_time = MPI_Wtime()
-  CALL MPI_AllReduce(wall_time,start_time,1,MPI_DOUBLE_PRECISION,MPI_MIN, &
+  CALL MPI_Allreduce(wall_time,start_time,1,MPI_DOUBLE_PRECISION,MPI_MIN, &
        Mesh%comm_cart,ierror)
 #else
   CALL CPU_TIME(start_time)
@@ -154,7 +161,7 @@ PROGRAM fosite
 
 #ifdef PARALLEL
   run_time = MPI_Wtime()
-  CALL MPI_AllReduce(run_time,end_time,1,MPI_DOUBLE_PRECISION,MPI_MIN,&
+  CALL MPI_Allreduce(run_time,end_time,1,MPI_DOUBLE_PRECISION,MPI_MIN,&
        Mesh%comm_cart,ierror)
 #else
   CALL CPU_TIME(end_time)

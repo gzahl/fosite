@@ -69,22 +69,32 @@ CONTAINS
     REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum) &
                        :: pvar
     !------------------------------------------------------------------------!
+    INTEGER            :: i,j
+    !------------------------------------------------------------------------!
     INTENT(IN)         :: this,Mesh,Physics
     INTENT(INOUT)      :: pvar   
     !------------------------------------------------------------------------!
     SELECT CASE(GetDirection(this))
     CASE(WEST)
-       pvar(Mesh%IMIN-1,Mesh%JMIN:Mesh%JMAX,:) = pvar(Mesh%IMAX,Mesh%JMIN:Mesh%JMAX,:)
-       pvar(Mesh%IMIN-2,Mesh%JMIN:Mesh%JMAX,:) = pvar(Mesh%IMAX-1,Mesh%JMIN:Mesh%JMAX,:)
+!CDIR NODEP
+       DO i=1,Mesh%GNUM
+          pvar(Mesh%IMIN-i,:,:) = pvar(Mesh%IMAX-i+1,:,:)
+       END DO
     CASE(EAST)
-       pvar(Mesh%IMAX+1,Mesh%JMIN:Mesh%JMAX,:) = pvar(Mesh%IMIN,Mesh%JMIN:Mesh%JMAX,:)
-       pvar(Mesh%IMAX+2,Mesh%JMIN:Mesh%JMAX,:) = pvar(Mesh%IMIN+1,Mesh%JMIN:Mesh%JMAX,:)
+!CDIR NODEP
+       DO i=1,Mesh%GNUM
+          pvar(Mesh%IMAX+i,:,:) = pvar(Mesh%IMIN+i-1,:,:)
+       END DO
     CASE(SOUTH)
-       pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN-1,:) = pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX,:)
-       pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN-2,:) = pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX-1,:)
+!CDIR NODEP
+       DO j=1,Mesh%GNUM
+          pvar(:,Mesh%JMIN-j,:) = pvar(:,Mesh%JMAX-j+1,:)
+       END DO
     CASE(NORTH)
-       pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX+1,:) = pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN,:)
-       pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX+2,:) = pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN+1,:)
+!CDIR NODEP
+       DO j=1,Mesh%GNUM
+          pvar(:,Mesh%JMAX+j,:) = pvar(:,Mesh%JMIN+j-1,:)
+       END DO
     END SELECT
   END SUBROUTINE CenterBoundary_periodic
 

@@ -304,7 +304,7 @@ CONTAINS
 
     ! initiate western/eastern MPI communication
 #ifdef MPI_USE_SENDRECV
-    ! send boundary data to western and receive from easterb neighbor
+    ! send boundary data to western and receive from eastern neighbor
     IF (Mesh%neighbor(WEST).NE.MPI_PROC_NULL) &
          this(WEST)%sendbuf(:,:,:) = pvar(Mesh%IMIN:Mesh%IMIN+Mesh%GNUM-1, &
                                           Mesh%JMIN:Mesh%JMAX,1:Physics%VNUM)
@@ -327,8 +327,8 @@ CONTAINS
          DEFAULT_MPI_REAL,Mesh%neighbor(WEST),10+WEST,Mesh%comm_cart,req(2),ierr)
 #endif
 #endif
-    ! set physical boundary conditions at eastern boundaries
-    IF (Mesh%INUM.GT.1) CALL SetBoundaryData(EAST)
+    ! set physical boundary conditions at western boundaries
+    IF (Mesh%INUM.GT.1) CALL SetBoundaryData(WEST)
 #ifdef PARALLEL
 #ifdef MPI_USE_SENDRECV
     ! send boundary data to eastern and receive from western neighbor
@@ -355,7 +355,7 @@ CONTAINS
 #endif
 #endif
     ! set physical boundary conditions at eastern boundaries
-    IF (Mesh%INUM.GT.1) CALL SetBoundaryData(WEST)
+    IF (Mesh%INUM.GT.1) CALL SetBoundaryData(EAST)
 #ifdef PARALLEL
 #ifndef MPI_USE_SENDRECV
     ! wait for unfinished MPI communication
@@ -393,8 +393,10 @@ CONTAINS
     CALL MPI_Issend(this(SOUTH)%sendbuf,Mesh%GNUM*(Mesh%IMAX-Mesh%IMIN+1)*Physics%vnum, &
          DEFAULT_MPI_REAL,Mesh%neighbor(SOUTH),10+SOUTH,Mesh%comm_cart,req(2),ierr)
 #endif
+#endif
     ! set physical boundary conditions at southern boundaries
     IF (Mesh%JNUM.GT.1) CALL SetBoundaryData(SOUTH)
+#ifdef PARALLEL
 #ifdef MPI_USE_SENDRECV
     ! send boundary data to northern and receive from southern neighbor
     IF (Mesh%neighbor(NORTH).NE.MPI_PROC_NULL) &
@@ -419,8 +421,10 @@ CONTAINS
     CALL MPI_Issend(this(NORTH)%sendbuf,Mesh%GNUM*(Mesh%IMAX-Mesh%IMIN+1)*Physics%vnum, &
          DEFAULT_MPI_REAL,Mesh%neighbor(NORTH),10+NORTH,Mesh%comm_cart,req(4),ierr)
 #endif
+#endif
     ! set physical boundary conditions at northern boundaries
     IF (Mesh%JNUM.GT.1) CALL SetBoundaryData(NORTH)
+#ifdef PARALLEL
 #ifndef MPI_USE_SENDRECV
     ! wait for unfinished MPI communication
     CALL MPI_Waitall(4,req,status,ierr)
@@ -436,31 +440,52 @@ CONTAINS
     ! the corners outside the computational domain;
     ! this is also necessary, because we need some of these values in the
     ! viscosity module
-    IF ((Mesh%INUM > 1) .AND. (Mesh%JNUM > 1)) THEN
-       ! south west
-       pvar(Mesh%IMIN-1,Mesh%JMIN-1,:) = 0.5 * (pvar(Mesh%IMIN,Mesh%JMIN-1,:) &
-         + pvar(Mesh%IMIN-1,Mesh%JMIN,:))
-       pvar(Mesh%IMIN-1,Mesh%JMIN-2,:) = pvar(Mesh%IMIN-1,Mesh%JMIN-1,:)
-       pvar(Mesh%IMIN-2,Mesh%JMIN-1,:) = pvar(Mesh%IMIN-1,Mesh%JMIN-1,:)
-       pvar(Mesh%IMIN-2,Mesh%JMIN-2,:) = pvar(Mesh%IMIN-1,Mesh%JMIN-1,:)
-       ! south east
-       pvar(Mesh%IMAX+1,Mesh%JMIN-1,:) = 0.5 * (pvar(Mesh%IMAX,Mesh%JMIN-1,:) &
-         + pvar(Mesh%IMAX+1,Mesh%JMIN,:))
-       pvar(Mesh%IMAX+2,Mesh%JMIN-1,:) = pvar(Mesh%IMAX+1,Mesh%JMIN-1,:)
-       pvar(Mesh%IMAX+1,Mesh%JMIN-2,:) = pvar(Mesh%IMAX+1,Mesh%JMIN-1,:)
-       pvar(Mesh%IMAX+2,Mesh%JMIN-2,:) = pvar(Mesh%IMAX+1,Mesh%JMIN-1,:)
-       ! north west
-       pvar(Mesh%IMIN-1,Mesh%JMAX+1,:) = 0.5 * (pvar(Mesh%IMIN-1,Mesh%JMAX,:) &
-         + pvar(Mesh%IMIN,Mesh%JMAX+1,:))
-       pvar(Mesh%IMIN-2,Mesh%JMAX+1,:) = pvar(Mesh%IMIN-1,Mesh%JMAX+1,:)
-       pvar(Mesh%IMIN-1,Mesh%JMAX+2,:) = pvar(Mesh%IMIN-1,Mesh%JMAX+1,:)
-       pvar(Mesh%IMIN-2,Mesh%JMAX+2,:) = pvar(Mesh%IMIN-1,Mesh%JMAX+1,:)
-       ! north east
-       pvar(Mesh%IMAX+1,Mesh%JMAX+1,:) = 0.5 * (pvar(Mesh%IMAX+1,Mesh%JMAX,:) &
-         + pvar(Mesh%IMAX,Mesh%JMAX+1,:))
-       pvar(Mesh%IMAX+2,Mesh%JMAX+1,:) = pvar(Mesh%IMAX+1,Mesh%JMAX+1,:)
-       pvar(Mesh%IMAX+1,Mesh%JMAX+2,:) = pvar(Mesh%IMAX+1,Mesh%JMAX+1,:)
-       pvar(Mesh%IMAX+2,Mesh%JMAX+2,:) = pvar(Mesh%IMAX+1,Mesh%JMAX+1,:)
+    IF ((Mesh%INUM.GT.1) .AND. (Mesh%JNUM.GT.1)) THEN
+       DO j=1,Mesh%GNUM
+          DO i=j+1,Mesh%GNUM
+             ! copy data left of the diagonal within the corner areas at
+             ! the western boundary
+             ! south west
+             pvar(Mesh%IMIN-i,Mesh%JMIN-j,:) = pvar(Mesh%IMIN-i,Mesh%JMIN-j+1,:)
+             ! north west
+             pvar(Mesh%IMIN-i,Mesh%JMAX+j,:) = pvar(Mesh%IMIN-i,Mesh%JMAX+j-1,:)
+
+             ! copy data right of the diagonal within the corner areas at
+             ! the eastern boundary
+             ! south east
+             pvar(Mesh%IMAX+i,Mesh%JMIN-j,:) = pvar(Mesh%IMAX+i,Mesh%JMIN-j+1,:)
+             ! north east
+             pvar(Mesh%IMAX+i,Mesh%JMAX+j,:) = pvar(Mesh%IMAX+i,Mesh%JMAX+j-1,:)
+
+             ! copy data below the diagonal within the corner areas at
+             ! the southern boundary (transposed problem i<->j)
+             ! south west
+             pvar(Mesh%IMIN-j,Mesh%JMIN-i,:) = pvar(Mesh%IMIN-j+1,Mesh%JMIN-i,:)
+             ! south east
+             pvar(Mesh%IMAX+j,Mesh%JMIN-i,:) = pvar(Mesh%IMAX+j-1,Mesh%JMIN-i,:)
+             ! copy data above the diagonal within the corner areas at
+             ! the northern boundary (transposed problem i<->j)
+             ! north west
+             pvar(Mesh%IMIN-j,Mesh%JMAX+i,:) = pvar(Mesh%IMIN-j+1,Mesh%JMAX+i,:)
+             ! north east
+             pvar(Mesh%IMAX+j,Mesh%JMAX+i,:) = pvar(Mesh%IMAX+j-1,Mesh%JMAX+i,:)
+          END DO
+       END DO
+       ! set the diagonal data 
+       DO i=1,Mesh%GNUM
+          ! south west
+          pvar(Mesh%IMIN-i,Mesh%JMIN-i,:) = 0.5 * (pvar(Mesh%IMIN-i,Mesh%JMIN,:) &
+               + pvar(Mesh%IMIN,Mesh%JMIN-i,:))
+          ! south east
+          pvar(Mesh%IMAX+i,Mesh%JMIN-i,:) = 0.5 * (pvar(Mesh%IMAX+i,Mesh%JMIN,:) &
+               + pvar(Mesh%IMAX,Mesh%JMIN-i,:))
+          ! north west
+          pvar(Mesh%IMIN-i,Mesh%JMAX+i,:) = 0.5 * (pvar(Mesh%IMIN-i,Mesh%JMAX,:) &
+               + pvar(Mesh%IMIN,Mesh%JMAX+i,:))
+          ! north east
+          pvar(Mesh%IMAX+i,Mesh%JMAX+i,:) = 0.5 * (pvar(Mesh%IMAX+i,Mesh%JMAX,:) &
+               + pvar(Mesh%IMAX,Mesh%JMAX+i,:))
+       END DO
     ELSE IF (Mesh%JNUM.EQ.1) THEN
        ! for 1D simulations along the x-direction copy internal data
        ! into the ghost cells at the y-boundaries

@@ -102,45 +102,53 @@ CONTAINS
     !------------------------------------------------------------------------!
     SELECT CASE(GetDirection(this))
     CASE(WEST)
-       FORALL (j=Mesh%JMIN:Mesh%JMAX)
-          WHERE (this%reflX)
-             pvar(Mesh%IMIN-1,j,:) = -pvar(Mesh%IMIN,j,:)
-             pvar(Mesh%IMIN-2,j,:) = -pvar(Mesh%IMIN+1,j,:)
-          ELSEWHERE
-             pvar(Mesh%IMIN-1,j,:) = pvar(Mesh%IMIN,j,:)
-             pvar(Mesh%IMIN-2,j,:) = pvar(Mesh%IMIN+1,j,:)
-          END WHERE
-       END FORALL
+!CDIR OUTERUNROLL
+       DO j=Mesh%JMIN,Mesh%JMAX
+!CDIR NODEP
+          DO i=1,Mesh%GNUM
+             WHERE (this%reflX)
+                pvar(Mesh%IMIN-i,j,:) = -pvar(Mesh%IMIN+i-1,j,:)
+             ELSEWHERE
+                pvar(Mesh%IMIN-i,j,:) = pvar(Mesh%IMIN+i-1,j,:)
+             END WHERE
+          END DO
+       END DO
     CASE(EAST)
-       FORALL (j=Mesh%JMIN:Mesh%JMAX)
-          WHERE (this%reflX)
-             pvar(Mesh%IMAX+1,j,:) = -pvar(Mesh%IMAX,j,:)
-             pvar(Mesh%IMAX+2,j,:) = -pvar(Mesh%IMAX-1,j,:)
-          ELSEWHERE
-             pvar(Mesh%IMAX+1,j,:) = pvar(Mesh%IMAX,j,:)
-             pvar(Mesh%IMAX+2,j,:) = pvar(Mesh%IMAX-1,j,:)
-          END WHERE
-       END FORALL
+!CDIR OUTERUNROLL
+       DO j=Mesh%JMIN,Mesh%JMAX
+!CDIR NODEP
+          DO i=1,Mesh%GNUM
+             WHERE (this%reflX)
+                pvar(Mesh%IMAX+i,j,:) = -pvar(Mesh%IMAX-i+1,j,:)
+             ELSEWHERE
+                pvar(Mesh%IMAX+i,j,:) = pvar(Mesh%IMAX-i+1,j,:)
+             END WHERE
+          END DO
+       END DO
     CASE(SOUTH)
-       FORALL (i=Mesh%IMIN:Mesh%IMAX)
-          WHERE (this%reflY)
-             pvar(i,Mesh%JMIN-1,:) = -pvar(i,Mesh%JMIN,:)
-             pvar(i,Mesh%JMIN-2,:) = -pvar(i,Mesh%JMIN+1,:)
-          ELSEWHERE
-             pvar(i,Mesh%JMIN-1,:) = pvar(i,Mesh%JMIN,:)
-             pvar(i,Mesh%JMIN-2,:) = pvar(i,Mesh%JMIN+1,:)
-          END WHERE
-       END FORALL
+!CDIR UNROLL=4
+       DO j=1,Mesh%GNUM
+!CDIR NODEP
+          DO i=Mesh%IMIN,Mesh%IMAX
+             WHERE (this%reflY)
+                pvar(i,Mesh%JMIN-j,:) = -pvar(i,Mesh%JMIN-j+1,:)
+             ELSEWHERE
+                pvar(i,Mesh%JMIN-j,:) = pvar(i,Mesh%JMIN-j+1,:)
+             END WHERE
+          END DO
+       END DO
     CASE(NORTH)
-       FORALL (i=Mesh%IMIN:Mesh%IMAX)
-          WHERE (this%reflY)
-             pvar(i,Mesh%JMAX+1,:) = -pvar(i,Mesh%JMAX,:)
-             pvar(i,Mesh%JMAX+2,:) = -pvar(i,Mesh%JMAX-1,:)
-          ELSEWHERE
-             pvar(i,Mesh%JMAX+1,:) = pvar(i,Mesh%JMAX,:)
-             pvar(i,Mesh%JMAX+2,:) = pvar(i,Mesh%JMAX-1,:)
-          END WHERE
-       END FORALL
+!CDIR UNROLL=4
+       DO j=1,Mesh%GNUM
+!CDIR NODEP
+          DO i=Mesh%IMIN,Mesh%IMAX
+             WHERE (this%reflY)
+                pvar(i,Mesh%JMAX+j,:) = -pvar(i,Mesh%JMAX+j-1,:)
+             ELSEWHERE
+                pvar(i,Mesh%JMAX+j,:) = pvar(i,Mesh%JMAX+j-1,:)
+             END WHERE
+          END DO
+       END DO
     END SELECT 
   END SUBROUTINE CenterBoundary_reflecting
 

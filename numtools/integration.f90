@@ -154,37 +154,41 @@ CONTAINS
     END IF
     
     ! tolerance for integration
-    err  = (xr-xl) * eps
+    err  = ABS(xr-xl) * eps
 
     SELECT CASE(meth)
     CASE(1)
        ! recursive Gauss integration
        tmpS = 0.
        IF (PRESENT(plist)) THEN
-          tmpS = qgauss1D(fkt, xl, xr, plist)
-          integral = qadaptive1D_recursive(fkt, tmpS, xl, xr, err, plist)
+          tmpS = qgauss1D(fkt,MIN(xl,xr),MAX(xl,xr),plist)
+          integral = SIGN(1.0,xr-xl)*qadaptive1D_recursive(fkt,tmpS,&
+               MIN(xl,xr),MAX(xl,xr),err,plist)
        ELSE
-          tmpS = qgauss1D(fkt, xl, xr)
-          integral = qadaptive1D_recursive(fkt, tmpS, xl, xr, err)
+          tmpS = qgauss1D(fkt,MIN(xl,xr),MAX(xl,xr))
+          integral = SIGN(1.0,xr-xl)*qadaptive1D_recursive(fkt,tmpS,&
+               MIN(xl,xr),MAX(xl,xr),err)
        END IF
 
     CASE(2)
        ! iterative Gauss integration
        tmpS = 0.
        IF (PRESENT(plist)) THEN
-          tmpS = qgauss1D(fkt, xl, xr, plist)
-          integral = qadaptive1D_iterative(fkt, tmpS, xl, xr, err, plist)
+          tmpS = qgauss1D(fkt,MIN(xl,xr),MAX(xl,xr),plist)
+          integral = SIGN(1.0,xr-xl)*qadaptive1D_iterative(fkt,tmpS,&
+               MIN(xl,xr),MAX(xl,xr),err,plist)
        ELSE
-          tmpS = qgauss1D(fkt, xl, xr)
-          integral = qadaptive1D_iterative(fkt, tmpS, xl, xr, err)
+          tmpS = qgauss1D(fkt,MIN(xl,xr),MAX(xl,xr))
+          integral = SIGN(1.0,xr-xl)*qadaptive1D_iterative(fkt,tmpS,&
+               MIN(xl,xr),MAX(xl,xr),err)
        END IF
 
     CASE(3)
        ! Romberg integration
        IF (PRESENT(plist)) THEN
-          integral = qromberg(fkt, xl, xr, err, plist)
+          integral = SIGN(1.0,xr-xl)*qromberg(fkt,MIN(xl,xr),MAX(xl,xr),err,plist)
        ELSE
-          integral = qromberg(fkt, xl, xr, err)
+          integral = SIGN(1.0,xr-xl)*qromberg(fkt,MIN(xl,xr),MAX(xl,xr),err)
        END IF
 
     CASE DEFAULT

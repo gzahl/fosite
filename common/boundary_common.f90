@@ -154,7 +154,7 @@ CONTAINS
     TYPE(Boundary_TYP), INTENT(IN) :: this
     INTEGER :: bt
     !------------------------------------------------------------------------!
-    bt=GetType_common(this%condition)
+    bt = GetType_common(this%condition)
   END FUNCTION GetCondition
 
 
@@ -164,7 +164,7 @@ CONTAINS
     TYPE(Boundary_TYP), INTENT(IN) :: this
     CHARACTER(LEN=32) :: bn
     !------------------------------------------------------------------------!
-    bn=GetName_common(this%condition)
+    bn = GetName_common(this%condition)
   END FUNCTION GetConditionName
 
 
@@ -174,7 +174,7 @@ CONTAINS
     TYPE(Boundary_TYP), INTENT(IN) :: this
     INTEGER :: dir
     !------------------------------------------------------------------------!
-    dir=GetType_common(this%direction)
+    dir = GetType_common(this%direction)
   END FUNCTION GetDirection
 
 
@@ -184,7 +184,7 @@ CONTAINS
     TYPE(Boundary_TYP), INTENT(IN) :: this
     CHARACTER(LEN=32) :: dn
     !------------------------------------------------------------------------!
-    dn=GetName_common(this%direction)
+    dn = GetName_common(this%direction)
   END FUNCTION GetDirectionName
 
 

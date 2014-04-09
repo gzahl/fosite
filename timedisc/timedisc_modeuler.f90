@@ -76,7 +76,7 @@ CONTAINS
     !------------------------------------------------------------------------!
     CALL InitTimedisc(this,os,ODEsolver_name,order,stoptime,cfl,dtlimit,maxiter)
 
-    ! initialize parameter vector    
+    ! initialize parameter vector
     SELECT CASE(GetOrder(this))
     CASE(1) ! time order=1 -> forward Euler
        eta(:) = (/ 0.0, 0.0, 0.0 /)
@@ -108,14 +108,14 @@ CONTAINS
        ! get the numerical fluxes
        CALL CalculateFluxes(Fluxes,Mesh,Physics, &
             this%pvar,this%cvar,this%xflux,this%yflux)
-       
+
        ! get geometrical sources for non-cartesian mesh
        IF (GetType(Mesh%geometry).NE.CARTESIAN) THEN 
           CALL GeometricalSources(Physics,Mesh,Fluxes, &
                this%pvar,this%cvar,this%geo_src)
        END IF
-       
-        ! get source terms due to external forces if present
+
+       ! get source terms due to external forces if present
        IF (ASSOCIATED(Physics%sources)) THEN
           CALL ExternalSources(Physics%sources,Mesh,Fluxes,Physics, &
                this%pvar,this%cvar,this%src)

@@ -170,6 +170,7 @@ CONTAINS
     INTEGER           :: maxinum, maxjnum
 #endif    
     INTEGER           :: err
+    REAL, DIMENSION(4,2) :: cfaces,ccorners
     !------------------------------------------------------------------------!
     INTENT(IN)        :: inum,jnum,xmin,xmax,ymin,ymax
     INTENT(INOUT)     :: this
@@ -242,35 +243,43 @@ CONTAINS
        CALL Error(this,"InitMesh_common","Unable to allocate memory!")
     END IF
 
-    ! calculate geometrical cell centers
-    FORALL (i=this%IGMIN:this%IGMAX,j=this%JGMIN:this%JGMAX)
-       this%center(i,j,1) = this%xmin + (i - 0.5)*this%dx
-       this%center(i,j,2) = this%ymin + (j - 0.5)*this%dy
-    END FORALL
+    ! translation vectors for cell faces and cell corners
+    ! (with respect to geometrical cell center)
+    cfaces(1,1) = -0.5*this%dx  ! western x coordinate
+    cfaces(1,2) = 0.0           ! western y coordinate
+    cfaces(2,1) = 0.5*this%dx   ! eastern x coordinate
+    cfaces(2,2) = 0.0           ! eastern y coordinate
+    cfaces(3,1) = 0.0           ! southern x coordinate
+    cfaces(3,2) = -0.5*this%dy  ! southern y coordinate
+    cfaces(4,1) = 0.0           ! northern x coordinate
+    cfaces(4,2) = 0.5*this%dy   ! northern y coordinate
+    ccorners(1,1) = cfaces(1,1) ! south-west
+    ccorners(1,2) = cfaces(3,2)
+    ccorners(2,1) = cfaces(2,1) ! south-east
+    ccorners(2,2) = cfaces(3,2)
+    ccorners(3,1) = cfaces(1,1) ! north-west
+    ccorners(3,2) = cfaces(4,2)
+    ccorners(4,1) = cfaces(2,1) ! north-east
+    ccorners(4,2) = cfaces(4,2)
 
-    ! calculate face centered positions
-    FORALL (i=this%IGMIN:this%IGMAX,j=this%JGMIN:this%JGMAX)
-       this%fpos(i,j,1,1) = this%center(i,j,1) - 0.5*this%dx  ! western x coord
-       this%fpos(i,j,1,2) = this%center(i,j,2)                ! western y coord
-       this%fpos(i,j,2,1) = this%center(i,j,1) + 0.5*this%dx  ! eastern x coord
-       this%fpos(i,j,2,2) = this%center(i,j,2)                ! eastern y coord
-       this%fpos(i,j,3,1) = this%center(i,j,1)                ! southern x coord
-       this%fpos(i,j,3,2) = this%center(i,j,2) - 0.5*this%dy  ! southern y coord
-       this%fpos(i,j,4,1) = this%center(i,j,1)                ! northern x coord
-       this%fpos(i,j,4,2) = this%center(i,j,2) + 0.5*this%dy  ! northern y coord
-    END FORALL
-
-   ! corner positions
-   FORALL (i=this%IGMIN:this%IGMAX,j=this%JGMIN:this%JGMAX)
-       this%cpos(i,j,1,1) = this%fpos(i,j,1,1)      ! south-west
-       this%cpos(i,j,1,2) = this%fpos(i,j,3,2)
-       this%cpos(i,j,2,1) = this%fpos(i,j,2,1)      ! south-east
-       this%cpos(i,j,2,2) = this%fpos(i,j,3,2)
-       this%cpos(i,j,3,1) = this%fpos(i,j,1,1)      ! north-west
-       this%cpos(i,j,3,2) = this%fpos(i,j,4,2)
-       this%cpos(i,j,4,1) = this%fpos(i,j,2,1)      ! north-east
-       this%cpos(i,j,4,2) = this%fpos(i,j,4,2)
-   END FORALL
+    ! calculate coordinates
+    DO j=this%JGMIN,this%JGMAX
+       DO i=this%IGMIN,this%IGMAX
+          ! geometrical cell centers
+          this%center(i,j,1) = this%xmin + (2*i-1)*0.5*this%dx    ! x coord
+          this%center(i,j,2) = this%ymin + (2*j-1)*0.5*this%dy    ! y coord
+          ! cell face centered positions
+          this%fpos(i,j,1,:) = this%center(i,j,:) + cfaces(1,:)   ! western
+          this%fpos(i,j,2,:) = this%center(i,j,:) + cfaces(2,:)   ! eastern
+          this%fpos(i,j,3,:) = this%center(i,j,:) + cfaces(3,:)   ! southern
+          this%fpos(i,j,4,:) = this%center(i,j,:) + cfaces(4,:)   ! northern
+          ! cell corner positions 
+          this%cpos(i,j,1,:) = this%center(i,j,:) + ccorners(1,:) ! south-west
+          this%cpos(i,j,2,:) = this%center(i,j,:) + ccorners(2,:) ! south-east
+          this%cpos(i,j,3,:) = this%center(i,j,:) + ccorners(3,:) ! north-west
+          this%cpos(i,j,4,:) = this%center(i,j,:) + ccorners(4,:) ! north-east
+       END DO
+    END DO
 
   END SUBROUTINE InitMesh
 
@@ -297,7 +306,7 @@ CONTAINS
     ! 1. balance number of processes per direction
     this%dims(1)=GetNumProcs(this)
     this%dims(2)=1
-    ! FIXME: account for vector length of vector CPUs
+    ! account for vector length of vector CPUs
     CALL CalculateDecomposition(this%INUM,this%JNUM,this%GNUM, &
          this%dims(1),this%dims(2))
     IF (this%dims(2).LE.0) THEN

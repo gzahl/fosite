@@ -1,5 +1,5 @@
 # fortran 90/95 compiler
-FC=gfortran
+FC=mpif90
 
 # awk and sed program
 AWK=gawk
@@ -27,16 +27,16 @@ ALLSRCS=$(SOURCES) $(foreach dir,$(SUBDIRS), $(wildcard $(dir)/*.f90))
 ALLOBJS=$(ALLSRCS:.f90=.o)
 
 # compiler dependent variables
-FCFLAGS_ALL= -cpp    -DFORTRAN_STREAMS   $(INCDIRS)
-FCFLAGS_OPT= -O2 
+FCFLAGS_ALL= -cpp -fdefault-real-8    -DFORTRAN_STREAMS   $(INCDIRS)
+FCFLAGS_OPT= -O2 -finline-functions
 FCFLAGS_DBG=-fcheck=all
 FCFLAGS_PROF=-pg
-FCFLAGS_MPI= 
+FCFLAGS_MPI= -DPARALLEL  -DHAVE_MPIF_H
 LDFLAGS_ALL=     
 LDFLAGS_OPT= -O2
 LDFLAGS_DBG=-fcheck=all
 LDFLAGS_PROF=-pg
-LDFLAGS_MPI= 
+LDFLAGS_MPI= -lrt   
 
 # default compiler flags for target "all"
 FCFLAGS=$(FCFLAGS_ALL) $(FCFLAGS_OPT)

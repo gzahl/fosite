@@ -93,7 +93,7 @@ CONTAINS
     TYPE(Fluxes_TYP)  :: this
     TYPE(Mesh_TYP)    :: Mesh
     TYPE(Physics_TYP) :: Physics
-    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum) &
+    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%VNUM) &
                       :: pvar,cvar
     !------------------------------------------------------------------------!
     INTENT(IN)        :: Mesh,pvar,cvar

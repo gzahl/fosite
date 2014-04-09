@@ -68,8 +68,10 @@ MODULE reconstruction_common
      REAL              :: limiter_param            ! limiter parameter       !
      REAL, DIMENSION(:,:,:), &
           POINTER               :: xslopes,yslopes ! limited slopes          !
-     REAL, DIMENSION(:,:,:), &
-          POINTER  :: temp1,temp2,temp3,temp4 ! temporary storage for slopes !
+!!$ FIXME: compute reconstruciton points once at initialization
+!!$        -> improves performance
+!!$     REAL, DIMENSION(:,:,:,:), &                   ! positions with respect  !
+!!$          POINTER               :: dx,dy           !   to cell bary centers  !
   END TYPE Reconstruction_TYP
   !--------------------------------------------------------------------------!
   LOGICAL, PARAMETER :: PRIMITIVE    = .TRUE.

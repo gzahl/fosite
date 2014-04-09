@@ -27,7 +27,7 @@
 #############################################################################
 
 AC_PREREQ(2.62)
-AC_INIT(fosite, 0.3.3, tillense@astrophysik.uni-kiel.de)
+AC_INIT(fosite, 0.3.4, tillense@astrophysik.uni-kiel.de)
 
 # ===========================================================================
 # define command line arguments 

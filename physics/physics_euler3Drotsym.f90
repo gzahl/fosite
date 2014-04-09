@@ -29,11 +29,11 @@
 !----------------------------------------------------------------------------!
 MODULE physics_euler3Drotsym
   USE physics_common
-  USE physics_euler2D, ReflectionMasks_euler3Drs => ReflectionMasks_euler2D, &
-       CheckData_euler3Drs => CheckData_euler2D, &
-       CalculateWaveSpeeds_euler3Drs => CalculateWaveSpeeds_euler2D
   USE mesh_common, ONLY : Mesh_TYP
   USE sources_common, ONLY : Sources_TYP
+  USE physics_euler2D, &
+       CheckData_euler3Drs => CheckData_euler2D, &
+       CalculateWaveSpeeds_euler3Drs => CalculateWaveSpeeds_euler2D
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   INTERFACE GeometricalSources_euler3Drs
@@ -568,21 +568,51 @@ CONTAINS
   END SUBROUTINE Convert2Conservative_faces
 
 
-  PURE SUBROUTINE AxisMasks_euler3Drs(this,reflX,reflY)
+  PURE SUBROUTINE ReflectionMasks_euler3Drs(this,reflX,reflY)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Physics_TYP) :: this
-    LOGICAL, DIMENSION(this%vnum) :: reflX,reflY
+    LOGICAL, DIMENSION(this%VNUM) :: reflX,reflY
     !------------------------------------------------------------------------!
     INTENT(IN)        :: this
     INTENT(OUT)       :: reflX,reflY
     !------------------------------------------------------------------------!
-    reflX(:) = .FALSE.
-    reflY(:) = .FALSE.
+    ! western / eastern boundary
+    reflX(this%DENSITY)   = .FALSE.
     reflX(this%XVELOCITY) = .TRUE.
+    reflX(this%YVELOCITY) = .FALSE.
+    reflX(this%ZVELOCITY) = .FALSE.
+    reflX(this%PRESSURE)  = .FALSE.
+    ! southern / northern boundary
+    reflY(this%DENSITY)   = .FALSE.
+    reflY(this%XVELOCITY) = .FALSE.
+    reflY(this%YVELOCITY) = .TRUE.
+    reflY(this%ZVELOCITY) = .FALSE.
+    reflY(this%PRESSURE)  = .FALSE.
+  END SUBROUTINE ReflectionMasks_euler3Drs
+
+
+  PURE SUBROUTINE AxisMasks_euler3Drs(this,reflX,reflY)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Physics_TYP) :: this
+    LOGICAL, DIMENSION(this%VNUM) :: reflX,reflY
+    !------------------------------------------------------------------------!
+    INTENT(IN)        :: this
+    INTENT(OUT)       :: reflX,reflY
+    !------------------------------------------------------------------------!
+    ! western / eastern boundary
+    reflX(this%DENSITY)   = .FALSE.
+    reflX(this%XVELOCITY) = .TRUE.
+    reflX(this%YVELOCITY) = .FALSE.
     reflX(this%ZVELOCITY) = .TRUE.
+    reflX(this%PRESSURE)  = .FALSE.
+    ! southern / northern boundary
+    reflY(this%DENSITY)   = .FALSE.
+    reflY(this%XVELOCITY) = .FALSE.
     reflY(this%YVELOCITY) = .TRUE.
     reflY(this%ZVELOCITY) = .TRUE.
+    reflY(this%PRESSURE)  = .FALSE.
   END SUBROUTINE AxisMasks_euler3Drs
 
 

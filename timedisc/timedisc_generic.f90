@@ -229,7 +229,6 @@ CONTAINS
        bad_data = CheckData(Physics,Mesh,this%pvar,this%pold)
        IF (bad_data.NE.0) THEN
           IF ((this%dt * 0.5).LT.this%dtlimit) THEN
-             PRINT *,"Return value of CheckData: ", bad_data
              CALL Print_Checkdata(this,Mesh,Physics)
              CALL Error(this,"SolveODE", "Time step to small, aborting.",GetRank(this))
           END IF

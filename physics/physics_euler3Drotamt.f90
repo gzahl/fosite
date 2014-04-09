@@ -30,16 +30,18 @@
 !----------------------------------------------------------------------------!
 MODULE physics_euler3Drotamt
   USE physics_common
-  USE physics_euler2D, ReflectionMasks_euler3Dra => ReflectionMasks_euler2D
-  USE physics_euler3Drotsym, MallocPhysics_euler3Dra => MallocPhysics_euler3Drs, &
+  USE mesh_common, ONLY : Mesh_TYP
+  USE physics_euler2D, ONLY : MomentumSourcesX_euler2D, MomentumSourcesY_euler2D
+  USE physics_euler3Drotsym, &
+       MallocPhysics_euler3Dra => MallocPhysics_euler3Drs, &
        CheckData_euler3Dra => CheckData_euler3Drs, &
        CalculateWaveSpeeds_euler3Dra => CalculateWaveSpeeds_euler3Drs, &
        CalculateFluxesX_euler3Dra => CalculateFluxesX_euler3Drs, &
        CalculateFluxesY_euler3Dra => CalculateFluxesY_euler3Drs, &
        ExternalSources_euler3Dra => ExternalSources_euler3Drs, &
+       ReflectionMasks_euler3Dra => ReflectionMasks_euler3Drs, &
        AxisMasks_euler3Dra => AxisMasks_euler3Drs, &
        ClosePhysics_euler3Dra => ClosePhysics_euler3Drs
-  USE mesh_common, ONLY : Mesh_TYP
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   INTERFACE GeometricalSources_euler3Dra

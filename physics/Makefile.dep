@@ -2,8 +2,8 @@ constants_generic.o : \
 	constants_SI.o \
 	constants_geometrical.o
 
-physics_euler2Disothm.o : \
-	physics_euler2D.o
+physics_euler2D.o : \
+	physics_euler2Disothm.o
 
 physics_euler3Drotamt.o : \
 	physics_euler2D.o \
@@ -13,8 +13,8 @@ physics_euler3Drotsym.o : \
 	physics_euler2D.o
 
 physics_generic.o : \
-	physics_euler2D.o \
 	physics_euler2Disothm.o \
+	physics_euler2D.o \
 	physics_euler3Drotsym.o \
 	physics_euler3Drotamt.o \
 	constants_generic.o
