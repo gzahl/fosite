@@ -243,6 +243,7 @@ CONTAINS
     TYPE(Physics_TYP) :: this
     !------------------------------------------------------------------------!
     DEALLOCATE(this%pvarname,this%cvarname)
+    CALL CloseCommon(this%advproblem)
   END SUBROUTINE ClosePhysics
 
 

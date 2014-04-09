@@ -28,7 +28,7 @@
 ! generic module for the advection problem
 !----------------------------------------------------------------------------!
 MODULE physics_generic
-  USE physics_euler2Disothm
+  USE physics_euler2Disothm, ClosePhysics_common => ClosePhysics
   USE physics_euler2D
   USE physics_euler3Drotsym
   USE physics_euler3Drotamt
@@ -68,7 +68,6 @@ MODULE physics_generic
        ! types
        Physics_TYP, &
        ! constants
-       PI, &
        EULER2D, EULER2D_ISOTHERM, EULER3D_ROTSYM, EULER3D_ROTAMT, &
        SI, CGS, GEOMETRICAL, &
        ! methods
@@ -770,6 +769,11 @@ CONTAINS
     !------------------------------------------------------------------------!
     INTENT(INOUT)     :: this
     !------------------------------------------------------------------------!
+    IF (.NOT.Initialized(this)) &
+        CALL Error(this,"ClosePhysics","not initialized")
+    ! deallocate pointer variables used in all physics modules
+    DEALLOCATE(this%amin,this%amax,this%bmin,this%bmax, &
+         this%tmin,this%tmax)
     ! call specific dallocation procedures
     SELECT CASE(GetType(this))
     CASE(EULER2D)
@@ -781,10 +785,6 @@ CONTAINS
     CASE(EULER3D_ROTAMT)
        CALL ClosePhysics_euler3Dra(this)
     END SELECT
-
-    ! deallocate memory for all arrays used in physics module
-    DEALLOCATE(this%amin,this%amax,this%bmin,this%bmax, &
-         this%tmin,this%tmax)
   END SUBROUTINE ClosePhysics
 
 END MODULE physics_generic

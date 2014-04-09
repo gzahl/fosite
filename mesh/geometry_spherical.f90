@@ -59,7 +59,6 @@ CONTAINS
     INTEGER, INTENT(IN) :: gt
     !------------------------------------------------------------------------!
     CALL InitGeometry(this,gt,geometry_name)
-    this%spherical_like = .TRUE.
   END SUBROUTINE InitGeometry_spherical
     
 

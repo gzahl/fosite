@@ -42,6 +42,7 @@ MODULE reconstruction_constant
        PRIMITIVE, CONSERVATIVE, &
        ! methods
        InitReconstruction, &
+       CloseReconstruction, &
        InitReconstruction_constant, &
        CalculateStates_constant, &
        PrimRecon, &

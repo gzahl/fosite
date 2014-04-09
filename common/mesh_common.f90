@@ -79,6 +79,12 @@ MODULE mesh_common
      MODULE PROCEDURE MeshError_rank0, MeshError_rankX, Error_common
   END INTERFACE
   !--------------------------------------------------------------------------!
+  ! index selection type
+  TYPE Selection_TYP
+     INTEGER                    :: IMIN,IMAX       ! selection in x-direction!
+     INTEGER                    :: JMIN,JMAX       ! selection in y-direction!
+     LOGICAL, POINTER           :: mask(:,:)       ! optional selection mask !            
+  END type Selection_TYP
   ! mesh data structure
   TYPE Mesh_TYP
      TYPE(Common_TYP)           :: mtype           ! mesh type               !
@@ -138,6 +144,7 @@ MODULE mesh_common
   PUBLIC :: &
        ! types
        Mesh_TYP, &
+       Selection_TYP, &
 #ifdef PARALLEL
        DEFAULT_MPI_REAL, &
 #endif
@@ -456,7 +463,7 @@ CONTAINS
       !-------------------------------------------------------------------!
       ! measure the costs of the given configuration
       CALL GetCosts(nj,nk,pj,pk,bl,vl)
-!PRINT '(A,2(I7),I12,I4)'," costs: ",pj,pk,bl,vl
+!!$PRINT '(A,2(I7),I12,I4)'," costs: ",pj,pk,bl,vl
       ! save the configuration
       pjold=pj
       pkold=pk
@@ -639,6 +646,7 @@ CONTAINS
          this%bhx,this%bhy,this%bhz, &
          this%fhx,this%fhy,this%fhz, &
          this%volume,this%dxdV,this%dydV,this%dlx,this%dly)
+    CALL CloseCommon(this%mtype)
   END SUBROUTINE CloseMesh
 
 END MODULE mesh_common

@@ -1,5 +1,5 @@
 # fortran 90/95 compiler
-FC=mpif90
+FC=gfortran
 
 # awk and sed program
 AWK=gawk
@@ -20,23 +20,23 @@ OBJECTS=$(SOURCES:.f90=.o)
 
 # some directories
 BASEDIR=$(shell pwd)
-SUBDIRS=numtools common physics boundary fluxes mesh sources timedisc io
+SUBDIRS=numtools common physics boundary fluxes mesh sources io timedisc
 INCDIRS=$(foreach dir,$(SUBDIRS),-I$(BASEDIR)/$(dir))
 LIBDIRS=$(foreach dir,$(SUBDIRS),-L$(BASEDIR)/$(dir))
 ALLSRCS=$(SOURCES) $(foreach dir,$(SUBDIRS), $(wildcard $(dir)/*.f90))
 ALLOBJS=$(ALLSRCS:.f90=.o)
 
 # compiler dependent variables
-FCFLAGS_ALL= -cpp -fdefault-real-8    -DFORTRAN_STREAMS   $(INCDIRS)
-FCFLAGS_OPT= -O2 -finline-functions
+FCFLAGS_ALL= -cpp    -DFORTRAN_STREAMS   $(INCDIRS)
+FCFLAGS_OPT= -O2 
 FCFLAGS_DBG=-fcheck=all
 FCFLAGS_PROF=-pg
-FCFLAGS_MPI= -DPARALLEL  -DHAVE_MPIF_H
+FCFLAGS_MPI= 
 LDFLAGS_ALL=     
 LDFLAGS_OPT= -O2
 LDFLAGS_DBG=-fcheck=all
 LDFLAGS_PROF=-pg
-LDFLAGS_MPI= -lrt   
+LDFLAGS_MPI= 
 
 # default compiler flags for target "all"
 FCFLAGS=$(FCFLAGS_ALL) $(FCFLAGS_OPT)
@@ -79,7 +79,7 @@ boundary : common physics
 fluxes : common physics
 mesh : common fluxes
 sources : common physics boundary fluxes mesh
-timedisc : common physics boundary fluxes mesh sources
+timedisc : common physics boundary fluxes mesh sources io
 io: common physics fluxes mesh
 
 init.o : subdirs

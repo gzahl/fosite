@@ -378,9 +378,9 @@ AC_DEFUN([AC_FC_INLINE],[
 #
 # The known flags are:
 #        -fbacktrace: gfortran
+#         -check all: ifort
 #        -fcheck=all: gfortran
 #       -ftrace=full: g95
-#         -check all: ifort
 #                -eC: sxf90
 # --------------------------------------------------------------------------
 AC_DEFUN([AC_FC_ADVANCED_DEBUG],[

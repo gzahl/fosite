@@ -68,6 +68,7 @@ MODULE common_types
 #endif
        ! methods
        InitCommon, &
+       CloseCommon, &
        GetType, &
        GetName, &
        GetRank, &
@@ -114,6 +115,17 @@ CONTAINS
     this%error = 0
     this%init  = .TRUE.
   END SUBROUTINE InitCommon
+
+
+  SUBROUTINE CloseCommon(this)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Common_TYP) :: this
+    !------------------------------------------------------------------------!
+    INTENT(INOUT)    :: this
+    !------------------------------------------------------------------------!
+    this%init = .FALSE.
+  END SUBROUTINE CloseCommon
 
 
   PURE FUNCTION GetType(this) RESULT(t)

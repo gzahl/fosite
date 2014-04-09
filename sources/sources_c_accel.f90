@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: sources_c_accel.f90                                               #
 !#                                                                           #
-!# Copyright (C) 2009                                                        #
+!# Copyright (C) 2009,2011                                                   #
 !# Björn Sperling   <sperling@astrophysik.uni-kiel.de>                       #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
@@ -56,7 +56,7 @@ CONTAINS
     TYPE(Fluxes_TYP)  :: Fluxes
     TYPE(Physics_TYP) :: Physics
     INTEGER           :: stype
-    REAL              :: xaccel, yaccel
+    REAL,OPTIONAL     :: xaccel, yaccel
     !------------------------------------------------------------------------!
     INTEGER           :: err
     !------------------------------------------------------------------------!
@@ -66,13 +66,20 @@ CONTAINS
   
     ALLOCATE(this%accel(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,2), &
          STAT = err)
-    IF (err.NE.0) THEN
-       PRINT *, "ERROR in InitSources_c_accel: Unable allocate memory!"
-       STOP
+    IF (err.NE.0) &
+         CALL Error(this,"InitSources_c_accel","memory allocation failed")
+
+    ! initialize constant acceleration
+    IF (PRESENT(xaccel)) THEN
+       this%accel(:,:,1) = xaccel
+    ELSE
+       this%accel(:,:,1) = 0.
     END IF
-    ! initialize gravitational acceleration
-    this%accel(:,:,1) = xaccel
-    this%accel(:,:,2) = yaccel
+    IF (PRESENT(yaccel)) THEN
+       this%accel(:,:,2) = yaccel
+    ELSE
+       this%accel(:,:,2) = 0.
+    END IF
   END SUBROUTINE InitSources_c_accel
 
 
@@ -90,7 +97,7 @@ CONTAINS
     INTENT(INOUT)     :: this
     INTENT(OUT)       :: sterm
     !------------------------------------------------------------------------!
-    ! gravitational source terms
+    ! compute source terms due to constant acceleration
     CALL ExternalSources(Physics,Mesh,this%accel,pvar,cvar,sterm)
   END SUBROUTINE ExternalSources_c_accel
 
@@ -105,6 +112,7 @@ CONTAINS
     INTENT(INOUT)     :: this
     !------------------------------------------------------------------------!
     DEALLOCATE(this%accel)
+    CALL CloseSources(this)
   END SUBROUTINE CloseSources_c_accel
 
 END MODULE sources_c_accel

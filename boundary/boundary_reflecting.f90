@@ -44,6 +44,7 @@ MODULE boundary_reflecting
        WEST, EAST, SOUTH, NORTH, &
        ! methods
        InitBoundary, &
+       CloseBoundary, &
        InitBoundary_reflecting, &
        CenterBoundary_reflecting, &
        CloseBoundary_reflecting, &
@@ -102,7 +103,7 @@ CONTAINS
     !------------------------------------------------------------------------!
     SELECT CASE(GetDirection(this))
     CASE(WEST)
-!CDIR OUTERUNROLL
+!CDIR UNROLL=8
        DO j=Mesh%JMIN,Mesh%JMAX
 !CDIR NODEP
           DO i=1,Mesh%GNUM
@@ -114,7 +115,7 @@ CONTAINS
           END DO
        END DO
     CASE(EAST)
-!CDIR OUTERUNROLL
+!CDIR UNROLL=8
        DO j=Mesh%JMIN,Mesh%JMAX
 !CDIR NODEP
           DO i=1,Mesh%GNUM

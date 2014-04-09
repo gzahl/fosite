@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: init_collapse.f90                                                 #
 !#                                                                           #
-!# Copyright (C) 2006-2010                                                   #
+!# Copyright (C) 2008-2011                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !# Björn Sperling   <sperling@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
@@ -44,14 +44,13 @@ MODULE Init
   USE reconstruction_generic
   USE boundary_generic
   USE sources_generic
-  USE sources_boundary
   USE fileio_generic
   USE timedisc_generic
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   PRIVATE
   ! simulation parameters
-  REAL, PARAMETER    :: TSIM      = 1.0E+0 ! simulation time in terms of the
+  REAL, PARAMETER    :: TSIM      = 1.0E-0 ! simulation time in terms of the
                                            !   free-fall time [TAU]
   REAL, PARAMETER    :: GAMMA     = 1.4    ! ratio of specific heats
   REAL, PARAMETER    :: MASS      = 1.0E+2 ! mass of spheroid
@@ -110,7 +109,6 @@ CONTAINS
     !------------------------------------------------------------------------!
     INTENT(OUT)       :: Mesh,Physics,Fluxes,Timedisc,Datafile,Logfile
     !------------------------------------------------------------------------!
-
     ! physics settings
     CALL InitPhysics(Physics, &
          problem = EULER3D_ROTSYM, &
@@ -148,7 +146,7 @@ CONTAINS
        bc(EAST)  = NO_GRADIENTS
        bc(SOUTH) = AXIS
        bc(NORTH) = AXIS
-       sgbc = SPHERMULTEXPANFAST
+       sgbc = SPHERMULTEXPAN
     CASE(CYLINDRICAL)
        x1 = -RMAX*RSPH
        x2 = RMAX*RSPH
@@ -158,7 +156,7 @@ CONTAINS
        bc(EAST)  = NO_GRADIENTS
        bc(SOUTH) = AXIS
        bc(NORTH) = NO_GRADIENTS
-       sgbc = CYLINMULTEXPANFAST
+       sgbc = CYLINMULTEXPAN
     CASE(OBLATE_SPHEROIDAL)
        x2 = RMAX*RSPH/GPAR
        x2 = LOG(x2+SQRT(x2**2-1.0)) ! = ACOSH(RMAX*RSPH/GPAR)
@@ -169,7 +167,7 @@ CONTAINS
        bc(EAST)  = NO_GRADIENTS
        bc(SOUTH) = AXIS
        bc(NORTH) = AXIS
-       sgbc = CYLINMULTEXPANFAST
+       sgbc = CYLINMULTEXPAN
     CASE(TANCYLINDRICAL)
        x1 = ATAN(-RMAX*RSPH/GPAR)
        x2 = ATAN(RMAX*RSPH/GPAR)
@@ -179,7 +177,7 @@ CONTAINS
        bc(EAST)  = NO_GRADIENTS
        bc(SOUTH) = AXIS
        bc(NORTH) = NO_GRADIENTS
-       sgbc = CYLINMULTEXPANFAST
+       sgbc = CYLINMULTEXPAN
     CASE(SINHSPHERICAL)
        x2 = RMAX*RSPH/GPAR
        x2 = LOG(x2+SQRT(x2**2+1.0)) ! = ASINH(RMAX*RSPH/GPAR)
@@ -190,7 +188,7 @@ CONTAINS
        bc(EAST)  = NO_GRADIENTS
        bc(SOUTH) = AXIS
        bc(NORTH) = AXIS
-       sgbc = SPHERMULTEXPANFAST
+       sgbc = SPHERMULTEXPAN
     CASE DEFAULT
        CALL Error(Physics,"InitProgram","geometry not supported for 3D Sedov explosion")
     END SELECT
@@ -220,8 +218,7 @@ CONTAINS
     END IF
     ! source term due to self-gravity
     CALL InitSources(Physics%sources,Mesh,Fluxes,Physics,Timedisc%Boundary, &
-            stype  = SELFGRAVITATION, &
-         bndrytype = sgbc)
+            stype  = POISSON)
 
     ! time discretization settings
     CALL InitTimedisc(Timedisc,Mesh,Physics,&

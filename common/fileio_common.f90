@@ -155,6 +155,7 @@ MODULE fileio_common
 #endif
        ! methods
        InitFileIO, &
+       CloseFileIO, &
        GetFilename, &
        GetFilestatus, &
        GetType, &
@@ -233,6 +234,15 @@ CONTAINS
        lastunit  = this%unit
     END IF
   END SUBROUTINE InitFileIO
+
+
+  SUBROUTINE CloseFileIO(this)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(FileIO_TYP), INTENT(INOUT) :: this
+    !------------------------------------------------------------------------!
+    CALL CloseCommon(this%format)
+  END SUBROUTINE CloseFileIO
 
 
   FUNCTION GetFilename(this) RESULT (fname)

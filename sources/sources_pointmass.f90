@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: sources_pointmass.f90                                             #
 !#                                                                           #
-!# Copyright (C) 2007-2008                                                   #
+!# Copyright (C) 2007-2011                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -32,6 +32,7 @@ MODULE sources_pointmass
   USE boundary_common, ONLY : WEST,EAST,SOUTH,NORTH
   USE fluxes_generic, ONLY : Fluxes_TYP, GetBoundaryFlux
   USE physics_generic
+  USE geometry_generic
   USE mesh_generic
 #ifdef PARALLEL
 #ifdef HAVE_MPI_MOD
@@ -47,6 +48,9 @@ MODULE sources_pointmass
   !--------------------------------------------------------------------------!
   PRIVATE
   CHARACTER(LEN=32), PARAMETER :: source_name = "central point mass"
+  CHARACTER(LEN=16), PARAMETER :: potential_name(2) = (/ &
+                                  "Newton          ", &
+                                  "Paczinski-Wiita " /)
   INTEGER, PARAMETER :: NEWTON = 1
   INTEGER, PARAMETER :: WIITA  = 2
   !--------------------------------------------------------------------------!
@@ -57,7 +61,9 @@ MODULE sources_pointmass
        NEWTON, WIITA, &
        ! methods
        InitSources, &
+       CloseSources, &
        InitSources_pointmass, &
+       InfoSources_pointmass, &
        ExternalSources_pointmass, &
        CalcTimestep_pointmass, &
        CloseSources_pointmass, &
@@ -95,8 +101,9 @@ CONTAINS
 
     ! add new source term to beginning of
     ! list of source terms
-    IF (ASSOCIATED(this).EQV..FALSE.) THEN
+    IF (.NOT.ASSOCIATED(this)) THEN
        this => newsrc
+       NULLIFY(this%next)
     ELSE
        tmpsrc => this
        this => newsrc
@@ -114,22 +121,41 @@ CONTAINS
     TYPE(Fluxes_TYP)  :: Fluxes
     TYPE(Physics_TYP) :: Physics
     INTEGER           :: stype
-    INTEGER           :: potential
-    REAL              :: mass
-    REAL              :: cvis
+    INTEGER,OPTIONAL  :: potential
+    REAL,OPTIONAL     :: mass,cvis
     !------------------------------------------------------------------------!
-    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,2) :: accel
-    REAL              :: r,a
-    REAL              :: invdt_x, invdt_y
+    INTEGER           :: potential_def
     INTEGER           :: err
     INTEGER           :: i,j
+    REAL              :: r,a
+    REAL              :: invdt_x, invdt_y
+    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,2) :: accel
     !------------------------------------------------------------------------!
     INTENT(IN)        :: Mesh,Physics,stype,potential,mass,cvis
     !------------------------------------------------------------------------!
     CALL InitSources(this,stype,source_name)
 
+    ! type of the potential
+    IF (PRESENT(potential)) THEN
+       potential_def = potential
+    ELSE
+       potential_def = NEWTON
+    END IF
+
     ! set mass
-    this%mass = mass
+    IF (PRESENT(mass)) THEN
+       this%mass = mass
+    ELSE
+       this%mass = 1.0
+    END IF
+
+    ! Courant number for time step estimate
+    IF (PRESENT(cvis)) THEN
+       this%cvis = cvis
+    ELSE
+       this%cvis = 0.9
+    END IF
+
     ! reset mass flux
     this%mdot = 0.0
 
@@ -137,26 +163,29 @@ CONTAINS
          STAT = err)
     IF (err.NE.0) CALL Error(this,"InitSources_pointmass", "Unable allocate memory!")
 
-    SELECT CASE(potential)
+    ! initialize potential
+    SELECT CASE(potential_def)
     CASE(NEWTON) ! newtonian gravity
-       ! set type of potential
-       CALL InitCommon(this%potential,NEWTON,"Newton")
+       CALL InitCommon(this%potential,NEWTON,potential_name(NEWTON))
        a = 0.0
     CASE(WIITA) ! pseudo-Newton Paczinski-Wiita potential
-       ! set type of potential
-       CALL InitCommon(this%potential,WIITA,"Paczinski-Wiita")
+       CALL InitCommon(this%potential,WIITA,potential_name(WIITA))
        ! Schwarzschild radius
        a = 2*Physics%constants%GN * this%mass / Physics%constants%C**2
+    CASE DEFAULT
+       CALL Error(this,"InitSources_pointmass", "potential must be either NEWTON or WIITA")       
     END SELECT
 
     ! initialize gravitational acceleration
+!CDIR COLLAPSE
     DO j=Mesh%JMIN,Mesh%JMAX
-       DO i=Mesh%IMIN,Mesh%IMAX
+!CDIR NODEP
+       DO i=Mesh%IGMIN,Mesh%IGMAX
           ! calculate the distance to the center
           r = SQRT(Mesh%bccart(i,j,1)**2 + Mesh%bccart(i,j,2)**2)
           ! calculate cartesian components
-          accel(i,j,:) = -(Physics%constants%GN * this%mass) * Mesh%bccart(i,j,:) &
-               / ((r+TINY(1.0))*((r-a)**2+TINY(1.0)))
+          accel(i,j,:) = -(Physics%constants%GN * this%mass) &
+               * Mesh%bccart(i,j,:) / ((r+TINY(1.0))*((r-a)**2+TINY(1.0)))
        END DO
     END DO
     accel(Mesh%IGMIN:Mesh%IMIN-1,:,:) = 0.0
@@ -192,7 +221,7 @@ CONTAINS
     ELSE
        ! this factor is constant throughout the simulation;
        ! devide it by SQRT(this%mass) to get the time step limit
-       this%cvis = cvis * SQRT(this%mass/MAX(invdt_x, invdt_y))
+       this%cvis = this%cvis * SQRT(this%mass/MAX(invdt_x, invdt_y))
     END IF
 
     SELECT CASE(GetType(Mesh%geometry))
@@ -205,6 +234,20 @@ CONTAINS
        CALL WARNING(this,"ExternalSources_pointmass","geometry not supported")
     END SELECT
   END SUBROUTINE InitSources_pointmass
+
+
+  SUBROUTINE InfoSources_pointmass(this)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Sources_TYP), POINTER :: this
+    !------------------------------------------------------------------------!
+    CHARACTER(LEN=32) :: mass_str
+    !------------------------------------------------------------------------!
+    WRITE (mass_str,'(ES8.2)') this%mass
+    CALL Info(this,"            potential:         " // &
+         TRIM(GetName(this%potential)) // ACHAR(10) // &
+         "            mass:              " // TRIM(mass_str))
+  END SUBROUTINE InfoSources_pointmass
 
 
   SUBROUTINE ExternalSources_pointmass(this,Mesh,Physics,Fluxes,pvar,cvar,sterm)
@@ -230,7 +273,7 @@ CONTAINS
        bflux(:)  = GetBoundaryFlux(Fluxes,Mesh,Physics,this%outbound,MPI_COMM_WORLD)
 #else
        bflux(:)  = GetBoundaryFlux(Fluxes,Mesh,Physics,this%outbound)
-#endif       
+#endif
        ! store old mass
        oldmass = this%mass
        ! compute new mass
@@ -276,6 +319,7 @@ CONTAINS
        PRINT "(A,(ES11.3))", " central mass: ", this%mass
     END IF
     DEALLOCATE(this%accel)
+    CALL CloseSources(this)
   END SUBROUTINE CloseSources_pointmass
 
 END MODULE sources_pointmass

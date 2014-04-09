@@ -48,6 +48,7 @@ MODULE boundary_nogradients
        WEST, EAST, SOUTH, NORTH, &
        ! methods
        InitBoundary, &
+       CloseBoundary, &
        InitBoundary_nogradients, &
        CenterBoundary_nogradients, &
        GetType, &

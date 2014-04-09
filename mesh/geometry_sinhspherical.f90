@@ -35,27 +35,27 @@ MODULE geometry_sinhspherical
   USE geometry_spherical
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
-  INTERFACE Convert2Cartesian_sinhspherical
+  INTERFACE Convert2Cartesian_sinhspher
      MODULE PROCEDURE Sinhspherical2Cartesian_coords, Spherical2Cartesian_vectors
   END INTERFACE
-  INTERFACE Convert2Curvilinear_sinhspherical
+  INTERFACE Convert2Curvilinear_sinhspher
      MODULE PROCEDURE Cartesian2Sinhspherical_coords, Cartesian2Spherical_vectors
   END INTERFACE
   PRIVATE
   CHARACTER(LEN=32), PARAMETER :: geometry_name = "sinhspherical"
   !--------------------------------------------------------------------------!
   PUBLIC :: &
-       InitGeometry_sinhspherical, &
-       ScaleFactors_sinhspherical, &
-       Convert2Cartesian_sinhspherical, &
-       Convert2Curvilinear_sinhspherical, &
+       InitGeometry_sinhspher, &
+       ScaleFactors_sinhspher, &
+       Convert2Cartesian_sinhspher, &
+       Convert2Curvilinear_sinhspher, &
        Sinhspherical2Cartesian_coords, &
        Cartesian2Sinhspherical_coords
   !--------------------------------------------------------------------------!
 
 CONTAINS
 
-  SUBROUTINE InitGeometry_sinhspherical(this,gt,gp)
+  SUBROUTINE InitGeometry_sinhspher(this,gt,gp)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Geometry_TYP), INTENT(INOUT) :: this
@@ -64,11 +64,10 @@ CONTAINS
     !------------------------------------------------------------------------!
     CALL InitGeometry(this,gt,geometry_name)
     this%geoparam = gp
-    this%spherical_like = .TRUE.
-  END SUBROUTINE InitGeometry_sinhspherical
+  END SUBROUTINE InitGeometry_sinhspher
     
 
-  ELEMENTAL SUBROUTINE ScaleFactors_sinhspherical(gp,rho,theta,hrho,htheta,hphi)
+  ELEMENTAL SUBROUTINE ScaleFactors_sinhspher(gp,rho,theta,hrho,htheta,hphi)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     REAL, INTENT(IN)  :: gp,rho,theta
@@ -77,7 +76,7 @@ CONTAINS
     hrho   = gp*COSH(rho)
     htheta = gp*SINH(rho)
     hphi   = htheta*SIN(theta)
-  END SUBROUTINE ScaleFactors_sinhspherical
+  END SUBROUTINE ScaleFactors_sinhspher
 
 
   ! coordinate transformations

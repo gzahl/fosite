@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: constants_generic.f90                                             #
 !#                                                                           #
-!# Copyright (C) 2007-2008                                                   #
+!# Copyright (C) 2007-2008,2011                                              #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -37,14 +37,12 @@ MODULE constants_generic
   INTEGER, PARAMETER :: GEOMETRICAL = 3
   !--------------------------------------------------------------------------!
   ! basic numerical constants
-  REAL, PARAMETER :: PI = 3.14159265358979323846
   !--------------------------------------------------------------------------!
   PUBLIC :: &
        ! types
        Constants_TYP, &
        ! constant flags
        SI, CGS, GEOMETRICAL, &
-       PI, &
        ! methods
        InitConstants, &
        GetType, &
@@ -73,6 +71,8 @@ CONTAINS
        CALL InitConstants_SI(this,units)
     CASE(GEOMETRICAL)
        CALL InitConstants_geometrical(this,units)
+       CALL Warning(this,"InitConstants", &
+            "geometrical units not fully supported, use with care")
     CASE DEFAULT
        CALL Error(this, "InitConstants", "Unknown physical units.")
     END SELECT

@@ -27,7 +27,9 @@
 ! generic module for file I/O 
 !----------------------------------------------------------------------------!
 MODULE fileio_generic
-  USE fileio_gnuplot, InitFileIO_common => InitFileIO, OpenFile_basic => OpenFile
+  USE fileio_gnuplot, InitFileIO_common => InitFileIO, &
+        CloseFileIO_common => CloseFileIO, &
+        OpenFile_basic => OpenFile
   USE fileio_binary
   USE fileio_netcdf
   USE fileio_vtk
@@ -448,6 +450,8 @@ CONTAINS
     !------------------------------------------------------------------------!
     INTENT(INOUT)    :: this
     !------------------------------------------------------------------------!
+    IF (.NOT.Initialized(this)) &
+        CALL Error(this,"CloseFileIO","not initialized")
     SELECT CASE(GetType(this))
     CASE(BINARY)
        CALL CloseFileIO_binary(this)
@@ -460,6 +464,7 @@ CONTAINS
     CASE(VTK)
        CALL CloseFileIO_vtk(this)
     END SELECT
+    CALL CloseFileIO_common(this)    
   END SUBROUTINE CloseFileIO
     
 END MODULE fileio_generic

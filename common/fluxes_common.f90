@@ -83,6 +83,7 @@ MODULE fluxes_common
        Fluxes_TYP, &
        ! methods
        InitFluxes, &
+       CloseFluxes, &
        GetType, &
        GetName, &
        GetRank, &
@@ -107,6 +108,15 @@ CONTAINS
     !------------------------------------------------------------------------!
     CALL InitCommon(this%quadrule,qrule,qname)
   END SUBROUTINE InitFluxes
+
+
+  SUBROUTINE CloseFluxes(this)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Fluxes_TYP), INTENT(INOUT) :: this
+    !------------------------------------------------------------------------!
+    CALL CloseCommon(this%quadrule)
+  END SUBROUTINE CloseFluxes
 
 
   PURE FUNCTION GetQuadrule(this) RESULT(qr)

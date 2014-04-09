@@ -110,6 +110,7 @@ MODULE boundary_common
        WEST, EAST, SOUTH, NORTH, &
        ! methods
        InitBoundary, &
+       CloseBoundary, &
        GetType, &
        GetName, &
        GetDirection, &
@@ -146,6 +147,15 @@ CONTAINS
     ! set direction
     CALL InitCommon(this%direction,direction,direction_name(direction))
   END SUBROUTINE InitBoundary
+
+
+  SUBROUTINE CloseBoundary(this)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Boundary_TYP), INTENT(INOUT) :: this
+    !------------------------------------------------------------------------!
+    CALL CloseCommon(this%condition)
+  END SUBROUTINE CloseBoundary
 
 
   PURE FUNCTION GetCondition(this) RESULT(bt)

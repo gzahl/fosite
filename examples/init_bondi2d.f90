@@ -255,9 +255,9 @@ CONTAINS
     USE roots
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    ! computes the Bondi solution for rotationally symmetric accretion in    !    
+    ! computes the Bondi solution for rotationally symmetric accretion in    !
     !   planar geometry                                                      !
-    ! uses funcd, GetRoot                                                    !
+    ! uses funcd, GetRoot_newton                                             !
     ! INPUT paramter:                                                        !
     !   r     : radius in units of the Bondi radius r_b = G*M/csinf**2       !
     !   gamma : ratio of specific heats (1 < gamma < 5/3)                    !
@@ -288,9 +288,9 @@ CONTAINS
     chi = r / lambda
     gr  = chi**(2.*gm1/gp1) * (1./gm1 + 1./r)
     IF (r.LT.rc) THEN
-       psi = GetRoot(funcd,1.0,gr,xacc)
+       psi = GetRoot_newton(funcd,1.0,gr)
     ELSE
-       psi = GetRoot(funcd,1.0E-5,1.0,xacc)
+       psi = GetRoot_newton(funcd,1.0E-5,1.0)
     END IF
     
     ! return values

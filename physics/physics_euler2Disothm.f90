@@ -75,6 +75,7 @@ MODULE physics_euler2Disothm
        SetWaveSpeeds_euler2Dit, &
        MomentumSourcesX_euler2Dit, &
        MomentumSourcesY_euler2Dit, &
+       ClosePhysics, &
        GetType, &
        GetName, &
        GetRank, &
@@ -179,16 +180,25 @@ CONTAINS
     REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,this%VNUM) &
          :: pvar
     !------------------------------------------------------------------------!
+    INTEGER           :: i,j
+    !------------------------------------------------------------------------!
     INTENT(IN)        :: Mesh,pvar
     INTENT(INOUT)     :: this
     !------------------------------------------------------------------------!
-    ! minimal and maximal wave speeds at cell centers
-    ! x-direction
-    CALL SetWaveSpeeds_euler2Dit(this%csiso,pvar(:,:,this%XVELOCITY), &
-         this%amin(:,:),this%amax(:,:))
-    ! y-direction
-    CALL SetWaveSpeeds_euler2Dit(this%csiso,pvar(:,:,this%YVELOCITY), &
-         this%bmin(:,:),this%bmax(:,:))
+    ! compute minimal and maximal wave speeds at cell centers
+!CDIR COLLAPSE
+    DO j=Mesh%JGMIN,Mesh%JGMAX
+       DO i=Mesh%IGMIN,Mesh%IGMAX
+          ! x-direction
+!CDIR IEXPAND
+          CALL SetWaveSpeeds_euler2Dit(this%csiso,pvar(i,j,this%XVELOCITY),&
+               this%amin(i,j),this%amax(i,j))
+          ! y-direction
+!CDIR IEXPAND
+          CALL SetWaveSpeeds_euler2Dit(this%csiso,pvar(i,j,this%YVELOCITY),&
+               this%bmin(i,j),this%bmax(i,j))
+       END DO
+    END DO
   END SUBROUTINE CalculateWaveSpeeds_center
 
 
@@ -200,27 +210,44 @@ CONTAINS
     REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,4,this%VNUM) &
          :: prim
     !------------------------------------------------------------------------!
+    INTEGER           :: i,j
+    !------------------------------------------------------------------------!
     INTENT(IN)        :: Mesh,prim
     INTENT(INOUT)     :: this
     !------------------------------------------------------------------------!
-    ! wave speeds at cell interfaces
-    ! x-direction (west and east states)
-    CALL SetWaveSpeeds_euler2Dit(this%csiso,prim(:,:,1,this%XVELOCITY), &
-         this%tmin(:,:,1),this%tmax(:,:,1))
-    CALL SetWaveSpeeds_euler2Dit(this%csiso,prim(:,:,2,this%XVELOCITY), &
-         this%amin(:,:),this%amax(:,:))
-    ! y-direction (south and north states)
-    CALL SetWaveSpeeds_euler2Dit(this%csiso,prim(:,:,3,this%YVELOCITY), &
-         this%tmin(:,:,2),this%tmax(:,:,2))
-    CALL SetWaveSpeeds_euler2Dit(this%csiso,prim(:,:,4,this%YVELOCITY), &
-         this%bmin(:,:),this%bmax(:,:))
-    ! minimal and maximal wave speeds
+    ! compute minimal and maximal wave speeds at cell interfaces
+!CDIR COLLAPSE
+    DO j=Mesh%JGMIN,Mesh%JGMAX
+       DO i=Mesh%IGMIN,Mesh%IGMAX
+          ! western
+!CDIR IEXPAND
+          CALL SetWaveSpeeds_euler2Dit(this%csiso,prim(i,j,1,this%XVELOCITY), &
+               this%tmin(i,j,1),this%tmax(i,j,1))
+          ! eastern
+!CDIR IEXPAND
+          CALL SetWaveSpeeds_euler2Dit(this%csiso,prim(i,j,2,this%XVELOCITY), &
+               this%amin(i,j),this%amax(i,j))
+          ! southern
+!CDIR IEXPAND
+          CALL SetWaveSpeeds_euler2Dit(this%csiso,prim(i,j,3,this%YVELOCITY), &
+               this%tmin(i,j,2),this%tmax(i,j,2))
+          ! northern
+!CDIR IEXPAND
+          CALL SetWaveSpeeds_euler2Dit(this%csiso,prim(i,j,4,this%YVELOCITY), &
+               this%bmin(i,j),this%bmax(i,j))
+       END DO
+    END DO
+    ! set minimal and maximal wave speeds at cell interfaces of neighboring cells
+    ! western interfaces
     this%amin(Mesh%IMIN-1:Mesh%IMAX,:) = MIN(this%tmin(Mesh%IMIN:Mesh%IMAX+1,:,1), &
          this%amin(Mesh%IMIN-1:Mesh%IMAX,:))
+    ! eastern interfaces
     this%amax(Mesh%IMIN-1:Mesh%IMAX,:) = MAX(this%tmax(Mesh%IMIN:Mesh%IMAX+1,:,1), &
          this%amax(Mesh%IMIN-1:Mesh%IMAX,:))
+    ! southern interfaces
     this%bmin(:,Mesh%JMIN-1:Mesh%JMAX) = MIN(this%tmin(:,Mesh%JMIN:Mesh%JMAX+1,2), &
          this%bmin(:,Mesh%JMIN-1:Mesh%JMAX))
+    ! northern interfaces
     this%bmax(:,Mesh%JMIN-1:Mesh%JMAX) = MAX(this%tmax(:,Mesh%JMIN:Mesh%JMAX+1,2), &
          this%bmax(:,Mesh%JMIN-1:Mesh%JMAX))
   END SUBROUTINE CalculateWaveSpeeds_faces
@@ -275,18 +302,19 @@ CONTAINS
          dynvis,bulkvis,btxx,btxy,btyy
     !------------------------------------------------------------------------!
     INTEGER           :: i,j
+    REAL              :: bt_bulk
     !------------------------------------------------------------------------!
     INTENT(IN)        :: this,Mesh,pvar,dynvis,bulkvis
     INTENT(INOUT)     :: btxx,btxy,btyy
     !------------------------------------------------------------------------!
     ! compute components of the stress tensor at cell bary centers
     ! inside the computational domain including one slice of ghost cells
-!CDIR UNROLL=4
+!CDIR UNROLL=8
     DO j=Mesh%JMIN-1,Mesh%JMAX+1
 !CDIR NODEP
        DO i=Mesh%IMIN-1,Mesh%IMAX+1
-          ! compute bulk viscosity first and store the result in btxy
-          btxy(i,j) = bulkvis(i,j) * 0.5 * (&
+          ! compute bulk viscosity first contribution
+          bt_bulk = bulkvis(i,j) * 0.5 * (&
                 ( Mesh%fhy(i,j,2) * Mesh%fhz(i,j,2) * &
                 ( pvar(i+1,j,this%XVELOCITY)+pvar(i,j,this%XVELOCITY) ) &
                 - Mesh%fhy(i,j,1) * Mesh%fhz(i,j,1) * &
@@ -302,12 +330,12 @@ CONTAINS
           btxx(i,j) = dynvis(i,j) * &
                ( (pvar(i+1,j,this%XVELOCITY) - pvar(i-1,j,this%XVELOCITY)) / Mesh%dlx(i,j) &
                + 2.0 * Mesh%cxyx(i,j,1) * pvar(i,j,this%YVELOCITY) ) &
-               + btxy(i,j) ! bulk viscosity contribution
+               + bt_bulk ! bulk viscosity contribution
                
           btyy(i,j) = dynvis(i,j) * &
                ( (pvar(i,j+1,this%YVELOCITY) - pvar(i,j-1,this%YVELOCITY)) / Mesh%dly(i,j) &
                + 2.0 * Mesh%cyxy(i,j,1) * pvar(i,j,this%XVELOCITY) ) &
-               + btxy(i,j) ! bulk viscosity contribution
+               + bt_bulk ! bulk viscosity contribution
 
           ! compute the off-diagonal elements (no bulk viscosity)
           btxy(i,j) = dynvis(i,j) * ( 0.5 * &
@@ -410,7 +438,7 @@ CONTAINS
     INTENT(OUT)       :: sterm
     !------------------------------------------------------------------------!
     ! mean values of stress tensor components across the cell interfaces
-!CDIR UNROLL=4
+!CDIR UNROLL=8
     DO j=Mesh%JMIN,Mesh%JMAX
 !CDIR NODEP
        DO i=Mesh%IMIN,Mesh%IMAX
@@ -428,26 +456,27 @@ CONTAINS
           ftxy(i,j,2) = 0.5 * ( btxy(i+1,j) + btxy(i,j) )
           ftxy(i,j,3) = 0.5 * ( btxy(i,j-1) + btxy(i,j) )
           ftxy(i,j,4) = 0.5 * ( btxy(i,j+1) + btxy(i,j) )
+
+          ! viscosity source terms
+          sterm(i,j,this%DENSITY) = 0.0 
+
+          ! (a) momentum sources
+          sterm(i,j,this%XMOMENTUM) = Mesh%dydV(i,j) * &
+               ( Mesh%fhy(i,j,2) * ftxx(i,j,2) - Mesh%fhy(i,j,1) * ftxx(i,j,1) &
+               - Mesh%bhz(i,j) * (Mesh%fhy(i,j,2) - Mesh%fhy(i,j,1)) * btyy(i,j) ) &
+               + Mesh%dxdV(i,j) * &
+               ( Mesh%fhx(i,j,4) * ftxy(i,j,4) - Mesh%fhx(i,j,3) * ftxy(i,j,3) &
+               + Mesh%bhz(i,j) * (Mesh%fhx(i,j,4) - Mesh%fhx(i,j,3)) * btxy(i,j) )
+
+          sterm(i,j,this%YMOMENTUM) = Mesh%dydV(i,j) * &
+               ( Mesh%fhy(i,j,2) * ftxy(i,j,2) - Mesh%fhy(i,j,1) * ftxy(i,j,1) &
+               + Mesh%bhz(i,j) * (Mesh%fhy(i,j,2) - Mesh%fhy(i,j,1)) * btxy(i,j) ) &
+               + Mesh%dxdV(i,j) * &
+               ( Mesh%fhx(i,j,4) * ftyy(i,j,4) - Mesh%fhx(i,j,3) * ftyy(i,j,3) &
+               - Mesh%bhz(i,j) * (Mesh%fhx(i,j,4) - Mesh%fhx(i,j,3)) * btxx(i,j) )
        END DO
     END DO
 
-    ! viscosity source terms
-    sterm(:,:,this%DENSITY) = 0.0 
-
-    ! (a) momentum sources
-    sterm(:,:,this%XMOMENTUM) = Mesh%dydV(:,:) * &
-         ( Mesh%fhy(:,:,2) * ftxx(:,:,2) - Mesh%fhy(:,:,1) * ftxx(:,:,1) &
-         - Mesh%bhz(:,:) * (Mesh%fhy(:,:,2) - Mesh%fhy(:,:,1)) * btyy(:,:) ) &
-         + Mesh%dxdV(:,:) * &
-         ( Mesh%fhx(:,:,4) * ftxy(:,:,4) - Mesh%fhx(:,:,3) * ftxy(:,:,3) &
-         + Mesh%bhz(:,:) * (Mesh%fhx(:,:,4) - Mesh%fhx(:,:,3)) * btxy(:,:) )
-
-    sterm(:,:,this%YMOMENTUM) = Mesh%dydV(:,:) * &
-         ( Mesh%fhy(:,:,2) * ftxy(:,:,2) - Mesh%fhy(:,:,1) * ftxy(:,:,1) &
-         + Mesh%bhz(:,:) * (Mesh%fhy(:,:,2) - Mesh%fhy(:,:,1)) * btxy(:,:) ) &
-         + Mesh%dxdV(:,:) * &
-         ( Mesh%fhx(:,:,4) * ftyy(:,:,4) - Mesh%fhx(:,:,3) * ftyy(:,:,3) &
-         - Mesh%bhz(:,:) * (Mesh%fhx(:,:,4) - Mesh%fhx(:,:,3)) * btxx(:,:) )
   END SUBROUTINE ViscositySources_euler2Dit
 
 

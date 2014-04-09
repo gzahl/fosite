@@ -257,11 +257,11 @@ CONTAINS
     !------------------------------------------------------------------------!
     this%ioffset = 0
 
-    write(s_buffer,fmt='(6(I7))',IOSTAT=this%error)Mesh%IMIN,Mesh%IMAX+1,Mesh%JMIN,Mesh%JMAX+1,1,1
-    write(this%unit, IOSTAT=this%error)'<?xml version="1.0"?>'//end_rec &
+    WRITE(s_buffer,fmt='(6(I7))',IOSTAT=this%error)Mesh%IMIN,Mesh%IMAX+1,Mesh%JMIN,Mesh%JMAX+1,1,1
+    WRITE(this%unit, IOSTAT=this%error)'<?xml version="1.0"?>'//end_rec &
       //'<VTKFile type="StructuredGrid" version="0.1" byte_order='//this%endianness//'>'//end_rec &
-      //repeat(' ',2)//'<StructuredGrid WholeExtent="'//trim(s_buffer)//'">'//end_rec &
-      //repeat(' ',4)//'<Piece Extent="'//trim(s_buffer)//'">'//end_rec &
+      //repeat(' ',2)//'<StructuredGrid WholeExtent="'//TRIM(s_buffer)//'">'//end_rec &
+      //repeat(' ',4)//'<Piece Extent="'//TRIM(s_buffer)//'">'//end_rec &
       //repeat(' ',6)//'<Points>'//end_rec &
       //repeat(' ',8)//'<DataArray type='//this%realfmt//' NumberOfComponents="3" Name="Point"'&
       //' format="appended" offset="0">'//end_rec&
@@ -271,12 +271,12 @@ CONTAINS
     N_Byte  = 3*(Mesh%IMAX-Mesh%IMIN+2)*(Mesh%JMAX-Mesh%JMIN+2)*SIZEOF_F
     this%ioffset = this%ioffset + N_Byte + 4 !sizeof(N_Byte) must be 4!!!!!  
     DO k = 2, Physics%nstruc
-       write(s_buffer,fmt='(I8)',IOSTAT=this%error)this%ioffset
-       write(s_buffer2,fmt='(I3)',IOSTAT=this%error)Physics%structure(k)%dim**Physics%structure(k)%rank
-       write(this%unit,IOSTAT=this%error)repeat(' ',6)&
-       //'<DataArray type='//this%realfmt//' NumberOfComponents="',trim(s_buffer2),&
+       WRITE(s_buffer,fmt='(I8)',IOSTAT=this%error)this%ioffset
+       WRITE(s_buffer2,fmt='(I3)',IOSTAT=this%error)Physics%structure(k)%dim**Physics%structure(k)%rank
+       WRITE(this%unit,IOSTAT=this%error)repeat(' ',6)&
+       //'<DataArray type='//this%realfmt//' NumberOfComponents="',TRIM(s_buffer2),&
         '" Name="'//TRIM(Physics%structure(k)%name)&
-       //'" format="appended" offset="',trim(s_buffer),'"/>'//end_rec
+       //'" format="appended" offset="',TRIM(s_buffer),'"/>'//end_rec
 
        IF (k < Physics%nstruc) THEN 
           N_Byte  = Physics%structure(k)%dim**Physics%structure(k)%rank&
@@ -287,20 +287,20 @@ CONTAINS
 
     !size of mesh
     N_Byte = 3*(Mesh%IMAX-Mesh%IMIN+2)*(Mesh%JMAX-Mesh%JMIN+2)*SIZEOF_F
-    write(this%unit,IOSTAT=this%error)repeat(' ',6)//'</CellData>'//end_rec &
+    WRITE(this%unit,IOSTAT=this%error)repeat(' ',6)//'</CellData>'//end_rec &
        //repeat(' ',4)//'</Piece>'//end_rec//repeat(' ',2)//'</StructuredGrid>'//end_rec&
        //'<AppendedData encoding="raw">'//end_rec//'_',N_Byte
 
-    do j=Mesh%JMIN,Mesh%JMAX+1
-       do i=Mesh%IMIN,Mesh%IMAX+1
-          this%vtktemp2(1,i,j)=Mesh%cpcart(i,j,1,1)
-          this%vtktemp2(2,i,j)=Mesh%cpcart(i,j,1,2)
+    DO j=Mesh%JMIN,Mesh%JMAX+1
+       DO i=Mesh%IMIN,Mesh%IMAX+1
+          this%vtktemp2(1,i,j) = Mesh%cpcart(i,j,1,1)
+          this%vtktemp2(2,i,j) = Mesh%cpcart(i,j,1,2)
           this%vtktemp2(3,i,j)=0.0
-       end do
-    end do
+       END DO
+    END DO
 
-    !write mesh
-    write(this%unit,IOSTAT=this%error)this%vtktemp2(1:3,:,:)
+    ! write mesh
+    WRITE(this%unit,IOSTAT=this%error)this%vtktemp2(1:3,:,:)
   END SUBROUTINE WriteHeader_vtk
 
   SUBROUTINE ReadHeader_vtk(this,success)
@@ -353,7 +353,7 @@ CONTAINS
     INTENT(INOUT)     :: this
     !------------------------------------------------------------------------!
 
-  DO k = 2, Physics%nstruc
+    DO k = 2, Physics%nstruc
        n = Physics%structure(k)%dim**Physics%structure(k)%rank
        spos = Physics%structure(k)%pos
        epos = spos + n -1
@@ -363,24 +363,25 @@ CONTAINS
                                  Timedisc%pvar(:,:,spos:spos+1),this%vtktemp)
        END IF
 
-       do j=Mesh%JMIN,Mesh%JMAX
-          do i=Mesh%IMIN,Mesh%IMAX
+       DO j=Mesh%JMIN,Mesh%JMAX
+          DO i=Mesh%IMIN,Mesh%IMAX
              IF (n > 1) THEN
                 this%vtktemp2(1,i,j)=this%vtktemp(i,j,1)
                 this%vtktemp2(2,i,j)=this%vtktemp(i,j,2)
-                do m=spos+2, epos
+                DO m=spos+2, epos
                    this%vtktemp2(m-spos+1,i,j)=Timedisc%pvar(i,j,m)
-                end do
+                END DO
              ELSE
                    this%vtktemp2(1,i,j)=Timedisc%pvar(i,j,spos)
              END IF
-          end do
-       end do
-    N_Byte  = n*(Mesh%IMAX-Mesh%IMIN+1)*(Mesh%JMAX-Mesh%JMIN+1)*SIZEOF_F
-    write(this%unit,IOSTAT=this%error)N_Byte,this%vtktemp2(1:n,Mesh%IMIN:Mesh%IMAX,Mesh%JMIN:Mesh%JMAX)
+          END DO
+       END DO
+       N_Byte  = n*(Mesh%IMAX-Mesh%IMIN+1)*(Mesh%JMAX-Mesh%JMIN+1)*SIZEOF_F
+       WRITE(this%unit,IOSTAT=this%error) N_Byte, &
+            this%vtktemp2(1:n,Mesh%IMIN:Mesh%IMAX,Mesh%JMIN:Mesh%JMAX)
     END DO
-    write(this%unit,IOSTAT=this%error)end_rec//repeat(' ',2)//'</AppendedData>'//end_rec &
-      //'</VTKFile>'//end_rec
+    WRITE(this%unit,IOSTAT=this%error)end_rec//repeat(' ',2)//&
+         '</AppendedData>'//end_rec//'</VTKFile>'//end_rec
       
   END SUBROUTINE WriteDataset_vtk
 

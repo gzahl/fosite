@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: sources_viscosity.f90                                             #
 !#                                                                           #
-!# Copyright (C) 2008-2009                                                   #
+!# Copyright (C) 2008-2011                                                   #
 !# Bjoern Sperling <sperling@astrophysik.uni-kiel.de>                        #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
@@ -35,13 +35,17 @@ MODULE sources_viscosity
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   PRIVATE
-  REAL, PARAMETER :: TINY = 1.0E-30              ! to avoid division by 0    !
   CHARACTER(LEN=32), PARAMETER :: source_name = "viscosity of Newtonian fluid"
   ! flags for viscosity model
-  INTEGER, PARAMETER :: MOLECULAR = 1
-  INTEGER, PARAMETER :: ALPHA     = 2
-  INTEGER, PARAMETER :: BETA      = 3
-  INTEGER, PARAMETER :: PRINGLE   = 4
+  INTEGER, PARAMETER :: MOLECULAR = 1     ! constant viscosity
+  INTEGER, PARAMETER :: ALPHA     = 2     ! Shakura-Sunyaev prescription
+  INTEGER, PARAMETER :: BETA      = 3     ! Duschl prescription
+  INTEGER, PARAMETER :: PRINGLE   = 4     ! constant kinematic viscosity
+  CHARACTER(LEN=32), PARAMETER, DIMENSION(4) :: viscosity_name = (/ &
+                                     "constant viscosity              ", &
+                                     "turbulent Shakura-Sunyaev       ", &
+                                     "turbulent Duschl                ", &
+                                     "const. kinematic viscosity      " /)
   !--------------------------------------------------------------------------!
   PUBLIC :: &
        ! types
@@ -50,6 +54,7 @@ MODULE sources_viscosity
        MOLECULAR, ALPHA, BETA, PRINGLE, &
        ! methods
        InitSources_viscosity, &
+       InfoSources_viscosity, &
        ExternalSources_viscosity, &
        CalcTimestep_viscosity, &
        CloseSources_viscosity
@@ -66,8 +71,8 @@ CONTAINS
     TYPE(Physics_TYP) :: Physics
     TYPE(Fluxes_TYP)  :: Fluxes
     INTEGER           :: stype
-    INTEGER           :: model
-    REAL              :: dynconst,bulkconst,cvis
+    INTEGER,OPTIONAL  :: model
+    REAL,OPTIONAL     :: dynconst,bulkconst,cvis
     !------------------------------------------------------------------------!
     INTEGER           :: err
     !------------------------------------------------------------------------!
@@ -80,7 +85,37 @@ CONTAINS
 
     ! check mesh
     IF (GetType(Fluxes).NE.MIDPOINT) &
-         CALL Error(this,"InitSources_viscosity","only midpoint rule is currently supported")
+         CALL Error(this,"InitSources_viscosity", &
+         "only midpoint rule is currently supported")
+
+    ! viscosity model
+    IF (PRESENT(model)) THEN
+       CALL InitCommon(this%viscosity,model,viscosity_name(model))
+    ELSE
+       ! default: molecular viscosity
+       CALL InitCommon(this%viscosity,MOLECULAR,viscosity_name(MOLECULAR))
+    END IF
+
+    ! dynamic viscosity constant
+    IF (PRESENT(dynconst)) THEN
+       this%dynconst = dynconst
+    ELSE
+       this%dynconst  = 0.1
+    END IF
+    
+    ! bulk viscosity constant (disabled by default)
+    IF (PRESENT(bulkconst)) THEN
+       this%bulkconst =  bulkconst
+    ELSE
+       this%bulkconst =  0.0
+    END IF
+
+    ! set viscous courant number
+    IF (PRESENT(cvis)) THEN
+       this%cvis = cvis
+    ELSE
+       this%cvis = 0.5
+    END IF
 
     ALLOCATE(this%dynvis(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX), &
          this%kinvis(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX), &
@@ -98,41 +133,58 @@ CONTAINS
          this%ftxz(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,4), &
          this%ftyz(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,4), &
          STAT=err)
-    IF (err.NE.0) CALL Error(this,"InitSources_viscosity", "Unable to allocate memory.")
-
-    ! set viscosity constants
-    this%dynconst  = dynconst
-    this%bulkconst = bulkconst
+    IF (err.NE.0) &
+         CALL Error(this,"InitSources_viscosity","Memory allocation failed.")
 
     ! do the model specific initialization
-    SELECT CASE(model)
-    CASE(MOLECULAR)
-       CALL InitCommon(this%viscosity,MOLECULAR,"molecular")
+    SELECT CASE(GetType(this%viscosity))
+    CASE(MOLECULAR,PRINGLE)
+       ! do nothing
     CASE(ALPHA)
-!!$       IF (Physics%PRESSURE.EQ.0) &
-!!$            CALL Error(this,"InitSources_viscosity", "Physics not supported for alpha-viscosity")
-       SELECT CASE(GetType(Mesh%geometry))
-       CASE(POLAR,LOGPOLAR,TANPOLAR,SINHPOLAR,CYLINDRICAL,TANCYLINDRICAL,SPHERICAL,OBLATE_SPHEROIDAL)
-          CALL InitCommon(this%viscosity,ALPHA,"alpha")
+       ! check physics
+       SELECT CASE(GetType(Physics))
+       CASE(EULER2D,EULER2D_ISOTHERM,EULER3D_ROTSYM)
+          ! do nothing
        CASE DEFAULT
-          CALL Error(this,"InitSources_viscosity", "Geometry not supported for alpha-viscosity")
+          CALL Error(this,"InitSources_viscosity",&
+               "Physics not supported for alpha-viscosity")
+       END SELECT
+       ALLOCATE(this%invr(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX), &
+            STAT=err)
+       IF (err.NE.0) CALL Error(this,"InitSources_viscosity",&
+               "Unable to allocate memory.")
+       ! check geometry
+       SELECT CASE(GetType(Mesh%geometry))
+       CASE(POLAR,LOGPOLAR,TANPOLAR,SINHPOLAR)
+          ! compute inverse of distance to origin
+          this%invr(:,:) = 1./(TINY(1.0)+SQRT(Mesh%bccart(:,:,1)**2 &
+               + Mesh%bccart(:,:,2)**2))
+       CASE(CYLINDRICAL,TANCYLINDRICAL,SPHERICAL,OBLATE_SPHEROIDAL)
+          ! compute inverse of distance to axis
+          this%invr(:,:) = 1./(TINY(1.0)+ABS(Mesh%bccart(:,:,1)))
+       CASE DEFAULT
+          CALL Error(this,"InitSources_viscosity",&
+               "Geometry not supported for alpha-viscosity")
        END SELECT
     CASE(BETA)
        SELECT CASE(GetType(Physics))
        CASE (EULER2D,EULER2D_ISOTHERM,EULER3D_ROTSYM)
-          CALL InitCommon(this%viscosity,BETA,"beta")
+          ! do nothing
        CASE DEFAULT
-          CALL Error(this,"InitSources_viscosity", "Physics not supported for beta-viscosity")          
+          CALL Error(this,"InitSources_viscosity",&
+               "Physics not supported for beta-viscosity")
        END SELECT
-    CASE(PRINGLE)
-       CALL InitCommon(this%viscosity,PRINGLE,"const. kinematic viscosity")
+    CASE DEFAULT
+       CALL Error(this,"InitSources_viscosity",&
+            "Viscosity prescription not supported.")
     END SELECT
 
-    ! set viscous courant number
-    this%cvis = cvis
+    ! set initial time to negative value;
+    ! this guarantees update of viscosity for time t=0.0
+    this%time = -1.0
     ! initialize viscosity arrays
-    this%dynvis(:,:)  = dynconst
-    this%bulkvis(:,:) = bulkconst
+    this%dynvis(:,:)  = this%dynconst
+    this%bulkvis(:,:) = this%bulkconst
     ! set stress tensor arrays to zero
     this%btxx(:,:) = 0.0
     this%btyy(:,:) = 0.0
@@ -145,94 +197,119 @@ CONTAINS
     this%ftzz(:,:,:) = 0.0
     this%ftxy(:,:,:) = 0.0
     this%ftxz(:,:,:) = 0.0
-    this%ftyz(:,:,:) = 0.0    
+    this%ftyz(:,:,:) = 0.0
   END SUBROUTINE InitSources_viscosity
 
 
+  SUBROUTINE InfoSources_viscosity(this)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Sources_TYP), POINTER :: this
+    !------------------------------------------------------------------------!
+    CHARACTER(LEN=32) :: dynconst_str,bulkconst_str
+    !------------------------------------------------------------------------!
+    WRITE (dynconst_str,'(ES9.2)') this%dynconst
+    WRITE (bulkconst_str,'(ES9.2)') this%bulkconst
+    CALL Info(this,"            viscosity model:   " // GetName(this%viscosity))
+    SELECT CASE(GetType(this%viscosity))
+    CASE(MOLECULAR)
+       CALL Info(this,"            dynamic viscosity: " // TRIM(dynconst_str) // &
+           ACHAR(10)//"            bulk viscosity:    " // TRIM(bulkconst_str))
+    CASE(ALPHA)
+       CALL Info(this,"            alpha:             " // TRIM(dynconst_str))
+    CASE(BETA)
+       CALL Info(this,"            beta:              " // TRIM(dynconst_str))
+    CASE(PRINGLE)
+       CALL Info(this,"            kinemat. viscosity:" // TRIM(dynconst_str))
+    END SELECT
+  END SUBROUTINE InfoSources_viscosity
 
-  PURE SUBROUTINE UpdateViscosity(this,Mesh,Physics,pvar,cvar)
+
+  PURE SUBROUTINE UpdateViscosity(this,Mesh,Physics,time,pvar,cvar)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Sources_TYP) :: this
     TYPE(Mesh_TYP)    :: Mesh
     TYPE(Physics_TYP) :: Physics
+    REAL              :: time
     REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum) &
                       :: pvar,cvar
     !------------------------------------------------------------------------!
-    INTEGER           :: i,j
+    INTEGER           :: i,j,kp,kv
+    REAL              :: P,Omega,cs2,sqrtgamma,cs,height,csmin
     !------------------------------------------------------------------------!
-    INTENT(IN)        :: Mesh,Physics,pvar,cvar
+    INTENT(IN)        :: Mesh,Physics,time,pvar,cvar
     INTENT(INOUT)     :: this
     !------------------------------------------------------------------------!
-
-    SELECT CASE(GetType(this%viscosity))
-    CASE(MOLECULAR)
-       ! do nothing, since it has already been initialized in InitSources_viscosity
-    CASE(ALPHA)
-       ! Shakura-Sunyaev type alpha viscosity
-       ! standard alpha prescription: nu = alpha*cs*h
-       ! or nu = alpha / A * cs**2 / omega with A = -d ln(omega)/d ln(r)
-       ! (see Kato, Fukue & Minishige: Black Hole Accretion Disks, 2008; equation (3.46))
-       ! 
-       ! this is a rough estimation assuming that the logarithmic derivative
-       ! of the angular velocity (d ln(omega)/d ln(r)) is of the order of -1 
-       SELECT CASE(GetType(Mesh%geometry))
-       CASE(POLAR,LOGPOLAR,TANPOLAR,SINHPOLAR)
+    ! only update viscosity if time has changed
+    IF (time.NE.this%time) THEN
+       SELECT CASE(GetType(this%viscosity))
+       CASE(MOLECULAR)
+          ! do nothing, since it has already been initialized
+          ! in InitSources_viscosity
+       CASE(ALPHA)
+          ! Shakura-Sunyaev type alpha viscosity
+          ! standard alpha prescription: nu = alpha*cs*h
+          ! or nu = alpha / A * cs**2 / omega with A = -d ln(omega)/d ln(r)
+          ! (see Kato, Fukue & Minishige: Black Hole Accretion Disks, 2008; 
+          ! equation (3.46))
+          ! 
+          ! this is a rough estimation assuming that the logarithmic derivative
+          ! of the angular velocity (d ln(omega)/d ln(r)) is of the order of -1
+          !
+          ! set some constants depending on physics
+!CDIR IEXPAND
           SELECT CASE(GetType(Physics))
           CASE(EULER2D)
-!CDIR OUTERUNROLL=8
-             DO j=Mesh%JMIN,Mesh%JMAX
-!CDIR NODEP
-                DO i=Mesh%IMIN,Mesh%IMAX
-                   this%dynvis(i,j) = etafkt_alpha(this%dynconst,pvar(i,j,Physics%PRESSURE), &
-                        pvar(i,j,Physics%YVELOCITY)/SQRT(Mesh%bccart(i,j,1)**2+Mesh%bccart(i,j,2)**2))
-                END DO
-             END DO
+             kp  = Physics%PRESSURE
+             kv  = Physics%YVELOCITY
+             cs2 = 1.0
           CASE(EULER2D_ISOTHERM)
-!CDIR OUTERUNROLL=8
-             DO j=Mesh%JMIN,Mesh%JMAX
-!CDIR NODEP
-                DO i=Mesh%IMIN,Mesh%IMAX
-                   this%dynvis(i,j) = etafkt_alpha(this%dynconst,Physics%csiso**2*pvar(i,j,Physics%DENSITY), &
-                        pvar(i,j,Physics%YVELOCITY)/SQRT(Mesh%bccart(i,j,1)**2+Mesh%bccart(i,j,2)**2))
-                END DO
-             END DO             
+             kp  = Physics%DENSITY
+             kv  = Physics%YVELOCITY
+             cs2 = Physics%csiso**2
+          CASE(EULER3D_ROTSYM)
+             kp  = Physics%PRESSURE
+             kv  = Physics%ZVELOCITY
+             cs2 = 1.0
           END SELECT
-       CASE (CYLINDRICAL,TANCYLINDRICAL)
-!CDIR OUTERUNROLL=8
-          DO j=Mesh%JMIN,Mesh%JMAX
+!CDIR COLLAPSE
+          DO j=Mesh%JGMIN,Mesh%JGMAX
 !CDIR NODEP
-             DO i=Mesh%IMIN,Mesh%IMAX
-                this%dynvis(i,j) = etafkt_alpha(this%dynconst,pvar(i,j,Physics%PRESSURE), &
-                     pvar(i,j,Physics%ZVELOCITY)/Mesh%bccart(i,j,1))
+             DO i=Mesh%IGMIN,Mesh%IGMAX
+                ! get pressure and angular velocity
+                P = cs2*pvar(i,j,kp)
+                Omega = pvar(i,j,kv)*this%invr(i,j)
+                ! compute alpha viscosity
+                this%dynvis(i,j) = etafkt_alpha(this%dynconst,P,Omega)
              END DO
           END DO
-       CASE(SPHERICAL,OBLATE_SPHEROIDAL,SINHSPHERICAL)
-!CDIR OUTERUNROLL=8
-          DO j=Mesh%JMIN,Mesh%JMAX
+       CASE(BETA)
+          ! Duschl type beta viscosity
+!CDIR IEXPAND
+          SELECT CASE(GetType(Physics))
+          CASE (EULER2D,EULER2D_ISOTHERM)
+             this%dynvis(:,:) = etafkt_beta(this%dynconst, &
+                  Mesh%bhy(:,:)*cvar(:,:,Physics%YMOMENTUM))
+          CASE (EULER3D_ROTSYM)
+             this%dynvis(:,:) = etafkt_beta(this%dynconst, &
+                  Mesh%bhz(:,:)*cvar(:,:,Physics%ZMOMENTUM))
+          CASE (EULER3D_ROTAMT)
+             this%dynvis(:,:) = etafkt_beta(this%dynconst, &
+                  cvar(:,:,Physics%ZMOMENTUM))
+          END SELECT
+       CASE(PRINGLE) ! constant kinematic viscosity
+!CDIR COLLAPSE
+          DO j=Mesh%JGMIN,Mesh%JGMAX
 !CDIR NODEP
-             DO i=Mesh%IMIN,Mesh%IMAX
-                this%dynvis(i,j) =  etafkt_alpha(this%dynconst,pvar(i,j,Physics%PRESSURE), &
-                     pvar(i,j,Physics%ZVELOCITY)/Mesh%bccart(i,j,1))
+             DO i=Mesh%IGMIN,Mesh%IGMAX
+                this%dynvis(i,j) = etafkt_pringle(this%dynconst, &
+                     pvar(i,j,Physics%DENSITY))
              END DO
           END DO
        END SELECT
-    CASE(BETA)
-       ! Duschl type beta viscosity
-       SELECT CASE(GetType(Physics))
-       CASE (EULER2D,EULER2D_ISOTHERM)
-          this%dynvis(:,:) = etafkt_beta(this%dynconst, &
-               Mesh%bhy(:,:)*cvar(:,:,Physics%YMOMENTUM))
-       CASE (EULER3D_ROTSYM)
-          this%dynvis(:,:) = etafkt_beta(this%dynconst, &
-               Mesh%bhz(:,:)*cvar(:,:,Physics%ZMOMENTUM))
-       CASE (EULER3D_ROTAMT)
-          this%dynvis(:,:) = etafkt_beta(this%dynconst, &
-               cvar(:,:,Physics%ZMOMENTUM))
-       END SELECT
-    CASE(PRINGLE) ! constant kinematic viscosity
-       this%dynvis(:,:) = etafkt_pringle(this%dynconst,pvar(:,:,Physics%DENSITY))
-    END SELECT
+       this%time = time
+    END IF
 
   CONTAINS
     ! some elemental functions for computation of the viscosity
@@ -246,7 +323,7 @@ CONTAINS
       !----------------------------------------------------------------------!
       eta = alpha * P / omega
     END FUNCTION etafkt_alpha
-    
+
     ! Beta viscosity
     ELEMENTAL FUNCTION etafkt_beta(beta,L) RESULT(eta)
       IMPLICIT NONE
@@ -271,20 +348,21 @@ CONTAINS
   END SUBROUTINE UpdateViscosity
 
  
-  PURE SUBROUTINE ExternalSources_viscosity(this,Mesh,Physics,pvar,cvar,sterm)
+  PURE SUBROUTINE ExternalSources_viscosity(this,Mesh,Physics,time,pvar,cvar,sterm)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Sources_TYP) :: this
     TYPE(Mesh_TYP)    :: Mesh
     TYPE(Physics_TYP) :: Physics
+    REAL              :: time
     REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum) &
                       :: cvar,pvar,sterm
     !------------------------------------------------------------------------!
-    INTENT(IN)        :: Mesh,Physics,cvar,pvar
+    INTENT(IN)        :: Mesh,Physics,time,cvar,pvar
     INTENT(INOUT)     :: this
     INTENT(OUT)       :: sterm
     !------------------------------------------------------------------------!
-    CALL UpdateViscosity(this,Mesh,Physics,pvar,cvar)
+    CALL UpdateViscosity(this,Mesh,Physics,time,pvar,cvar)
     CALL CalculateStresses(Physics,Mesh,pvar,this%dynvis,this%bulkvis, &
             this%btxx,this%btxy,this%btxz,this%btyy,this%btyz,this%btzz)
     CALL ViscositySources(Physics,Mesh,pvar,this%btxx,this%btxy,this%btxz, &
@@ -293,25 +371,25 @@ CONTAINS
   END SUBROUTINE ExternalSources_viscosity
 
   
-  PURE SUBROUTINE CalcTimestep_viscosity(this,Mesh,Physics,pvar,cvar,dt)
+  PURE SUBROUTINE CalcTimestep_viscosity(this,Mesh,Physics,time,pvar,cvar,dt)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Sources_TYP) :: this
     TYPE(Mesh_TYP)    :: Mesh
     TYPE(Physics_TYP) :: Physics
+    REAL              :: time
     REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum) &
                       :: pvar,cvar
     REAL              :: dt
     !------------------------------------------------------------------------!
     REAL              :: invdt_x, invdt_y
     !------------------------------------------------------------------------!
-    INTENT(IN)        :: Mesh,Physics,pvar,cvar
+    INTENT(IN)        :: Mesh,Physics,time,pvar,cvar
     INTENT(INOUT)     :: this
     INTENT(OUT)       :: dt
     !------------------------------------------------------------------------!
-    ! FIXME: this call is necessary, but its inefficient, since we call it
-    !        again, when computing the viscous source term
-    CALL UpdateViscosity(this,Mesh,Physics,pvar,cvar)
+    ! update dynamic and bulk viscosity
+    CALL UpdateViscosity(this,Mesh,Physics,time,pvar,cvar)
 
     ! compute kinematic viscosity
     this%kinvis(:,:) = this%dynvis(:,:) / pvar(:,:,Physics%DENSITY)
@@ -333,7 +411,12 @@ CONTAINS
        invdt_y = 0.0
     END IF
     ! largest time step due to diffusion
-    dt = this%cvis / MAX(invdt_x, invdt_y)
+    invdt_x = MAX(invdt_x, invdt_y)
+    IF (invdt_x.GT.TINY(invdt_x)) THEN
+       dt = this%cvis / invdt_x
+    ELSE
+       dt = HUGE(dt)
+    END IF
   END SUBROUTINE CalcTimestep_viscosity
 
 
@@ -347,6 +430,7 @@ CONTAINS
     DEALLOCATE(this%dynvis,this%kinvis,this%bulkvis, &
                this%btxx,this%btyy,this%btzz,this%btxy,this%btxz,this%btyz,&
                this%ftxx,this%ftyy,this%ftzz,this%ftxy,this%ftxz,this%ftyz)
+    CALL CloseSources(this)
   END SUBROUTINE CloseSources_viscosity
  
 

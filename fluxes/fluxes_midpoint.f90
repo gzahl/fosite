@@ -57,6 +57,7 @@ MODULE fluxes_midpoint
        Fluxes_TYP, &
        ! methods
        InitFluxes, &
+       CloseFluxes, &
        InitFluxes_midpoint, &
        CalculateFaceData, &
        CalculateFluxes_midpoint, &
@@ -144,8 +145,9 @@ CONTAINS
        ! physical fluxes
        CALL CalculateFluxesX(Physics,Mesh,1,2,this%prim,this%cons,this%pfluxes)
        ! numerical fluxes
+!CDIR UNROLL=8
        DO k=1,Physics%VNUM
-!CDIR OUTERUNROLL=8
+!CDIR UNROLL=8
           DO j=Mesh%JGMIN,Mesh%JGMAX
 !CDIR NODEP
              DO i=Mesh%IMIN-1,Mesh%IMAX
@@ -168,10 +170,10 @@ CONTAINS
        ! physical fluxes
        CALL CalculateFluxesY(Physics,Mesh,3,4,this%prim,this%cons,this%pfluxes)
        ! numerical fluxes
+!CDIR UNROLL=8
        DO k=1,Physics%VNUM
-!CDIR OUTERUNROLL=8
+!CDIR COLLAPSE
           DO j=Mesh%JMIN-1,Mesh%JMAX
-!CDIR NODEP
              DO i=Mesh%IGMIN,Mesh%IGMAX
                 ! y-direction
                 yflux(i,j,k) = Mesh%dAydx(i,j+1,1) / &

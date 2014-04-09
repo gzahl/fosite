@@ -217,6 +217,7 @@ the (s)plot command in a way similar to
 
 in case of multiple time steps per data file. TIMESTEP has to be an integer value.
 
+
 6.2 Simple binary output
 
 Specification: header - data - bflux - timestamp - data - bflus - timestamp - ....
@@ -250,6 +251,10 @@ file type:
      splot "datafile.bin" binary skip=132 + iter * (3920008+168+16) \
         record=200x350 format="%lf%lf%lf%lf%lf%lf%lf" u 1:2:3
 
+REMARK: gnuplot version 4.4x has a new syntax for specifying the record dimensions:
+You should type "record=(INUM,JNUM)" instead of "record=INUMxJNUM".
+
+
 6.3 Output with VTK on NEC SX8/SX9
 
 VTK needs a C-conformable output without the Fortran specific leading and
@@ -264,6 +269,7 @@ in the initialization file init.f90
      CALL InitFileIO(..., unit = UNITNUMBER,...)
 in your init.f90 file. UNITNUMBER must be an integer. Ensure, that this unit
 number is unique. (save way: UNITNUMBER > 1000)
+
  
 6.4 NetCDF output
 

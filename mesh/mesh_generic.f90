@@ -27,7 +27,7 @@
 ! generic mesh module
 !----------------------------------------------------------------------------!
 MODULE mesh_generic
-  USE mesh_midpoint, InitMesh_basic => InitMesh
+  USE mesh_midpoint, InitMesh_common => InitMesh, CloseMesh_common => CloseMesh
   USE mesh_trapezoidal
   USE geometry_generic
   USE fluxes_generic
@@ -38,7 +38,9 @@ MODULE mesh_generic
   PUBLIC :: &
        ! types
        Mesh_TYP, &
+       Selection_TYP, &
        ! constants
+       PI, &
 #ifdef PARALLEL
        DEFAULT_MPI_REAL, &
 #endif
@@ -128,8 +130,9 @@ CONTAINS
     !------------------------------------------------------------------------!
     INTENT(IN)        :: this
     !------------------------------------------------------------------------!
-
-    SELECT CASE(GetType(Fluxes))
+    IF (.NOT.Initialized(this)) &
+        CALL Error(this,"CloseMesh","not initialized")
+     SELECT CASE(GetType(Fluxes))
     CASE(MIDPOINT)
        CALL CloseMesh_midpoint(this)
     CASE(TRAPEZOIDAL)

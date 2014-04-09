@@ -27,7 +27,8 @@
 ! generic module for geometrical properties
 !----------------------------------------------------------------------------!
 MODULE geometry_generic
-  USE geometry_cartesian, InitGeometry_common => InitGeometry
+  USE geometry_cartesian, InitGeometry_common => InitGeometry, &
+       CloseGeometry_common => CloseGeometry
   USE geometry_polar
   USE geometry_logpolar
   USE geometry_cylindrical
@@ -67,11 +68,13 @@ MODULE geometry_generic
        ! types
        Geometry_TYP, &
        ! constants
+       PI, &
        CARTESIAN, POLAR, LOGPOLAR, TANPOLAR, SINHPOLAR, &
        CYLINDRICAL, TANCYLINDRICAL, SPHERICAL, SINHSPHERICAL, &
        OBLATE_SPHEROIDAL, &
        ! methods
        InitGeometry, &
+       CloseGeometry, &
        Convert2Cartesian, &
        Convert2Curvilinear, &
        ScaleFactors, &
@@ -105,9 +108,6 @@ CONTAINS
        gs_def = 1.0
     END IF
 
-    ! default: do not assume a spherical geometry (<e_eta,e_r> /= 0 )
-    this%spherical_like = .FALSE.
-
     SELECT CASE(gt)
     CASE(CARTESIAN)
        CALL InitGeometry_cartesian(this,gt)
@@ -126,7 +126,7 @@ CONTAINS
     CASE(SPHERICAL)
        CALL InitGeometry_spherical(this,gt)
     CASE(SINHSPHERICAL)
-       CALL InitGeometry_sinhspherical(this,gt,gs_def)
+       CALL InitGeometry_sinhspher(this,gt,gs_def)
     CASE(OBLATE_SPHEROIDAL)
        CALL InitGeometry_oblatespher(this,gt,gs_def)
     CASE DEFAULT
@@ -170,7 +170,7 @@ CONTAINS
     CASE(SPHERICAL)
        CALL ScaleFactors_spherical(coords(:,:,1),coords(:,:,2),hx,hy,hz)
     CASE(SINHSPHERICAL)
-       CALL ScaleFactors_sinhspherical(GetScale(this),coords(:,:,1),coords(:,:,2),&
+       CALL ScaleFactors_sinhspher(GetScale(this),coords(:,:,1),coords(:,:,2),&
             hx,hy,hz)
     CASE(OBLATE_SPHEROIDAL)
        CALL ScaleFactors_oblatespher(GetScale(this),coords(:,:,1), &
@@ -206,7 +206,7 @@ CONTAINS
     CASE(SPHERICAL)
        CALL ScaleFactors_spherical(coords(:,:,:,1),coords(:,:,:,2),hx,hy,hz)
     CASE(SINHSPHERICAL)
-       CALL ScaleFactors_sinhspherical(GetScale(this),coords(:,:,:,1),coords(:,:,:,2),&
+       CALL ScaleFactors_sinhspher(GetScale(this),coords(:,:,:,1),coords(:,:,:,2),&
             hx,hy,hz)
     CASE(OBLATE_SPHEROIDAL)
        CALL ScaleFactors_oblatespher(GetScale(this),coords(:,:,:,1), &
@@ -250,7 +250,7 @@ CONTAINS
        CALL Convert2Cartesian_spherical(curv(:,:,1),curv(:,:,2),cart(:,:,1),&
             cart(:,:,2))
     CASE(SINHSPHERICAL)
-       CALL Convert2Cartesian_sinhspherical(GetScale(this),curv(:,:,1),curv(:,:,2),&
+       CALL Convert2Cartesian_sinhspher(GetScale(this),curv(:,:,1),curv(:,:,2),&
             cart(:,:,1),cart(:,:,2))
     CASE(OBLATE_SPHEROIDAL)
        CALL Convert2Cartesian_oblatespher(GetScale(this),curv(:,:,1),curv(:,:,2),&
@@ -294,7 +294,7 @@ CONTAINS
        CALL Convert2Cartesian_spherical(curv(:,:,:,1),curv(:,:,:,2),cart(:,:,:,1),&
             cart(:,:,:,2))
     CASE(SINHSPHERICAL)
-       CALL Convert2Cartesian_sinhspherical(GetScale(this),curv(:,:,:,1),curv(:,:,:,2), &
+       CALL Convert2Cartesian_sinhspher(GetScale(this),curv(:,:,:,1),curv(:,:,:,2), &
             cart(:,:,:,1),cart(:,:,:,2))
     CASE(OBLATE_SPHEROIDAL)
        CALL Convert2Cartesian_oblatespher(GetScale(this),curv(:,:,:,1),curv(:,:,:,2),&
@@ -336,7 +336,7 @@ CONTAINS
     CASE(SPHERICAL)
        CALL Convert2Curvilinear_spherical(cart(:,:,1),cart(:,:,2),curv(:,:,1),curv(:,:,2))
     CASE(SINHSPHERICAL)
-       CALL Convert2Curvilinear_sinhspherical(GetScale(this),cart(:,:,1),cart(:,:,2), &
+       CALL Convert2Curvilinear_sinhspher(GetScale(this),cart(:,:,1),cart(:,:,2), &
             curv(:,:,1),curv(:,:,2))
     CASE(OBLATE_SPHEROIDAL)
        CALL Convert2Curvilinear_oblatespher(GetScale(this),cart(:,:,1),cart(:,:,2), &
@@ -378,7 +378,7 @@ CONTAINS
     CASE(SPHERICAL)
        CALL Convert2Curvilinear_spherical(cart(:,:,:,1),cart(:,:,:,2),curv(:,:,:,1),curv(:,:,:,2))
     CASE(SINHSPHERICAL)
-       CALL Convert2Curvilinear_sinhspherical(GetScale(this),cart(:,:,:,1),cart(:,:,:,2), &
+       CALL Convert2Curvilinear_sinhspher(GetScale(this),cart(:,:,:,1),cart(:,:,:,2), &
             curv(:,:,:,1),curv(:,:,:,2))
     CASE(OBLATE_SPHEROIDAL)
        CALL Convert2Curvilinear_oblatespher(GetScale(this),cart(:,:,:,1),cart(:,:,:,2), &
@@ -424,7 +424,7 @@ CONTAINS
        CALL Convert2Cartesian_spherical(GetScale(this),curv(:,:,2),v_curv(:,:,1), &
             v_curv(:,:,2),v_cart(:,:,1),v_cart(:,:,2))
     CASE(SINHSPHERICAL)
-       CALL Convert2Cartesian_sinhspherical(GetScale(this),curv(:,:,2),v_curv(:,:,1), &
+       CALL Convert2Cartesian_sinhspher(GetScale(this),curv(:,:,2),v_curv(:,:,1), &
             v_curv(:,:,2),v_cart(:,:,1),v_cart(:,:,2))
     CASE(OBLATE_SPHEROIDAL)
        CALL Convert2Cartesian_oblatespher(GetScale(this),curv(:,:,1),curv(:,:,2), &
@@ -469,7 +469,7 @@ CONTAINS
        CALL Convert2Curvilinear_spherical(GetScale(this),curv(:,:,2),v_cart(:,:,1), &
             v_cart(:,:,2),v_curv(:,:,1),v_curv(:,:,2))
     CASE(SINHSPHERICAL)
-       CALL Convert2Curvilinear_sinhspherical(GetScale(this),curv(:,:,2),v_cart(:,:,1), &
+       CALL Convert2Curvilinear_sinhspher(GetScale(this),curv(:,:,2),v_cart(:,:,1), &
             v_cart(:,:,2),v_curv(:,:,1),v_curv(:,:,2))
     CASE(OBLATE_SPHEROIDAL)
        CALL Convert2Curvilinear_oblatespher(curv(:,:,1),curv(:,:,2), &
@@ -477,5 +477,15 @@ CONTAINS
     END SELECT
     
   END SUBROUTINE Convert2Curvilinear_vectors
+
+  SUBROUTINE CloseGeometry(this)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Geometry_TYP), INTENT(INOUT) :: this
+    !------------------------------------------------------------------------!
+    IF (.NOT.Initialized(this)) &
+         CALL Error(this,"CloseGeometry","not initialized")
+    CALL CloseGeometry_common(this)
+  END SUBROUTINE CloseGeometry
 
 END MODULE geometry_generic

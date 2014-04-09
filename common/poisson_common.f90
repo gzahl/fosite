@@ -1,10 +1,10 @@
 !#############################################################################
 !#                                                                           #
 !# fosite - 2D hydrodynamical simulation program                             #
-!# module: geometry_common.f90                                               #
+!# module: poisson_common.f90                                                #
 !#                                                                           #
-!# Copyright (C) 2006-2010                                                   #
-!# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
+!# Copyright (C) 2011                                                        #
+!# Björn Sperling   <sperling@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
 !# it under the terms of the GNU General Public License as published by      #
@@ -24,64 +24,82 @@
 !#############################################################################
 
 !----------------------------------------------------------------------------!
-! basic geometry module
+! basic Poisson module
 !----------------------------------------------------------------------------!
-MODULE geometry_common
+MODULE poisson_common
   USE common_types, &
        GetType_common => GetType, GetName_common => GetName, &
        GetRank_common => GetRank, GetNumProcs_common => GetNumProcs, &
        Initialized_common => Initialized, Info_common => Info, &
        Warning_common => Warning, Error_common => Error
+  USE multipole_common, ONLY : Multipole_TYP
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   PRIVATE
-  ! global constants
-  REAL, PARAMETER :: PI = 3.1415926535897932384626433832795028842
-  !--------------------------------------------------------------------------!
   INTERFACE GetType
-     MODULE PROCEDURE GetCoordsys, GetType_common
+     MODULE PROCEDURE GetPoissonType, GetType_common
   END INTERFACE
   INTERFACE GetName
-     MODULE PROCEDURE GetCoordsysName, GetName_common
+     MODULE PROCEDURE GetPoissonTypeName, GetName_common
   END INTERFACE
   INTERFACE GetRank
-     MODULE PROCEDURE GetGeometryRank, GetRank_common
+     MODULE PROCEDURE GetPoissonRank, GetRank_common
   END INTERFACE
   INTERFACE GetNumProcs
-     MODULE PROCEDURE GetGeometryNumProcs, GetNumProcs_common
+     MODULE PROCEDURE GetPoissonNumProcs, GetNumProcs_common
   END INTERFACE
   INTERFACE Initialized
-     MODULE PROCEDURE GeometryInitialized, Initialized_common
+     MODULE PROCEDURE PoissonInitialized, Initialized_common
   END INTERFACE
   INTERFACE Info
-     MODULE PROCEDURE GeometryInfo, Info_common
+     MODULE PROCEDURE PoissonInfo, Info_common
   END INTERFACE
   INTERFACE Warning
-     MODULE PROCEDURE GeometryWarning, Warning_common
+     MODULE PROCEDURE PoissonWarning, Warning_common
   END INTERFACE
   INTERFACE Error
-     MODULE PROCEDURE GeometryError, Error_common
+     MODULE PROCEDURE PoissonError_rank0, PoissonError_rankX, Error_common
   END INTERFACE
   !--------------------------------------------------------------------------!
-  TYPE Geometry_TYP
-     TYPE(Common_TYP) :: coordsys                   ! cartesian, polar, etc. !
-     REAL             :: geoparam                   ! geometry parameter     !
-  END TYPE Geometry_TYP
-  SAVE
+  TYPE Grid_TYP                     ! data type for multigrid poisson solver !
+     REAL, DIMENSION(:,:), POINTER   :: u,rho,a,da,b,db,c,invc,d,vol,bhx,bhy,tmp
+     REAL, DIMENSION(:,:,:), POINTER :: bccart,curv,tri
+     INTEGER                         :: ni,nj
+     INTEGER, DIMENSION(:,:), POINTER :: ij2k, k2ij
+     REAL                            :: hi,hj,invhi2,invhj2
+  END TYPE Grid_TYP
+  TYPE Poisson_TYP
+     TYPE(Common_TYP)                :: poissontype   ! type of source term   !
+     TYPE(Multipole_TYP)             :: multipole     ! for multipole expansion!
+     TYPE(Grid_TYP), POINTER         :: grid(:)       ! coarser grids for multigrid !
+     REAL                            :: MAXRESIDNORM  ! max error of residium (multigrid)!
+     INTEGER                         :: RELAXTYPE     ! type of relaxation method !
+     INTEGER                         :: NGRID         ! number of grids       !
+     INTEGER                         :: NPRE,NPOST    !pre and post smoothing NPRE+NPOST .GE. 1
+     INTEGER                         :: NMAXCYCLE
+     INTEGER                         :: MINRES
+     REAL, DIMENSION(:,:,:), POINTER :: accel         ! acceleration          !
+     REAL, DIMENSION(:,:), POINTER   :: phi           ! potential             !
+     INTEGER, DIMENSION(4)           :: Boundary      ! boundary for poisson  !
+                                      ! problem (Dirichlet,Neumann,Periodic) !
+     LOGICAL                         :: DIRICHLET     ! at least ONE dirichlet!
+                                                      ! boundary cond. is set !
+!FIXME
+INTEGER, DIMENSION(:),POINTER :: relaxcount !test!!!
+INTEGER                       :: safedmultigrid !test!!!
+  END TYPE Poisson_TYP
   !--------------------------------------------------------------------------!
   PUBLIC :: &
        ! types
-       Geometry_TYP, &
-       ! constants
-       PI, &
+       Poisson_TYP, &
+       Grid_TYP, &
        ! methods
-       InitGeometry, &
-       CloseGeometry, &
+       InitPoisson, &
+       ClosePoisson, &
        GetType, &
        GetName, &
        GetRank, &
        GetNumProcs, &
-       GetScale, &
        Initialized, &
        Info, &
        Warning, &
@@ -90,119 +108,118 @@ MODULE geometry_common
 
 CONTAINS
 
-  SUBROUTINE InitGeometry(this,cs,cn)
+  SUBROUTINE InitPoisson(this,stype,sname)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    TYPE(Geometry_TYP) :: this
-    INTEGER            :: cs
-    CHARACTER(LEN=32)  :: cn
+    TYPE(Poisson_TYP) :: this
+    INTEGER           :: stype
+    CHARACTER(LEN=32) :: sname
     !------------------------------------------------------------------------!
-    INTENT(IN)         :: cs,cn
-    INTENT(INOUT)      :: this
+    INTENT(IN)        :: stype,sname
+    INTENT(OUT)       :: this
     !------------------------------------------------------------------------!
-    CALL InitCommon(this%coordsys,cs,cn)
-    ! set geometry parameter to default value
-    this%geoparam = 1.0
-  END SUBROUTINE InitGeometry
+    CALL InitCommon(this%poissontype,stype,sname)
+
+  END SUBROUTINE InitPoisson
 
 
-  SUBROUTINE CloseGeometry(this)
+  SUBROUTINE ClosePoisson(this)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    TYPE(Geometry_TYP), INTENT(INOUT) :: this
+    TYPE(Poisson_TYP), INTENT(INOUT) :: this
     !------------------------------------------------------------------------!
-    CALL CloseCommon(this%coordsys)
-  END SUBROUTINE CloseGeometry
+    CALL CloseCommon(this%poissontype)
+  END SUBROUTINE ClosePoisson
 
 
-  PURE FUNCTION GetCoordsys(this) RESULT(cs)
+ PURE FUNCTION GetPoissonRank(this) RESULT(r)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    TYPE(Geometry_TYP), INTENT(IN) :: this
-    INTEGER :: cs
-    !------------------------------------------------------------------------!
-    cs = GetType_common(this%coordsys)
-  END FUNCTION GetCoordsys
-
-
-  PURE FUNCTION GetCoordsysName(this) RESULT(cn)
-    IMPLICIT NONE
-    !------------------------------------------------------------------------!
-    TYPE(Geometry_TYP), INTENT(IN) :: this
-    CHARACTER(LEN=32) :: cn    
-    !------------------------------------------------------------------------!
-    cn = GetName_common(this%coordsys)
-  END FUNCTION GetCoordsysName
-
-
-  PURE FUNCTION GetGeometryRank(this) RESULT(r)
-    IMPLICIT NONE
-    !------------------------------------------------------------------------!
-    TYPE(Geometry_TYP), INTENT(IN) :: this
+    TYPE(Poisson_TYP), INTENT(IN) :: this
     INTEGER :: r
     !------------------------------------------------------------------------!
-    r = GetRank_common(this%coordsys)
-  END FUNCTION GetGeometryRank
+    r = GetRank_common(this%poissontype)
+  END FUNCTION GetPoissonRank
 
 
-  PURE FUNCTION GetGeometryNumProcs(this) RESULT(p)
+  PURE FUNCTION GetPoissonNumProcs(this) RESULT(p)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    TYPE(Geometry_TYP), INTENT(IN) :: this
+    TYPE(Poisson_TYP), INTENT(IN) :: this
     INTEGER :: p
     !------------------------------------------------------------------------!
-    p = GetNumProcs_common(this%coordsys)
-  END FUNCTION GetGeometryNumProcs
+    p = GetNumProcs_common(this%poissontype)
+  END FUNCTION GetPoissonNumProcs
 
 
-  PURE FUNCTION GetScale(this) RESULT(gp)
+  PURE FUNCTION GetPoissonType(this) RESULT(st)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    TYPE(Geometry_TYP), INTENT(IN) :: this
-    REAL :: gp
+    TYPE(Poisson_TYP), INTENT(IN) :: this
+    INTEGER :: st
     !------------------------------------------------------------------------!
-    gp = this%geoparam
-  END FUNCTION GetScale
+    st = GetType_common(this%poissontype)
+  END FUNCTION GetPoissonType
 
 
-  PURE FUNCTION GeometryInitialized(this) RESULT(i)
+  PURE FUNCTION GetPoissonTypeName(this) RESULT(sn)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    TYPE(Geometry_TYP), INTENT(IN) :: this
+    TYPE(Poisson_TYP), INTENT(IN) :: this
+    CHARACTER(LEN=32) :: sn
+    !------------------------------------------------------------------------!
+    sn = GetName_common(this%poissontype)
+  END FUNCTION GetPoissonTypeName
+
+
+  PURE FUNCTION PoissonInitialized(this) RESULT(i)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Poisson_TYP), INTENT(IN) :: this
     LOGICAL :: i
     !------------------------------------------------------------------------!
-    i = Initialized_common(this%coordsys)
-  END FUNCTION GeometryInitialized
+    i = Initialized_common(this%poissontype)
+  END FUNCTION PoissonInitialized
 
- 
-  SUBROUTINE GeometryInfo(this,msg)
+
+  SUBROUTINE PoissonInfo(this,msg)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    TYPE(Geometry_TYP), INTENT(IN) :: this
+    TYPE(Poisson_TYP), INTENT(IN) :: this
     CHARACTER(LEN=*),  INTENT(IN) :: msg
     !------------------------------------------------------------------------!
-    CALL Info_common(this%coordsys,msg)
-  END SUBROUTINE GeometryInfo
+    CALL Info_common(this%poissontype,msg)
+  END SUBROUTINE PoissonInfo
 
 
-  SUBROUTINE GeometryWarning(this,modproc,msg)
+  SUBROUTINE PoissonWarning(this,modproc,msg)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    TYPE(Geometry_TYP), INTENT(IN) :: this
+    TYPE(Poisson_TYP), INTENT(IN) :: this
     CHARACTER(LEN=*),  INTENT(IN) :: modproc,msg
     !------------------------------------------------------------------------!
-    CALL Warning_common(this%coordsys,modproc,msg)
-  END SUBROUTINE GeometryWarning
+    CALL Warning_common(this%poissontype,modproc,msg)
+  END SUBROUTINE PoissonWarning
 
 
-  SUBROUTINE GeometryError(this,modproc,msg)
+  SUBROUTINE PoissonError_rank0(this,modproc,msg)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    TYPE(Geometry_TYP), INTENT(IN) :: this
+    TYPE(Poisson_TYP), INTENT(IN) :: this
     CHARACTER(LEN=*),  INTENT(IN) :: modproc,msg
     !------------------------------------------------------------------------!
-    CALL Error_common(this%coordsys,modproc,msg)
-  END SUBROUTINE GeometryError
+    CALL Error_common(this%poissontype,modproc,msg)
+  END SUBROUTINE PoissonError_rank0
 
 
-END MODULE geometry_common
+  SUBROUTINE PoissonError_rankX(this,modproc,msg,rank)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Poisson_TYP), INTENT(IN) :: this
+    CHARACTER(LEN=*),  INTENT(IN) :: modproc,msg
+    INTEGER, INTENT(IN)           :: rank
+    !------------------------------------------------------------------------!
+    CALL Error_common(this%poissontype,modproc,msg,rank)
+  END SUBROUTINE PoissonError_rankX
+
+END MODULE poisson_common

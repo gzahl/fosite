@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: sources_diskthomson.f90                                           #
 !#                                                                           #
-!# Copyright (C) 2007-2008                                                   #
+!# Copyright (C) 2007-2008,2011                                              #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -43,6 +43,7 @@ MODULE sources_diskthomson
        Sources_TYP, &
        ! methods
        InitSources_diskthomson, &
+       InfoSources_diskthomson, &
        ExternalSources_diskthomson, &
        CloseSources_diskthomson
   !--------------------------------------------------------------------------!
@@ -56,11 +57,11 @@ CONTAINS
     TYPE(Mesh_TYP)    :: Mesh
     TYPE(Physics_TYP) :: Physics
     INTEGER           :: stype
-    REAL              :: mass,mdot,s0,s1
+    REAL,OPTIONAL     :: mass,mdot,s0,s1
     !------------------------------------------------------------------------!
     REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,2) :: accel
     REAL              :: params(2)
-    REAL              :: rs, s0rs, x0, xm, factor
+    REAL              :: r0,r1,rs,r0rs,x0,xm,factor
     INTEGER           :: err
     INTEGER           :: i,j
     !------------------------------------------------------------------------!
@@ -68,17 +69,36 @@ CONTAINS
     !------------------------------------------------------------------------!
     CALL InitSources(this,stype,source_name)
 
-    ! mass of central object (black hole)
-    this%mass = mass
-    ! mass accretion rate of the disk
-    this%mdot = mdot
+    ! central mass
+    IF (PRESENT(mass)) THEN
+       this%mass = mass
+    ELSE
+       this%mass = 1.0
+    END IF
+    ! accretion rate
+    IF (PRESENT(mdot)) THEN
+       this%mdot = mdot
+    ELSE
+       this%mdot = 1.0
+    END IF
+    ! inner and outer disk radius
+    IF (PRESENT(s0)) THEN
+       r0 = s0
+    ELSE
+       r0 = 1.0
+    END IF
+    IF (PRESENT(s1)) THEN
+       r1 = s1
+    ELSE
+       r1 = 2.0
+    END IF
 
     ! some constants
     rs = 2*Physics%constants%GN * &          ! Schwarzschildradius of the BH !
          (this%mass / (Physics%constants%C**2 + TINY(1.0)))
-    s0rs = s0 / rs                           ! inner radius in terms of R_s  !
+    r0rs = r0 / rs                           ! inner radius in terms of R_s  !
     factor = 3.*Physics%constants%KE / &     ! constant factor               !
-         (16*PI*s0rs**3 + TINY(1.0)) * (this%mdot/rs) * (Physics%constants%C/rs)
+         (16*PI*r0rs**3 + TINY(1.0)) * (this%mdot/rs) * (Physics%constants%C/rs)
 
     ! reserve memory for radiational acceleration
     ALLOCATE(this%accel(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,2), &
@@ -86,13 +106,15 @@ CONTAINS
     IF (err.NE.0) CALL Error(this,"InitSources_diskthomson", "Unable allocate memory!")
 
     ! initialize radiational acceleration
-    x0 = s0/s1
+    x0 = r0/r1
+!CDIR COLLAPSE
     DO j=Mesh%JMIN,Mesh%JMAX
-       DO i=Mesh%IMIN,Mesh%IMAX
+!CDIR NODEP
+       DO i=Mesh%IGMIN,Mesh%IGMAX
           ! calculate cartesian components of radiational acceleration
           ! due to Thomson scattering
-          params(1) = ABS(Mesh%bccart(i,j,1) / (s0+TINY(1.0)))          ! = r / s0
-          params(2) = ABS(Mesh%bccart(i,j,2) / (s0+TINY(1.0)))          ! = z / s0
+          params(1) = ABS(Mesh%bccart(i,j,1) / (r0+TINY(1.0)))          ! = r / r0
+          params(2) = ABS(Mesh%bccart(i,j,2) / (r0+TINY(1.0)))          ! = z / r0
           xm = MIN(1./(params(1)+TINY(1.0)),1.0)
           ! integrate around the pseudo-singularity at xm 
           accel(i,j,1) = SIGN(1.0,Mesh%bccart(i,j,2)) * factor * (&
@@ -119,6 +141,20 @@ CONTAINS
 !!$       PRINT '(A)', ""
 !!$    END DO
   END SUBROUTINE InitSources_diskthomson
+
+
+  SUBROUTINE InfoSources_diskthomson(this)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Sources_TYP), POINTER :: this
+    !------------------------------------------------------------------------!
+    CHARACTER(LEN=32) :: mass_str,mdot_str
+    !------------------------------------------------------------------------!
+    WRITE (mass_str,'(ES8.2)') this%mass
+    WRITE (mdot_str,'(ES8.2)') this%mdot
+    CALL Info(this,"            mass:              " // TRIM(mass_str) // &
+        ACHAR(10)//"            accretion rate:    " // TRIM(mdot_str))
+  END SUBROUTINE InfoSources_diskthomson
 
 
   PURE SUBROUTINE ExternalSources_diskthomson(this,Mesh,Physics,pvar,cvar,sterm)
@@ -183,6 +219,7 @@ CONTAINS
     INTENT(INOUT)     :: this
     !------------------------------------------------------------------------!
     DEALLOCATE(this%accel)
+    CALL CloseSources(this)
   END SUBROUTINE CloseSources_diskthomson
 
 

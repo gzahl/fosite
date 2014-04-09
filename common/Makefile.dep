@@ -20,16 +20,26 @@ mesh_common.o : \
 	common_types.o \
 	geometry_common.o
 
+multipole_common.o : \
+	common_types.o \
+	mesh_common.o
+
 physics_common.o : \
 	common_types.o \
 	sources_common.o \
 	constants_common.o
 
+poisson_common.o : \
+	common_types.o \
+	multipole_common.o
+
 reconstruction_common.o : \
 	common_types.o
 
 sources_common.o : \
-	common_types.o
+	common_types.o \
+	mesh_common.o \
+	poisson_common.o
 
 timedisc_common.o : \
 	common_types.o \

@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: sources_common.f90                                                #
 !#                                                                           #
-!# Copyright (C) 2006-2010                                                   #
+!# Copyright (C) 2006-2011                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -32,6 +32,8 @@ MODULE sources_common
        GetRank_common => GetRank, GetNumProcs_common => GetNumProcs, &
        Initialized_common => Initialized, Info_common => Info, &
        Warning_common => Warning, Error_common => Error
+  USE mesh_common, ONLY : Selection_TYP
+  USE poisson_common, ONLY: Poisson_TYP
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   PRIVATE
@@ -60,38 +62,24 @@ MODULE sources_common
      MODULE PROCEDURE SourcesError_rank0, SourcesError_rankX, Error_common
   END INTERFACE
   !--------------------------------------------------------------------------!
-  TYPE Grid_TYP
-     REAL, DIMENSION(:,:), POINTER   :: u,rho,a,da,b,db,c,invc,d,&
-                                        vol,bhx,bhy,&! coarser grids for multigrid !
-                                        mlint,mlext
-     REAL, DIMENSION(:,:,:), POINTER :: bccart,curv,QdivsqrtR
-     INTEGER                         :: ni,nj
-     INTEGER, DIMENSION(:,:), POINTER :: ij2k, k2ij
-     REAL                            :: hi,hj,invhi2,invhj2
-  END TYPE Grid_TYP
   TYPE Sources_TYP
      TYPE(Common_TYP)                :: sourcetype   ! type of source term   !
      TYPE(Sources_TYP), POINTER      :: next => null() ! next source in list !
+     TYPE(Poisson_TYP)               :: poisson      ! poisson problem       !
      TYPE(Common_TYP)                :: potential    ! newton or wiita       !
      TYPE(Common_TYP)                :: viscosity    ! molecular,alpha,beta  !
-     TYPE(Grid_TYP), POINTER         :: grid(:)      ! coarser grids for multigrid !
+     REAL                            :: time         ! simulation time       !
      REAL                            :: mass         ! mass of point source  !
      REAL                            :: mdot         ! disk accretion rate   !
      REAL                            :: dynconst,bulkconst ! viscosity const.!
      REAL                            :: cvis         ! viscous Courant no.   !
-     REAL                            :: MAXRESIDNORM ! max error of residium (multigrid)!
-     REAL                            :: MAXAGMNORM   ! max error of arith-geom-mean     !
      INTEGER                         :: outbound     ! outflow boundary      !
-     INTEGER                         :: MAXMULT      ! max number of multipol moments   !
-     INTEGER                         :: BOUNDARYTYPE ! type of boundary calc (mult.expansion) !
-     INTEGER                         :: MGminlevel   ! min multigrid level   !
-     INTEGER                         :: ngrid        ! number of grids       !
-     INTEGER, DIMENSION(4)           :: Boundary     ! boundary for poisson  !
-                                      ! problem (Dirichlet,Neumann,Periodic) !
      REAL, DIMENSION(:,:,:), POINTER :: accel,accart ! acceleration          !
      REAL, DIMENSION(:,:), POINTER   :: radius       ! distance to origin    !
+     REAL, DIMENSION(:,:), POINTER   :: invr         ! 1./radius             !
      REAL, DIMENSION(:,:,:), POINTER :: gxr3         ! = GN*x/radius**3      !
      REAL, DIMENSION(:,:), POINTER   :: cellmass     ! rho*dV                !
+     REAL, DIMENSION(:,:), POINTER   :: Qcool        ! cooling sources       !
      REAL, DIMENSION(:,:), POINTER   :: dynvis, &    ! dynamic, kinematic &  !
                                       kinvis,bulkvis !    bulk viscosity     !
      REAL, DIMENSION(:,:), POINTER   :: btxx,btyy,&  ! components of the     !
@@ -103,9 +91,9 @@ MODULE sources_common
   PUBLIC :: &
        ! types
        Sources_TYP, &
-       Grid_TYP, &
        ! methods
        InitSources, &
+       CloseSources, &
        GetSourcesPointer, &
        GetType, &
        GetName, &
@@ -132,6 +120,15 @@ CONTAINS
     CALL InitCommon(this%sourcetype,stype,sname)
     NULLIFY(this%next)
   END SUBROUTINE InitSources
+
+
+  SUBROUTINE CloseSources(this)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Sources_TYP), INTENT(INOUT) :: this
+    !------------------------------------------------------------------------!
+    CALL CloseCommon(this%sourcetype)
+  END SUBROUTINE CloseSources
 
 
   FUNCTION GetSourcesPointer(list,stype) RESULT(sp)

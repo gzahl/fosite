@@ -60,12 +60,23 @@ CONTAINS
     INTENT(INOUT)       :: this
     !------------------------------------------------------------------------!
     CALL InitConstants(this,units,units_name)
-    ! numerical values of physical constants in SI units
-    this%C  = 2.99792458E+08            ![m/s]        lightspeed             !
-    this%GN = 6.6742E-11                ![m^3/kg/s^2] Newtons grav. constant !
-    this%KB = 1.3806505E-23             ![J/K]        Boltzmann constant     !
-    this%KE = 3.48E-02                  ![m^2/kg]     electron scat. opacity !
-    this%NA = 6.022E+23                 ![1/mol]      Avogadro constant      !
+    ! assign numerical values of physical constants in SI units;
+    ! (C, GN, etc. are defined in constants_common)
+    this%C  = C
+    this%GN = GN
+    this%KB = KB
+    this%NA = NA
+    this%SB = SB
+    this%KE = KE
+    ! conversion factors to SI units are unity
+    this%cf_time = 1.0
+    this%cf_mass = 1.0
+    this%cf_momentum = 1.0
+    this%cf_energy = 1.0
+    this%cf_power = 1.0
+    this%cf_temperature = 1.0
+    this%cf_density = 1.0
+    this%cf_opacity = 1.0
   END SUBROUTINE InitConstants_SI
 
 END MODULE constants_SI

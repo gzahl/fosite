@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: boundary_generic.f90                                              #
 !#                                                                           #
-!# Copyright (C) 2006-2010                                                   #
+!# Copyright (C) 2006-2011                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -31,9 +31,11 @@ MODULE boundary_generic
   USE mesh_common, ONLY : Mesh_TYP, GetRank, Initialized, Error
   USE fluxes_common, ONLY : Fluxes_TYP
   USE reconstruction_common, ONLY : Reconstruction_TYP, PrimRecon
-  USE boundary_nogradients, InitBoundary_common => InitBoundary
+  USE boundary_nogradients, InitBoundary_common => InitBoundary, &
+       CloseBoundary_common => CloseBoundary
   USE boundary_periodic
-  USE boundary_reflecting, InitBoundary_common1 => InitBoundary
+  USE boundary_reflecting, InitBoundary_common1 => InitBoundary,&
+       CloseBoundary_common1 => CloseBoundary
   USE boundary_axis
   USE boundary_folded
   USE boundary_fixed
@@ -501,7 +503,6 @@ CONTAINS
           pvar(Mesh%IMAX+i,:,:) = pvar(Mesh%IMAX,:,:)
        END DO
     END IF
-
     ! convert primitive variables in ghost cells
     CALL Convert2Conservative(Physics,Mesh,Mesh%IGMIN,Mesh%IMIN-1,&
          Mesh%JGMIN,Mesh%JGMAX,pvar,cvar)
@@ -558,6 +559,8 @@ CONTAINS
     !------------------------------------------------------------------------!
     INTENT(INOUT) :: this
     !------------------------------------------------------------------------!
+    IF (.NOT.Initialized(this)) &
+        CALL Error(this,"CloseBoundary_one","not initialized")
     SELECT CASE(GetType(this))
     CASE(NO_GRADIENTS,PERIODIC,EXTRAPOLATION)
        ! do nothing
@@ -576,6 +579,7 @@ CONTAINS
     CASE(FARFIELD)
        CALL CloseBoundary_farfield(this)
     END SELECT
+    CALL CloseBoundary_common(this)
   END SUBROUTINE CloseBoundary_one
 
 

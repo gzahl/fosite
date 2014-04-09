@@ -84,6 +84,7 @@ MODULE reconstruction_common
        PRIMITIVE, CONSERVATIVE, &
        ! methods
        InitReconstruction, &
+       CloseReconstruction, &
        PrimRecon, &
        GetType, &
        GetName, &
@@ -111,6 +112,15 @@ CONTAINS
     CALL InitCommon(this%order,rtype,rname)
     this%primcons  = pc
   END SUBROUTINE InitReconstruction
+
+
+  SUBROUTINE CloseReconstruction(this)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Reconstruction_TYP), INTENT(INOUT) :: this
+    !------------------------------------------------------------------------!
+    CALL CloseCommon(this%order)
+  END SUBROUTINE CloseReconstruction
 
 
   PURE FUNCTION GetOrder(this) RESULT(rt)

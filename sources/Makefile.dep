@@ -1,3 +1,17 @@
+multipole_cylindrical.o : \
+	multipole_spherical.o
+
+multipole_generic.o : \
+	multipole_spherical.o \
+	multipole_cylindrical.o
+
+poisson_generic.o : \
+	poisson_multigrid.o \
+	sources_pointmass.o
+
+poisson_multigrid.o : \
+	multipole_generic.o
+
 sources_c_accel.o : \
 	sources_pointmass.o
 
@@ -12,13 +26,8 @@ sources_generic.o : \
 	sources_diskthomson.o \
 	sources_viscosity.o \
 	sources_c_accel.o \
-	sources_selfgravitation.o \
-	sources_boundary.o \
-	sources_cooling.o
-
-sources_selfgravitation.o : \
-	sources_pointmass.o \
-	sources_boundary.o
+	sources_cooling.o \
+	poisson_generic.o
 
 sources_viscosity.o : \
 	sources_pointmass.o

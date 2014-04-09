@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: init_vortex3d.f90                                                 #
 !#                                                                           #
-!# Copyright (C) 2006-2010                                                   #
+!# Copyright (C) 2006-2011                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -50,7 +50,7 @@ MODULE Init
   REAL, PARAMETER    :: VSTR    = 5.0      ! nondimensional vortex strength
   ! mesh settings
   INTEGER, PARAMETER :: MGEO = CYLINDRICAL ! geometry
-  INTEGER, PARAMETER :: XRES = 1           ! x-resolution
+  INTEGER, PARAMETER :: XRES = 1          ! x-resolution
   INTEGER, PARAMETER :: YRES = 400         ! y-resolution
   REAL, PARAMETER    :: RMAX = 5.0         ! outer radius
   REAL, PARAMETER    :: GPAR = 1.0         ! geometry scaling parameter     !
@@ -87,8 +87,7 @@ CONTAINS
     ! physics settings
     CALL InitPhysics(Physics, &
          problem = EULER3D_ROTSYM, &
-         gamma   = GAMMA, &                   ! ratio of specific heats        !
-         dpmax   = 1.0)                     ! for advanced time step control !
+         gamma   = GAMMA)                   ! ratio of specific heats        !
 
     ! numerical scheme for flux calculation
     CALL InitFluxes(Fluxes, &
@@ -124,7 +123,7 @@ CONTAINS
          order    = 3, &
          cfl      = 0.4, &
          stoptime = TSIM, &
-         dtlimit  = 1.0E-10, &
+         dtlimit  = 1.0E-8*TSIM, &
          maxiter  = 100000)
 
     ! set initial condition

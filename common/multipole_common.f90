@@ -1,9 +1,9 @@
 !#############################################################################
 !#                                                                           #
 !# fosite - 2D hydrodynamical simulation program                             #
-!# module: constants_common.f90                                              #
+!# module: multipole_common.f90                                              #
 !#                                                                           #
-!# Copyright (C) 2006-2010                                                   #
+!# Copyright (C) 2006-2011                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -24,79 +24,79 @@
 !#############################################################################
 
 !----------------------------------------------------------------------------!
-! basic physical constants module
+! basic module for multipole expansion
 !----------------------------------------------------------------------------!
-MODULE constants_common
+MODULE multipole_common
   USE common_types, &
        GetType_common => GetType, GetName_common => GetName, &
        GetRank_common => GetRank, GetNumProcs_common => GetNumProcs, &
        Initialized_common => Initialized, Info_common => Info, &
        Warning_common => Warning, Error_common => Error
+  USE mesh_common, ONLY : Selection_TYP
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   PRIVATE
   INTERFACE GetType
-     MODULE PROCEDURE GetUnits, GetType_common
+     MODULE PROCEDURE GetMultipoleType, GetType_common
   END INTERFACE
   INTERFACE GetName
-     MODULE PROCEDURE GetUnitsName, GetName_common
+     MODULE PROCEDURE GetMultipoleName, GetName_common
   END INTERFACE
   INTERFACE GetRank
-     MODULE PROCEDURE GetConstantsRank, GetRank_common
+     MODULE PROCEDURE GetMultipoleRank, GetRank_common
   END INTERFACE
   INTERFACE GetNumProcs
-     MODULE PROCEDURE GetConstantsNumProcs, GetNumProcs_common
+     MODULE PROCEDURE GetMultipoleNumProcs, GetNumProcs_common
   END INTERFACE
   INTERFACE Initialized
-     MODULE PROCEDURE ConstantsInitialized, Initialized_common
+     MODULE PROCEDURE MultipoleInitialized, Initialized_common
   END INTERFACE
   INTERFACE Info
-     MODULE PROCEDURE ConstantsInfo, Info_common
+     MODULE PROCEDURE MultipoleInfo, Info_common
   END INTERFACE
   INTERFACE Warning
-     MODULE PROCEDURE ConstantsWarning, Warning_common
+     MODULE PROCEDURE MultipoleWarning, Warning_common
   END INTERFACE
   INTERFACE Error
-     MODULE PROCEDURE ConstantsError, Error_common
+     MODULE PROCEDURE MultipoleError, Error_common
   END INTERFACE
   !--------------------------------------------------------------------------!
-  ! physical constants in SI units
-  DOUBLE PRECISION, PARAMETER :: C  = 2.99792458E+08 ! [m/s]
-  DOUBLE PRECISION, PARAMETER :: GN = 6.6742E-11     ! [m^3/kg/s^2]
-  DOUBLE PRECISION, PARAMETER :: KB = 1.3806505E-23  ! [J/K]
-  DOUBLE PRECISION, PARAMETER :: NA = 6.022E+23      ! [1/mol]
-  DOUBLE PRECISION, PARAMETER :: SB = 5.6704E-8      ! [W/m^2/K^4
-  DOUBLE PRECISION, PARAMETER :: KE = 3.48E-02       ! [m^2/kg]
-  !--------------------------------------------------------------------------!
-  TYPE Constants_TYP
-     TYPE(Common_TYP) :: units                      ! SI, natural, etc.      !
-     ! some physical constants
-     DOUBLE PRECISION :: C                          ! light speed            !
-     DOUBLE PRECISION :: GN                         ! Newtons grav. constant !
-     DOUBLE PRECISION :: KB                         ! Boltzmann constant     !
-     DOUBLE PRECISION :: NA                         ! Avogadro constant      !
-     DOUBLE PRECISION :: SB                         ! Stefan-Boltzmann const.!
-     DOUBLE PRECISION :: RG                         ! gas constant           !
-     DOUBLE PRECISION :: KE                         ! electr. scat. opacity  !
-     ! factors for convertion from SI to other units
-     DOUBLE PRECISION :: cf_time                    ! time scale             !
-     DOUBLE PRECISION :: cf_mass                    ! mass scale             !
-     DOUBLE PRECISION :: cf_momentum                ! momentum scale         !
-     DOUBLE PRECISION :: cf_energy                  ! energy scale           !
-     DOUBLE PRECISION :: cf_power                   ! power scale            !
-     DOUBLE PRECISION :: cf_temperature             ! temperature scale      !
-     DOUBLE PRECISION :: cf_density                 ! density scale          !
-     DOUBLE PRECISION :: cf_opacity                 ! opacity scale          !
-  END TYPE Constants_TYP
-  SAVE
+  TYPE GFactors_TYP                             ! storage type for geometrical
+     TYPE(Selection_TYP) :: range(2)            !   factors used in mult. exp.
+     REAL, DIMENSION(:,:,:,:), POINTER :: data
+  END TYPE GFactors_TYP
+  TYPE Multipole_TYP
+     TYPE(Common_TYP) :: exptype                ! spherical, cylindrical etc.
+     TYPE(Selection_TYP) :: iregion             ! selection field for expansion
+     TYPE(Selection_TYP), DIMENSION(:), POINTER &
+                      :: oregion                ! selection for output regions
+     TYPE(GFactors_TYP), DIMENSION(:), POINTER &
+                      :: gfactors               ! geometrical factors in expansion
+     INTEGER          :: ORDER                  ! highest multipole moment
+     INTEGER          :: IMIN,IMAX,JMIN,JMAX    ! density and potential array
+                                                !   dimensions
+     LOGICAL          :: SPHERICAL              ! = .TRUE. if radius is 
+                                                !   independent of polar angle
+     REAL, DIMENSION(:,:,:), POINTER &
+                      :: coords,&               ! curvilinear coords
+                         Pl,&                   ! Legendre Polynomomials
+                         PldV,&                 ! Legendre Polynom. * volume
+                         wmass,&                ! weighted cell masses
+                         temp                   ! temporary storage
+     REAL, DIMENSION(:,:), POINTER &
+                      :: radius,&               ! radial coordinate
+                         invr, &                ! inverse radius
+                         invsqrtr, &            ! inverse square root of radius
+                         volume                 ! cell volume field
+  END TYPE Multipole_TYP
   !--------------------------------------------------------------------------!
   PUBLIC :: &
        ! types
-       Constants_TYP, &
-       ! constants
-       C, GN, KB, NA, SB, KE, &
+       Multipole_TYP, &
+       GFactors_TYP, &
        ! methods
-       InitConstants, &
+       InitMultipole, &
+       CloseMultipole, &
        GetType, &
        GetName, &
        GetRank, &
@@ -109,106 +109,120 @@ MODULE constants_common
 
 CONTAINS
 
-  SUBROUTINE InitConstants(this,ut,un)
+  SUBROUTINE InitMultipole(this,etype,ename,imin,imax,jmin,jmax,ireg,oreg,order)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    TYPE(Constants_TYP) :: this
-    INTEGER             :: ut
-    CHARACTER(LEN=32)   :: un
+    TYPE(Multipole_TYP) :: this
+    TYPE(Selection_TYP) :: ireg,oreg(:)
+    INTEGER             :: etype,imin,imax,jmin,jmax,order
+    CHARACTER(LEN=32)   :: ename
     !------------------------------------------------------------------------!
-    INTENT(IN)          :: ut,un
+    INTEGER             :: err
+    !------------------------------------------------------------------------!
+    INTENT(IN)          :: etype,ename,imin,imax,jmin,jmax,ireg,oreg,order
     INTENT(INOUT)       :: this
     !------------------------------------------------------------------------!
-    CALL InitCommon(this%units,ut,un)
-  END SUBROUTINE InitConstants
+    CALL InitCommon(this%exptype,etype,ename)
+    ! number of multipole moments
+    this%ORDER = order
+    ! array dimensions of the density and potential array
+    this%IMIN = imin
+    this%IMAX = imax
+    this%JMIN = jmin
+    this%JMAX = jmax
+    this%iregion = ireg
+    ALLOCATE(this%oregion(SIZE(oreg)),STAT=err)
+    IF (err.NE.0) CALL Error(this,"InitMultipole","memory allocation failed")
+    this%oregion(:) = oreg(:)
+  END SUBROUTINE InitMultipole
 
 
-  SUBROUTINE CloseConstants(this)
+  SUBROUTINE CloseMultipole(this)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    TYPE(Constants_TYP), INTENT(INOUT) :: this
+    TYPE(Multipole_TYP), INTENT(INOUT) :: this
     !------------------------------------------------------------------------!
-    CALL CloseCommon(this%units)
-  END SUBROUTINE CloseConstants
+    CALL CloseCommon(this%exptype)
+  END SUBROUTINE CloseMultipole
 
 
-  PURE FUNCTION GetUnits(this) RESULT(ut)
+  PURE FUNCTION GetMultipoleType(this) RESULT(etype)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    TYPE(Constants_TYP), INTENT(IN) :: this
-    INTEGER :: ut
+    TYPE(Multipole_TYP), INTENT(IN) :: this
+    INTEGER :: etype
     !------------------------------------------------------------------------!
-    ut = GetType_common(this%units)
-  END FUNCTION GetUnits
+    etype = GetType_common(this%exptype)
+  END FUNCTION GetMultipoleType
 
 
-  PURE FUNCTION GetUnitsName(this) RESULT(un)
+  PURE FUNCTION GetMultipoleName(this) RESULT(ename)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    TYPE(Constants_TYP), INTENT(IN) :: this
-    CHARACTER(LEN=32) :: un
+    TYPE(Multipole_TYP), INTENT(IN) :: this
+    CHARACTER(LEN=32) :: ename
     !------------------------------------------------------------------------!
-    un = GetName_common(this%units)
-  END FUNCTION GetUnitsName
+    ename = GetName_common(this%exptype)
+  END FUNCTION GetMultipoleName
 
 
-  PURE FUNCTION GetConstantsRank(this) RESULT(r)
+  PURE FUNCTION GetMultipoleRank(this) RESULT(r)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    TYPE(Constants_TYP), INTENT(IN) :: this
+    TYPE(Multipole_TYP), INTENT(IN) :: this
     INTEGER :: r
     !------------------------------------------------------------------------!
-    r = GetRank_common(this%units)
-  END FUNCTION GetConstantsRank
+    r = GetRank_common(this%exptype)
+  END FUNCTION GetMultipoleRank
 
 
-  PURE FUNCTION GetConstantsNumProcs(this) RESULT(p)
+  PURE FUNCTION GetMultipoleNumProcs(this) RESULT(p)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    TYPE(Constants_TYP), INTENT(IN) :: this
+    TYPE(Multipole_TYP), INTENT(IN) :: this
     INTEGER :: p
     !------------------------------------------------------------------------!
-    p = GetNumProcs_common(this%units)
-  END FUNCTION GetConstantsNumProcs
+    p = GetNumProcs_common(this%exptype)
+  END FUNCTION GetMultipoleNumProcs
 
 
-  PURE FUNCTION ConstantsInitialized(this) RESULT(i)
+  PURE FUNCTION MultipoleInitialized(this) RESULT(i)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    TYPE(Constants_TYP), INTENT(IN) :: this
+    TYPE(Multipole_TYP), INTENT(IN) :: this
     LOGICAL :: i
     !------------------------------------------------------------------------!
-    i = Initialized_common(this%units)
-  END FUNCTION ConstantsInitialized
+    i = Initialized_common(this%exptype)
+  END FUNCTION MultipoleInitialized
 
  
-  SUBROUTINE ConstantsInfo(this,msg)
+  SUBROUTINE MultipoleInfo(this,msg)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    TYPE(Constants_TYP), INTENT(IN) :: this
+    TYPE(Multipole_TYP), INTENT(IN) :: this
     CHARACTER(LEN=*),  INTENT(IN) :: msg
     !------------------------------------------------------------------------!
-    CALL Info_common(this%units,msg)
-  END SUBROUTINE ConstantsInfo
+    CALL Info_common(this%exptype,msg)
+  END SUBROUTINE MultipoleInfo
 
 
-  SUBROUTINE ConstantsWarning(this,modproc,msg)
+  SUBROUTINE MultipoleWarning(this,modproc,msg)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    TYPE(Constants_TYP), INTENT(IN) :: this
+    TYPE(Multipole_TYP), INTENT(IN) :: this
     CHARACTER(LEN=*),  INTENT(IN) :: modproc,msg
     !------------------------------------------------------------------------!
-    CALL Warning_common(this%units,modproc,msg)
-  END SUBROUTINE ConstantsWarning
+    CALL Warning_common(this%exptype,modproc,msg)
+  END SUBROUTINE MultipoleWarning
 
 
-  SUBROUTINE ConstantsError(this,modproc,msg)
+  SUBROUTINE MultipoleError(this,modproc,msg)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    TYPE(Constants_TYP), INTENT(IN) :: this
+    TYPE(Multipole_TYP), INTENT(IN) :: this
     CHARACTER(LEN=*),  INTENT(IN) :: modproc,msg
     !------------------------------------------------------------------------!
-    CALL Error_common(this%units,modproc,msg)
-  END SUBROUTINE ConstantsError
+    CALL Error_common(this%exptype,modproc,msg)
+  END SUBROUTINE MultipoleError
 
-END MODULE constants_common
+END MODULE multipole_common

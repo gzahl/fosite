@@ -29,7 +29,8 @@
 MODULE fluxes_generic
   USE mesh_common, ONLY : Mesh_TYP
   USE physics_common, ONLY : Physics_TYP
-  USE fluxes_midpoint, InitFluxes_all => InitFluxes
+  USE fluxes_midpoint, InitFluxes_common => InitFluxes, &
+       CloseFluxes_common => CloseFluxes
   USE fluxes_trapezoidal
   USE reconstruction_generic
   IMPLICIT NONE
@@ -45,9 +46,9 @@ MODULE fluxes_generic
        MIDPOINT, TRAPEZOIDAL, &
        ! methods
        InitFluxes, &
+       CloseFluxes, &
        MallocFluxes, &
        CalculateFluxes, &
-       CloseFluxes, &
        PrimRecon, &
        GetBoundaryFlux, &
        GetType, &
@@ -162,9 +163,12 @@ CONTAINS
     !------------------------------------------------------------------------!
     INTENT(INOUT)     :: this
     !------------------------------------------------------------------------!
+    IF (.NOT.Initialized(this)) &
+        CALL Error(this,"CloseFluxes","not initialized")
     DEALLOCATE(this%cons,this%prim,this%pfluxes,this%qfluxes, &
          this%bxflux,this%byflux,this%bxfold,this%byfold)
     CALL CloseReconstruction(this%Reconstruction)
+    CALL CloseFluxes_common(this)
   END SUBROUTINE CloseFluxes
 
 

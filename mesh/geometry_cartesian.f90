@@ -40,6 +40,7 @@ MODULE geometry_cartesian
        PI, &
        ! methods
        InitGeometry, &
+       CloseGeometry, &
        InitGeometry_cartesian, &
        ScaleFactors_cartesian, &
        GetScale, &

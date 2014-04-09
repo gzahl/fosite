@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: init_bondi3d.f90                                                  #
 !#                                                                           #
-!# Copyright (C) 2006 - 2010                                                 #
+!# Copyright (C) 2006-2011                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -380,9 +380,9 @@ CONTAINS
     chi = r**2 / lambda
     gr  = chi**(2.*gm1/gp1) * (1./gm1 + 1./r)
     IF (r.LT.rc) THEN
-       psi = GetRoot(funcd,1.0,gr,xacc)
+       psi = GetRoot_newton(funcd,1.0,gr)
     ELSE
-       psi = GetRoot(funcd,1.0E-6,1.0,xacc)
+       psi = GetRoot_newton(funcd,1.0E-6,1.0)
     END IF
     
     ! return values

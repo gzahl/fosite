@@ -230,19 +230,30 @@ CONTAINS
     REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,this%VNUM) &
          :: pvar
     !------------------------------------------------------------------------!
+    INTEGER           :: i,j
+    REAL              :: cs
+    !------------------------------------------------------------------------!
     INTENT(IN)        :: Mesh,pvar
     INTENT(INOUT)     :: this
     !------------------------------------------------------------------------!
-    ! sound speed
-    this%csound(:,:,1) = GetSoundSpeed_euler2D(this%gamma, &
-         pvar(:,:,this%DENSITY),pvar(:,:,this%PRESSURE))    
-    ! minimal and maximal wave speeds at cell centers
-    ! x-direction
-    CALL SetWaveSpeeds_euler2D(this%csound(:,:,1),pvar(:,:,this%XVELOCITY),&
-         this%amin(:,:),this%amax(:,:))
-    ! y-direction
-    CALL SetWaveSpeeds_euler2D(this%csound(:,:,1),pvar(:,:,this%YVELOCITY), &
-         this%bmin(:,:),this%bmax(:,:))
+    ! compute minimal and maximal wave speeds at cell centers
+!CDIR COLLAPSE
+    DO j=Mesh%JGMIN,Mesh%JGMAX
+       DO i=Mesh%IGMIN,Mesh%IGMAX
+          ! sound speed
+!CDIR IEXPAND
+          cs = GetSoundSpeed_euler2D(this%gamma, &
+               pvar(i,j,this%DENSITY),pvar(i,j,this%PRESSURE))
+          ! x-direction
+!CDIR IEXPAND
+          CALL SetWaveSpeeds_euler2D(cs,pvar(i,j,this%XVELOCITY),&
+               this%amin(i,j),this%amax(i,j))
+          ! y-direction
+!CDIR IEXPAND
+          CALL SetWaveSpeeds_euler2D(cs,pvar(i,j,this%YVELOCITY),&
+               this%bmin(i,j),this%bmax(i,j))
+       END DO
+    END DO
   END SUBROUTINE CalculateWaveSpeeds_center
 
 
@@ -254,30 +265,52 @@ CONTAINS
     REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,4,this%VNUM) &
          :: prim
     !------------------------------------------------------------------------!
+    INTEGER           :: i,j
+    !------------------------------------------------------------------------!
     INTENT(IN)        :: Mesh,prim
     INTENT(INOUT)     :: this
     !------------------------------------------------------------------------!
-    ! sound speed
-    this%csound(:,:,:) = GetSoundSpeed_euler2D(this%gamma, &
-         prim(:,:,:,this%DENSITY),prim(:,:,:,this%PRESSURE))
-    ! wave speeds at cell interfaces
-    ! x-direction (west and east states)
-    CALL SetWaveSpeeds_euler2D(this%csound(:,:,1),prim(:,:,1,this%XVELOCITY), &
-         this%tmin(:,:,1),this%tmax(:,:,1))
-    CALL SetWaveSpeeds_euler2D(this%csound(:,:,2),prim(:,:,2,this%XVELOCITY), &
-         this%amin(:,:),this%amax(:,:))
-    ! y-direction (south and north states)
-    CALL SetWaveSpeeds_euler2D(this%csound(:,:,3),prim(:,:,3,this%YVELOCITY), &
-         this%tmin(:,:,2),this%tmax(:,:,2))
-    CALL SetWaveSpeeds_euler2D(this%csound(:,:,4),prim(:,:,4,this%YVELOCITY), &
-         this%bmin(:,:),this%bmax(:,:))
-    ! minimal and maximal wave speeds
+    ! compute minimal and maximal wave speeds at cell interfaces
+!CDIR COLLAPSE
+    DO j=Mesh%JGMIN,Mesh%JGMAX
+       DO i=Mesh%IGMIN,Mesh%IGMAX
+          ! western
+!CDIR IEXPAND
+          CALL SetWaveSpeeds_euler2D(GetSoundSpeed_euler2D(this%gamma, &
+               prim(i,j,1,this%DENSITY),prim(i,j,1,this%PRESSURE)), &
+               prim(i,j,1,this%XVELOCITY), &
+               this%tmin(i,j,1),this%tmax(i,j,1))
+          ! eastern
+!CDIR IEXPAND
+          CALL SetWaveSpeeds_euler2D(GetSoundSpeed_euler2D(this%gamma, &
+               prim(i,j,2,this%DENSITY),prim(i,j,2,this%PRESSURE)), &
+               prim(i,j,2,this%XVELOCITY), &
+               this%amin(i,j),this%amax(i,j))
+          ! southern
+!CDIR IEXPAND
+          CALL SetWaveSpeeds_euler2D(GetSoundSpeed_euler2D(this%gamma, &
+               prim(i,j,3,this%DENSITY),prim(i,j,3,this%PRESSURE)), &
+               prim(i,j,3,this%YVELOCITY), &
+               this%tmin(i,j,2),this%tmax(i,j,2))
+          ! northern
+!CDIR IEXPAND
+          CALL SetWaveSpeeds_euler2D(GetSoundSpeed_euler2D(this%gamma, &
+               prim(i,j,4,this%DENSITY),prim(i,j,4,this%PRESSURE)), &
+               prim(i,j,4,this%YVELOCITY), &
+               this%bmin(i,j),this%bmax(i,j))
+       END DO
+    END DO
+    ! set minimal and maximal wave speeds at cell interfaces of neighboring cells
+    ! western interfaces
     this%amin(Mesh%IMIN-1:Mesh%IMAX,:) = MIN(this%tmin(Mesh%IMIN:Mesh%IMAX+1,:,1), &
          this%amin(Mesh%IMIN-1:Mesh%IMAX,:))
+    ! eastern interfaces
     this%amax(Mesh%IMIN-1:Mesh%IMAX,:) = MAX(this%tmax(Mesh%IMIN:Mesh%IMAX+1,:,1), &
          this%amax(Mesh%IMIN-1:Mesh%IMAX,:))
+    ! southern interfaces
     this%bmin(:,Mesh%JMIN-1:Mesh%JMAX) = MIN(this%tmin(:,Mesh%JMIN:Mesh%JMAX+1,2), &
          this%bmin(:,Mesh%JMIN-1:Mesh%JMAX))
+    ! northern interfaces
     this%bmax(:,Mesh%JMIN-1:Mesh%JMAX) = MAX(this%tmax(:,Mesh%JMIN:Mesh%JMAX+1,2), &
          this%bmax(:,Mesh%JMIN-1:Mesh%JMAX))
   END SUBROUTINE CalculateWaveSpeeds_faces
@@ -418,11 +451,11 @@ CONTAINS
     INTENT(INOUT)     :: ftxx,ftxy,ftyy
     INTENT(OUT)       :: sterm
     !------------------------------------------------------------------------!
-    ! mean values of stress tensor components across the cell interfaces
-!CDIR UNROLL=4
+!CDIR UNROLL=8
     DO j=Mesh%JMIN,Mesh%JMAX
 !CDIR NODEP
        DO i=Mesh%IMIN,Mesh%IMAX
+          ! mean values of stress tensor components across the cell interfaces
           ftxx(i,j,1) = 0.5 * ( btxx(i-1,j) + btxx(i,j) )
           ftxx(i,j,2) = 0.5 * ( btxx(i+1,j) + btxx(i,j) )
           ftxx(i,j,3) = 0.5 * ( btxx(i,j-1) + btxx(i,j) )
@@ -437,34 +470,28 @@ CONTAINS
           ftxy(i,j,2) = 0.5 * ( btxy(i+1,j) + btxy(i,j) )
           ftxy(i,j,3) = 0.5 * ( btxy(i,j-1) + btxy(i,j) )
           ftxy(i,j,4) = 0.5 * ( btxy(i,j+1) + btxy(i,j) )
-       END DO
-    END DO
 
-    ! viscosity source terms
-    sterm(:,:,this%DENSITY) = 0.0 
+          ! viscosity source terms
+          sterm(i,j,this%DENSITY) = 0.0 
 
-    ! (a) momentum sources
-    sterm(:,:,this%XMOMENTUM) = Mesh%dydV(:,:) * &
-         ( Mesh%fhy(:,:,2) * ftxx(:,:,2) - Mesh%fhy(:,:,1) * ftxx(:,:,1) &
-         - Mesh%bhz(:,:) * (Mesh%fhy(:,:,2) - Mesh%fhy(:,:,1)) * btyy(:,:) ) &
-         + Mesh%dxdV(:,:) * &
-         ( Mesh%fhx(:,:,4) * ftxy(:,:,4) - Mesh%fhx(:,:,3) * ftxy(:,:,3) &
-         + Mesh%bhz(:,:) * (Mesh%fhx(:,:,4) - Mesh%fhx(:,:,3)) * btxy(:,:) )
+          ! (a) momentum sources
+          sterm(i,j,this%XMOMENTUM) = Mesh%dydV(i,j) * &
+               ( Mesh%fhy(i,j,2) * ftxx(i,j,2) - Mesh%fhy(i,j,1) * ftxx(i,j,1) &
+               - Mesh%bhz(i,j) * (Mesh%fhy(i,j,2) - Mesh%fhy(i,j,1)) * btyy(i,j) ) &
+               + Mesh%dxdV(i,j) * &
+               ( Mesh%fhx(i,j,4) * ftxy(i,j,4) - Mesh%fhx(i,j,3) * ftxy(i,j,3) &
+               + Mesh%bhz(i,j) * (Mesh%fhx(i,j,4) - Mesh%fhx(i,j,3)) * btxy(i,j) )
 
-    sterm(:,:,this%YMOMENTUM) = Mesh%dydV(:,:) * &
-         ( Mesh%fhy(:,:,2) * ftxy(:,:,2) - Mesh%fhy(:,:,1) * ftxy(:,:,1) &
-         + Mesh%bhz(:,:) * (Mesh%fhy(:,:,2) - Mesh%fhy(:,:,1)) * btxy(:,:) ) &
-         + Mesh%dxdV(:,:) * &
-         ( Mesh%fhx(:,:,4) * ftyy(:,:,4) - Mesh%fhx(:,:,3) * ftyy(:,:,3) &
-         - Mesh%bhz(:,:) * (Mesh%fhx(:,:,4) - Mesh%fhx(:,:,3)) * btxx(:,:) )
+          sterm(i,j,this%YMOMENTUM) = Mesh%dydV(i,j) * &
+               ( Mesh%fhy(i,j,2) * ftxy(i,j,2) - Mesh%fhy(i,j,1) * ftxy(i,j,1) &
+               + Mesh%bhz(i,j) * (Mesh%fhy(i,j,2) - Mesh%fhy(i,j,1)) * btxy(i,j) ) &
+               + Mesh%dxdV(i,j) * &
+               ( Mesh%fhx(i,j,4) * ftyy(i,j,4) - Mesh%fhx(i,j,3) * ftyy(i,j,3) &
+               - Mesh%bhz(i,j) * (Mesh%fhx(i,j,4) - Mesh%fhx(i,j,3)) * btxx(i,j) )
 
-    ! (b) energy sources
-!CDIR UNROLL=4
-    DO j=Mesh%JMIN,Mesh%JMAX
-!CDIR NODEP
-       DO i=Mesh%IMIN,Mesh%IMAX
+          ! (b) energy sources
           sterm(i,j,this%ENERGY) = 0.5 * (&
-                 Mesh%dydV(i,j) * ( Mesh%fhy(i,j,2) * &
+               Mesh%dydV(i,j) * ( Mesh%fhy(i,j,2) * &
                ( (pvar(i+1,j,this%XVELOCITY)+pvar(i,j,this%XVELOCITY)) * ftxx(i,j,2) &
                + (pvar(i+1,j,this%YVELOCITY)+pvar(i,j,this%YVELOCITY)) * ftxy(i,j,2) ) &
                - Mesh%fhy(i,j,1) * &
@@ -611,7 +638,7 @@ CONTAINS
     REAL, INTENT(IN)  :: gamma,density,pressure
     REAL :: cs
     !------------------------------------------------------------------------!
-    cs = SQRT(MAX(TINY(1.0),gamma*pressure/density))
+    cs = SQRT(MAX(2.0*TINY(cs),gamma*pressure/density))
   END FUNCTION GetSoundSpeed_euler2D
 
   
@@ -664,8 +691,8 @@ CONTAINS
     !------------------------------------------------------------------------!
     INTENT(INOUT)     :: this
     !------------------------------------------------------------------------!
-    DEALLOCATE(this%csound,this%structure,this%errormap)
-    CALL ClosePhysics(this)
+    DEALLOCATE(this%csound)
+    CALL ClosePhysics_euler2Dit(this)
   END SUBROUTINE ClosePhysics_euler2D
 
 

@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: roots.f90                                                         #
 !#                                                                           #
-!# Copyright (C) 2006-2008                                                   #
+!# Copyright (C) 2006-2008,2011                                              #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -24,90 +24,34 @@
 !#############################################################################
 
 !----------------------------------------------------------------------------!
-! root finding via Newton iteration and bisection
+! root finding subroutines:
+! 1. Newton's method combined with bisection, for ill-posed problems
+! 2. Regula falsi (default)
 !----------------------------------------------------------------------------!
 MODULE Roots
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   PRIVATE
-  INTEGER, PARAMETER :: MAXIT=100000
+  LOGICAL, PARAMETER :: DEBUG_ROOTS = .FALSE.
+  INTEGER, PARAMETER :: MAX_ITERATIONS = 1000
+  REAL, PARAMETER ::    EPS = 4*EPSILON(EPS)
   !--------------------------------------------------------------------------!
-  PUBLIC :: RtNewtBisec, GetRoot
+  INTERFACE GetRoot
+     MODULE PROCEDURE  GetRoot_regfalsi
+  END INTERFACE
+  !--------------------------------------------------------------------------!
+  PUBLIC :: &
+       GetRoot, &
+       GetRoot_newton, &
+       GetRoot_regfalsi
   !--------------------------------------------------------------------------!
 
 CONTAINS
 
-  FUNCTION RtNewtBisec(funcd,x1,x2,p1,p2,xacc) RESULT(rt)
+  FUNCTION GetRoot_newton(funcd,x1,x2) RESULT(root)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    REAL, INTENT(IN) :: x1,x2,p1,p2,xacc
-    REAL :: rt
-    !------------------------------------------------------------------------!
-    INTERFACE
-       SUBROUTINE funcd(x,p1,p2,fx,dfx)
-         IMPLICIT NONE
-         REAL, INTENT(IN)  :: x,p1,p2
-         REAL, INTENT(OUT) :: fx,dfx
-       END SUBROUTINE funcd
-    END INTERFACE
-    !------------------------------------------------------------------------!
-    REAL    :: fm,dfm,fl,dfl,fr,dfr
-    REAL    :: xm,xl,xr,dx
-    INTEGER :: i
-    !------------------------------------------------------------------------!
-
-    xm = 0.5*(x1+x2)
-    xl = MIN(x1,x2)
-    xr = MAX(x1,x2)
-    CALL funcd(xl,p1,p2,fl,dfl)          
-    CALL funcd(xr,p1,p2,fr,dfr)
-
-    IF ( (fl.GT.0.0 .AND. fr.GT.0.0) .OR. &
-         (fl.LT.0.0 .AND. fr.LT.0.0) ) THEN
-       PRINT *, "ERROR in RtNewtBisec: root must be bracketed between x1 and x2"
-       STOP
-    END IF
- 
-    ! main loop
-    DO i=1,MAXIT
-       ! Newton iteration step
-       CALL funcd(xm,p1,p2,fm,dfm)
-       dx = fm/dfm
-       rt = xm - dx
-       IF (ABS(dx).LT.xacc) EXIT
-       ! check if we are out of bounds
-       IF ((rt.LT.xl).OR.(rt.GT.xr)) THEN
-          ! bisection
-          IF ( ((fm.LT.0.0).AND.(fl.LT.0.0)).OR. &
-               ((fm.GT.0.0).AND.(fl.GT.0.0)) ) THEN
-             xl = xm
-             fl = fm
-          ELSE
-             xr = xm
-             fr = fm
-          END IF
-          IF (ABS(xr-xl).LT.xacc) THEN
-             rt = xm
-             EXIT
-          END IF
-          xm = 0.5*(xl+xr)
-       ELSE
-          xm = rt
-       END IF
-    END DO
-
-    IF (i.EQ.MAXIT) THEN
-       PRINT *, "ERROR in RtNewtBisec: too many iterations, aborting"
-       STOP
-    END IF
-
-  END FUNCTION RtNewtBisec
-
-
-  FUNCTION GetRoot(funcd,x1,x2,xacc) RESULT(root)
-    IMPLICIT NONE
-    !------------------------------------------------------------------------!
-    REAL, INTENT(IN) :: x1,x2,xacc
+    REAL, INTENT(IN) :: x1,x2
     REAL :: root
     !------------------------------------------------------------------------!
     INTERFACE
@@ -129,20 +73,87 @@ CONTAINS
     CALL funcd(xr,fr,dfr)
     ! check if root is within the interval [x1,x2]
     IF (fl*fr.GT.0.0) THEN
-       WRITE (*,*) "GetRoot Error: f(x1)*f(x2) should be < 0, aborting!"
+       WRITE (0,'(A,2(ES13.6,A4),2(ES13.6,A3))') &
+            "ERROR in GetRoot_newton: no root " // ACHAR(10) // &
+            "      f(",xl,")*f(",xr,") = ", fl, " * ",fr, " >0"
+       STOP
+    END IF
+   
+    xm = 0.5*(xl+xr)
+    ! main loop
+    DO i=1,MAX_ITERATIONS
+       ! Newton iteration step
+       CALL funcd(xm,fm,dfm)
+       dx = fm / (dfm+TINY(dx))  ! avoid division by 0
+       root = xm - dx
+       IF (ABS(fm).LE.EPS) EXIT
+       ! check if we are out of bounds
+       IF ((root.LT.xl).OR.(root.GT.xr)) THEN
+          ! bisection
+          IF ( fl*fm.GT.0.0 ) THEN
+             xl = xm
+             fl = fm
+          ELSE
+             xr = xm
+             fr = fm
+          END IF
+          IF (ABS(xr-xl).LT.EPS) THEN
+             root = xm
+             EXIT
+          END IF
+          xm = 0.5*(xl+xr)
+       ELSE
+          xm = root
+       END IF
+    END DO
+    IF (DEBUG_ROOTS) &
+         PRINT '(A,I10,4(ES14.6))',"NEWTON:  ",i,xl,xr,xm,fm
+    ! check convergence
+    IF (i.GE.MAX_ITERATIONS) &
+       PRINT *,"WARNING in GetRoot_newton: no convergence, final dx ", dx
+
+  END FUNCTION GetRoot_newton
+
+
+  FUNCTION GetRoot_regfalsi(func,x1,x2) RESULT(root)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    REAL, INTENT(IN) :: x1,x2
+    REAL :: root
+    !------------------------------------------------------------------------!
+    INTERFACE
+       SUBROUTINE func(x,fx)
+         IMPLICIT NONE
+         REAL, INTENT(IN)  :: x
+         REAL, INTENT(OUT) :: fx
+       END SUBROUTINE func
+    END INTERFACE
+    !------------------------------------------------------------------------!
+    REAL    :: fm,fl,fr
+    REAL    :: xm,xl,xr,dx
+    INTEGER :: i
+    !------------------------------------------------------------------------!
+    ! compute left and right function values
+    xl = MIN(x1,x2)
+    xr = MAX(x1,x2)
+    CALL func(xl,fl)
+    CALL func(xr,fr)
+    ! check if root is within the interval [x1,x2]
+    IF (fl*fr.GT.0.0) THEN
+       WRITE (0,'(A,2(ES13.6,A4),2(ES13.6,A3))') &
+            "ERROR in GetRoot_regfalsi: no root " // ACHAR(10) // &
+            "      f(",xl,")*f(",xr,") = ", fl, " * ",fr, " >0"
        STOP
     END IF
     ! main loop
-    DO i=1,MAXIT
+    DO i=1,MAX_ITERATIONS
        ! regula falsi
-       dx = fl*(xl-xr)/(fl-fr)
+       dx = (xl-xr)*fl/(fl - fr + TINY(fl))  ! avoid division by 0
        xm = xl - dx
        root = xm
-       CALL funcd(xm,fm,dfm)
+       CALL func(xm,fm)
        ! check abort criteron
-       IF (ABS(fm).LT.xacc) THEN
-          EXIT
-       END IF
+       IF (ABS(fm).LE.EPS) EXIT
        IF (fm*fl.GT.0.0) THEN
           xl=xm
           fl=fm
@@ -151,9 +162,11 @@ CONTAINS
           fr=fm
        END IF
     END DO
-    IF (i.GT.MAXIT) THEN
-       WRITE (*,*) "WARNING: limit of iterations exceeded!"
-    END IF
-  END FUNCTION GetRoot
+    IF (DEBUG_ROOTS) &
+         PRINT '(A,I10,4(ES14.6))',"REGFAL:  ",i,xl,xr,xm,fm
+    ! check convergence
+    IF (i.GE.MAX_ITERATIONS) &
+       PRINT *,"WARNING in GetRoot_regfalsi: no convergence, final dx ", dx
+  END FUNCTION GetRoot_regfalsi
 
 END MODULE Roots

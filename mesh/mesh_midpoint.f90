@@ -39,11 +39,15 @@ MODULE mesh_midpoint
   PUBLIC :: &
        ! types
        Mesh_TYP, &
+       Selection_TYP, &
+       ! constants
+       PI, &
 #ifdef PARALLEL
        DEFAULT_MPI_REAL, &
 #endif
        ! methods
        InitMesh, &
+       CloseMesh, &
        InitMesh_midpoint, &
        GetType, &
        GetName, &
@@ -150,7 +154,6 @@ CONTAINS
     !------------------------------------------------------------------------!
     TYPE(Mesh_TYP)    :: this
     !------------------------------------------------------------------------!
-
     DEALLOCATE(this%dAx,this%dAy,this%dAydx,this%dAxdy, &
          this%cyxy,this%cxyx,this%czxz,this%czyz)
     ! call basic mesh deconstructor

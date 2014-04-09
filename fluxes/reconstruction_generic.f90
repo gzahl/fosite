@@ -27,7 +27,8 @@
 ! generic module for reconstruction process
 !----------------------------------------------------------------------------!
 MODULE reconstruction_generic
-  USE reconstruction_constant, InitReconstruction_common => InitReconstruction
+  USE reconstruction_constant, InitReconstruction_common => InitReconstruction, &
+       CloseReconstruction_common => CloseReconstruction
   USE reconstruction_linear
   USE mesh_common, ONLY : Mesh_TYP, Initialized
   USE physics_common, ONLY : Physics_TYP, Initialized
@@ -46,10 +47,10 @@ MODULE reconstruction_generic
        MINMOD, MONOCENT, SWEBY, SUPERBEE, OSPRE, PP, &
        ! methods
        InitReconstruction, &
+       CloseReconstruction, &
        MallocReconstruction, &
        CalculateSlopes, &
        CalculateStates, &
-       CloseReconstruction, &
        PrimRecon, &
        GetType, &
        GetName, &
@@ -200,6 +201,8 @@ CONTAINS
     !------------------------------------------------------------------------!
     INTENT(INOUT)            :: this
     !------------------------------------------------------------------------!
+    IF (.NOT.Initialized(this)) &
+         CALL Error(this,"CloseReconstruction","not initialized")
     SELECT CASE(GetType(this))
     CASE(CONSTANT)
        ! do nothing
@@ -208,6 +211,7 @@ CONTAINS
     CASE DEFAULT
        CALL Error(this, "CloseReconstruction",  "Unknown reconstruction type.")
     END SELECT
+    CALL CloseReconstruction_common(this)
   END SUBROUTINE CloseReconstruction
 
 END MODULE Reconstruction_generic

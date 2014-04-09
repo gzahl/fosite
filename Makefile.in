@@ -20,7 +20,7 @@ OBJECTS=$(SOURCES:.f90=.o)
 
 # some directories
 BASEDIR=$(shell pwd)
-SUBDIRS=numtools common physics boundary fluxes mesh sources timedisc io
+SUBDIRS=numtools common physics boundary fluxes mesh sources io timedisc
 INCDIRS=$(foreach dir,$(SUBDIRS),-I$(BASEDIR)/$(dir))
 LIBDIRS=$(foreach dir,$(SUBDIRS),-L$(BASEDIR)/$(dir))
 ALLSRCS=$(SOURCES) $(foreach dir,$(SUBDIRS), $(wildcard $(dir)/*.f90))
@@ -79,7 +79,7 @@ boundary : common physics
 fluxes : common physics
 mesh : common fluxes
 sources : common physics boundary fluxes mesh
-timedisc : common physics boundary fluxes mesh sources
+timedisc : common physics boundary fluxes mesh sources io
 io: common physics fluxes mesh
 
 init.o : subdirs

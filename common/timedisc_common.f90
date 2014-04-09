@@ -67,27 +67,30 @@ MODULE timedisc_common
      REAL             :: order                         ! time order          !
      REAL             :: cfl                           ! Courant number      !
      REAL             :: dt                            ! actual time step    !
+     REAL             :: dtold                         ! last time step      !
      REAL             :: dtmin                         ! min dt of act. calc !
      REAL             :: time                          ! actual time         !
      REAL             :: stoptime                      ! end of simulation   !
      REAL             :: dtlimit                       ! lower limit for dt  !
+     REAL             :: tol_rel                       ! rel. error tolerance!
      INTEGER          :: maxiter                       ! maximal iterations  !
      INTEGER          :: n_adj                         ! num. of adjustments !
+     REAL, DIMENSION(:), POINTER     :: tol_abs        ! abs. error tolerance!
      REAL, DIMENSION(:,:,:), POINTER :: pvar, cvar     ! prim/cons vars      !
      REAL, DIMENSION(:,:,:), POINTER :: pold, cold     ! old prim/cons vars  !
-     REAL, DIMENSION(:,:,:), POINTER :: pnew, cnew     ! new prim/cons vars  !
+     REAL, DIMENSION(:,:,:), POINTER :: ptmp,ctmp      ! temporary cvars     !
      REAL, DIMENSION(:,:,:), POINTER :: src,geo_src    ! source terms        !
+     REAL, DIMENSION(:,:,:), POINTER :: rhs,bxrhs,byrhs! ODE right hand side !
      REAL, DIMENSION(:,:,:), POINTER :: xflux, yflux   ! num. flux func.     !
-     REAL, DIMENSION(:,:,:), POINTER :: dxflux,dyflux  ! flux differences    !
      REAL, DIMENSION(:,:,:), POINTER :: amax           ! max. wave speeds    !
   END TYPE Timedisc_TYP
-  SAVE
   !--------------------------------------------------------------------------!
   PUBLIC :: &
        ! types
        Timedisc_TYP, &
        ! methods
        InitTimedisc, &
+       CloseTimedisc, &
        GetType, &
        GetName, &
        GetOrder, &
@@ -123,10 +126,20 @@ CONTAINS
     this%maxiter  = maxiter
 
     this%dt       = this%stoptime
+    this%dtold    = this%dt
     this%dtmin    = this%dt
     this%time     = 0.0
     this%n_adj    = 0
   END SUBROUTINE InitTimedisc
+
+
+  SUBROUTINE CloseTimedisc(this)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Timedisc_TYP), INTENT(INOUT) :: this
+    !------------------------------------------------------------------------!
+    CALL CloseCommon(this%odesolver)
+  END SUBROUTINE CloseTimedisc
 
 
   PURE FUNCTION GetODESolver(this) RESULT(os)

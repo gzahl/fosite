@@ -168,7 +168,7 @@ CONTAINS
     CALL InitTimedisc(Timedisc,Mesh,Physics,&
          method   = MODIFIED_EULER, &
          order    = 3, &
-         cfl      = 0.4, &
+         cfl      = 0.3, &
          stoptime = TSIM, &
          dtlimit  = 1.0E-10, &
          maxiter  = 100000)

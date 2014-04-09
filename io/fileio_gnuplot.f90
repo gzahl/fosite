@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: fileio_gnuplot.f90                                                #
 !#                                                                           #
-!# Copyright (C) 2008-2010                                                   #
+!# Copyright (C) 2008-2011                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -50,16 +50,16 @@ MODULE fileio_gnuplot
   !--------------------------------------------------------------------------!
   ! some string lengths
   INTEGER, PARAMETER   :: HLEN = 25            ! header                      !
-  INTEGER, PARAMETER   :: FLEN = 12            ! one data field              !
+  INTEGER, PARAMETER   :: FLEN = 14            ! one data field              !
   ! some special strings
   CHARACTER, PARAMETER :: LF = ACHAR(10)       ! line feed                   !
   CHARACTER, PARAMETER :: SP = ACHAR(32)       ! space                       !
-  CHARACTER*2, PARAMETER :: RECSEP = SP // SP  ! data record seperator       !
-  CHARACTER*2, PARAMETER :: LINSEP = SP // LF  ! line seperator              !
-  CHARACTER*2, PARAMETER :: BLKSEP = LF // LF  ! block seperator             !
+  CHARACTER*2, PARAMETER :: RECSEP = SP // SP  ! data record separator       !
+  CHARACTER*2, PARAMETER :: LINSEP = SP // LF  ! line separator              !
+  CHARACTER*2, PARAMETER :: BLKSEP = LF // LF  ! block separator             !
   CHARACTER(LEN=HLEN), PARAMETER :: &          ! the header string           !
        header_string = "# Data output of fosite" // LF // LF
- !--------------------------------------------------------------------------!
+  !--------------------------------------------------------------------------!
   PUBLIC :: &
        ! types
        FileIO_TYP, &
@@ -73,6 +73,7 @@ MODULE fileio_gnuplot
        ! methods
        InitFileIO, &
        InitFileIO_gnuplot, &
+       CloseFileIO, &
        CloseFileIO_gnuplot, &
        WriteHeader_gnuplot, &
        ReadHeader_gnuplot, &
@@ -469,7 +470,7 @@ CONTAINS
     WRITE (this%unit,FMT='(A)',ADVANCE='NO') LF
 #endif
     ! trim the data for gnuplot output
-    WHERE (ABS(Timedisc%pvar(:,:,:)).LT.(MAX(TINY(1.0),1.0D-99)))
+    WHERE (ABS(Timedisc%pvar(:,:,:)).LT.(MAX(TINY(Timedisc%pvar),1.0D-99)))
        Timedisc%pvar(:,:,:) = 0.0E+00
     END WHERE
     DO i=Mesh%IMIN,Mesh%IMAX

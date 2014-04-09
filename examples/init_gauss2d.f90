@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: init_gauss2d.f90                                                  #
 !#                                                                           #
-!# Copyright (C) 2006-2010                                                   #
+!# Copyright (C) 2006-2011                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -199,7 +199,8 @@ CONTAINS
          order    = 3, &
          cfl      = 0.4, &
          stoptime = TSIM, &
-         dtlimit  = 1.0E-4, &
+         tol_rel  = 0.01, &
+         dtlimit  = 1.0E-5, &
          maxiter  = 1000000)
 
     ! set initial condition

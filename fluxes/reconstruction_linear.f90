@@ -143,7 +143,7 @@ CONTAINS
        ! calculate slopes in x-direction
        IF (Mesh%INUM.GT.1) THEN
           DO k=1,Physics%VNUM
-!CDIR UNROLL=4
+!CDIR UNROLL=8
              DO j=Mesh%JGMIN,Mesh%JGMAX
 !CDIR NODEP
                 DO i=Mesh%IGMIN+1,Mesh%IGMAX-1
@@ -156,9 +156,8 @@ CONTAINS
        ! calculate slopes in y-direction
        IF (Mesh%JNUM.GT.1) THEN
           DO k=1,Physics%VNUM
-!CDIR UNROLL=4
+!CDIR COLLAPSE
              DO j=Mesh%JGMIN+1,Mesh%JGMAX-1
-!CDIR NODEP
                 DO i=Mesh%IGMIN,Mesh%IGMAX
                    this%yslopes(i,j,k) = Mesh%invdy * minmod2_limiter(&
                       rvar(i,j,k) - rvar(i,j-1,k), rvar(i,j+1,k) - rvar(i,j,k))
@@ -170,7 +169,7 @@ CONTAINS
        ! calculate slopes in x-direction
        IF (Mesh%INUM.GT.1) THEN
           DO k=1,Physics%VNUM
-!CDIR UNROLL=4
+!CDIR UNROLL=8
              DO j=Mesh%JGMIN,Mesh%JGMAX
 !CDIR NODEP
                 DO i=Mesh%IGMIN+1,Mesh%IGMAX-1
@@ -185,9 +184,8 @@ CONTAINS
        ! calculate slopes in y-direction
        IF (Mesh%JNUM.GT.1) THEN
           DO k=1,Physics%VNUM
-!CDIR UNROLL=4
+!CDIR COLLAPSE
              DO j=Mesh%JGMIN+1,Mesh%JGMAX-1
-!CDIR NODEP
                 DO i=Mesh%IGMIN,Mesh%IGMAX
                    this%yslopes(i,j,k) = Mesh%invdy * minmod3_limiter(&
                       this%limiter_param*(rvar(i,j,k)- rvar(i,j-1,k)),&
@@ -201,7 +199,7 @@ CONTAINS
        ! calculate slopes in x-direction
        IF (Mesh%INUM.GT.1) THEN
           DO k=1,Physics%VNUM
-!CDIR UNROLL=4
+!CDIR UNROLL=8
              DO j=Mesh%JGMIN,Mesh%JGMAX
 !CDIR NODEP
                 DO i=Mesh%IGMIN+1,Mesh%IGMAX-1
@@ -215,9 +213,8 @@ CONTAINS
        ! calculate slopes in y-direction
        IF (Mesh%JNUM.GT.1) THEN
           DO k=1,Physics%VNUM
-!CDIR UNROLL=4
+!CDIR COLLAPSE
              DO j=Mesh%JGMIN+1,Mesh%JGMAX-1
-!CDIR NODEP
                 DO i=Mesh%IGMIN,Mesh%IGMAX
                    this%yslopes(i,j,k) = Mesh%invdy * sweby_limiter(&
                       rvar(i,j,k) - rvar(i,j-1,k), rvar(i,j+1,k) - rvar(i,j,k),&
@@ -230,7 +227,7 @@ CONTAINS
        ! calculate slopes in x-direction
        IF (Mesh%INUM.GT.1) THEN
           DO k=1,Physics%VNUM
-!CDIR UNROLL=4
+!CDIR UNROLL=8
              DO j=Mesh%JGMIN,Mesh%JGMAX
 !CDIR NODEP
                 DO i=Mesh%IGMIN+1,Mesh%IGMAX-1
@@ -243,9 +240,8 @@ CONTAINS
        ! calculate slopes in y-direction
        IF (Mesh%JNUM.GT.1) THEN
           DO k=1,Physics%VNUM
-!CDIR UNROLL=4
+!CDIR COLLAPSE
              DO j=Mesh%JGMIN+1,Mesh%JGMAX-1
-!CDIR NODEP
                 DO i=Mesh%IGMIN,Mesh%IGMAX
                    this%yslopes(i,j,k) = Mesh%invdy * sweby_limiter(&
                       rvar(i,j,k) - rvar(i,j-1,k), rvar(i,j+1,k) - rvar(i,j,k), 2.0)
@@ -257,9 +253,9 @@ CONTAINS
        ! calculate slopes in x-direction
        IF (Mesh%INUM.GT.1) THEN
           DO k=1,Physics%VNUM
-!CDIR UNROLL=4
+!CDIR UNROLL=8
              DO j=Mesh%JGMIN,Mesh%JGMAX
-!CDIR NODEP
+!CDIR COLLAPSE
                 DO i=Mesh%IGMIN+1,Mesh%IGMAX-1
                    this%xslopes(i,j,k) = Mesh%invdx * ospre_limiter(&
                       rvar(i,j,k) - rvar(i-1,j,k), rvar(i+1,j,k) - rvar(i,j,k))
@@ -270,9 +266,8 @@ CONTAINS
        ! calculate slopes in y-direction
        IF (Mesh%JNUM.GT.1) THEN
           DO k=1,Physics%VNUM
-!CDIR UNROLL=4
+!CDIR COLLAPSE
              DO j=Mesh%JGMIN+1,Mesh%JGMAX-1
-!CDIR NODEP
                 DO i=Mesh%IGMIN,Mesh%IGMAX
                    this%yslopes(i,j,k) = Mesh%invdy * ospre_limiter(&
                       rvar(i,j,k) - rvar(i,j-1,k), rvar(i,j+1,k) - rvar(i,j,k))
@@ -281,9 +276,9 @@ CONTAINS
           END DO
        END IF
        CASE(PP)
-       ! calculate slopes in both-directions
+          ! calculate slopes in both-directions
           DO k=1,Physics%VNUM
-!CDIR UNROLL=4
+!CDIR UNROLL=8
              DO j=Mesh%JGMIN+1,Mesh%JGMAX-1
 !CDIR NODEP
                 DO i=Mesh%IGMIN+1,Mesh%IGMAX-1

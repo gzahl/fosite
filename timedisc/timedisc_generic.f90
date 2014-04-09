@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: timedisc_generic.f90                                              #
 !#                                                                           #
-!# Copyright (C) 2007-2010                                                   #
+!# Copyright (C) 2007-2011                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !# Björn Sperling   <sperling@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
@@ -28,13 +28,14 @@
 ! generic subroutines for time discretization
 !----------------------------------------------------------------------------!
 MODULE timedisc_generic
-  USE timedisc_modeuler
+  USE timedisc_modeuler, CloseTimedisc_common => CloseTimedisc
   USE boundary_generic
   USE mesh_generic
   USE physics_common, ONLY : GetErrorMap
   USE physics_generic
   USE fluxes_generic
   USE sources_generic, CalcTimestep_sources => CalcTimestep
+  USE fileio_generic
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   PRIVATE
@@ -65,62 +66,97 @@ MODULE timedisc_generic
 
 CONTAINS
 
-  SUBROUTINE InitTimedisc(this,Mesh,Physics,method,order,stoptime,cfl,dtlimit,maxiter)
+  SUBROUTINE InitTimedisc(this,Mesh,Physics,method,order,stoptime,cfl,dtlimit, &
+       maxiter,tol_rel,tol_abs,dumpfile)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Timedisc_TYP) :: this
     TYPE(Mesh_TYP)     :: Mesh
     TYPE(Physics_TYP)  :: Physics
     INTEGER            :: method
-    INTEGER            :: order,maxiter
+    INTEGER            :: order
     REAL               :: stoptime
-    REAL, OPTIONAL     :: cfl,dtlimit
+    REAL, OPTIONAL     :: cfl,dtlimit,tol_rel,tol_abs(Physics%VNUM)
+    INTEGER, OPTIONAL  :: maxiter
+    TYPE(Fileio_TYP), OPTIONAL :: Dumpfile
     !------------------------------------------------------------------------!
     INTEGER            :: err
-    CHARACTER(LEN=8)   :: order_str, cfl_str
-    REAL               :: cfl_def,dtlimit_def
+    CHARACTER(LEN=8)   :: order_str,cfl_str
+    CHARACTER(LEN=32)  :: info_str 
+    REAL               :: cfl_def,dtlimit_def,tol_rel_def,tol_abs_def(Physics%VNUM)
+    INTEGER            :: maxiter_def
     !------------------------------------------------------------------------!
-    INTENT(IN)         :: Mesh,Physics,method,order,stoptime,cfl,dtlimit,maxiter
+    INTENT(IN)         :: Mesh,Physics,method,order,stoptime,cfl,dtlimit, &
+                          tol_rel,tol_abs,maxiter,Dumpfile
     INTENT(INOUT)      :: this
     !------------------------------------------------------------------------!
     IF (.NOT.Initialized(Physics).OR..NOT.Initialized(Mesh)) &
          CALL Error(this,"InitTimedisc","physics and/or mesh module uninitialized")
     ! set default values
+    ! CFL number
     IF (PRESENT(cfl)) THEN
        cfl_def = cfl
     ELSE
        cfl_def = 0.4
     END IF
+    ! time step minimum
     IF (PRESENT(dtlimit)) THEN
        dtlimit_def = dtlimit
     ELSE
-       dtlimit_def = 1.0E-16 * stoptime
+       dtlimit_def = EPSILON(dtlimit_def) * stoptime
+    END IF
+    ! maximum iterations
+    IF (PRESENT(maxiter)) THEN
+       maxiter_def = maxiter
+    ELSE
+       maxiter_def = HUGE(maxiter)
+    END IF
+    ! relative tolerance for adaptive step size control
+    IF (PRESENT(tol_rel)) THEN
+       tol_rel_def = tol_rel
+    ELSE
+       tol_rel_def = 0.01  ! 1%
+    END IF
+    ! absolute tolerance for adaptive step size control
+    IF (PRESENT(tol_abs)) THEN
+       tol_abs_def(:) = tol_abs(:)
+    ELSE
+       tol_abs_def(:) = 0.001
+    END IF
+
+    ! allocate memory for data structures needed in all timedisc modules
+    ALLOCATE(this%pvar(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%VNUM), &
+         this%cvar(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%VNUM), &
+         this%pold(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%VNUM), &
+         this%cold(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%VNUM), &
+         this%ptmp(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%VNUM), &
+         this%ctmp(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%VNUM), &
+         this%geo_src(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%VNUM), &
+         this%src(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%VNUM), &
+         this%rhs(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%VNUM), &
+         this%bxrhs(Mesh%IGMIN:Mesh%IGMAX,2,Physics%VNUM), &
+         this%byrhs(Mesh%JGMIN:Mesh%JGMAX,2,Physics%VNUM), &
+         this%xflux(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%VNUM), &
+         this%yflux(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%VNUM), &
+         this%amax(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,2), &
+         this%tol_abs(Physics%VNUM), &
+         STAT = err)
+    IF (err.NE.0) THEN
+       CALL Error(this,"InitTimedisc", "Unable to allocate memory.")
     END IF
 
     ! call individual constructors
     SELECT CASE(method)
     CASE(MODIFIED_EULER)
        CALL InitTimedisc_modeuler(this,method,order,stoptime,cfl_def,&
-            dtlimit_def,maxiter)
+            dtlimit_def,maxiter,tol_rel_def,tol_abs_def)
     CASE DEFAULT
        CALL Error(this,"InitTimedisc", "Unknown ODE solver.")
     END SELECT
 
-    ! allocate memory for data structures needed in all timedisc modules
-    ALLOCATE(this%pvar(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum), &
-         this%cvar(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum), &
-         this%pold(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum), &
-         this%cold(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum), &
-         this%geo_src(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum), &
-         this%src(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum), &
-         this%xflux(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum), &
-         this%yflux(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum), &
-         this%dxflux(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum), &
-         this%dyflux(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum), &
-         this%amax(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,2), &
-         STAT = err)
-    IF (err.NE.0) THEN
-       CALL Error(this,"InitTimedisc", "Unable to allocate memory.")
+    ! check dumpfile
+    IF (PRESENT(dumpfile).AND..NOT.Initialized(Dumpfile)) THEN
+       CALL Warning(this,"InitTimedisc","dump file uninitialized, dumping disabled")
     END IF
 
     ! initialize all arrays
@@ -128,8 +164,10 @@ CONTAINS
     this%cvar = 0.
     this%pold = 0.
     this%cold = 0.
+    this%ctmp = 0.
     this%src = 0.
     this%geo_src = 0.
+    this%rhs = 0.
     this%xflux = 0.
     this%yflux = 0.
     this%amax = 0.
@@ -137,9 +175,17 @@ CONTAINS
     ! print some information
     WRITE (order_str, '(I0)') GetOrder(this)
     WRITE (cfl_str, '(F4.2)') GetCFL(this)
-    CALL Info(this," TIMEDISC-> ODE solver:        " // TRIM(GetName(this)) // ACHAR(10) //&
-                   "            order:             " // TRIM(order_str) // ACHAR(10) // &
-                   "            CFL number:        " // TRIM(cfl_str))
+    CALL Info(this," TIMEDISC-> ODE solver:        " //TRIM(GetName(this))//ACHAR(10)//&
+                   "            order:             " //TRIM(order_str)//ACHAR(10)// &
+                   "            CFL number:        " //TRIM(cfl_str))
+    ! adaptive step size control
+    IF (this%tol_rel.LT.1.0) THEN
+       WRITE (info_str,'(ES7.1)') this%tol_rel*100
+       CALL Info(this,"            step size control: enabled"//ACHAR(10)// &
+                      "            rel. precision:    "//TRIM(info_str)//" %")
+    ELSE
+       WRITE (info_str,'(A)') "disabled"       
+    END IF
   END SUBROUTINE InitTimedisc
 
 
@@ -157,12 +203,6 @@ CONTAINS
     INTENT(IN)         :: Mesh
     INTENT(INOUT)      :: this,Physics
     !------------------------------------------------------------------------!   
-    ! store old values
-    this%cold(:,:,:) = this%cvar(:,:,:)
-    this%pold(:,:,:) = this%pvar(:,:,:)
-    Fluxes%bxfold(:,:,:) = Fluxes%bxflux(:,:,:)
-    Fluxes%byfold(:,:,:) = Fluxes%byflux(:,:,:)
-
     ! CFL condition:
     ! maximal wave speeds in each direction
     CALL MaxWaveSpeeds(Physics,Mesh,this%pvar,this%amax)
@@ -183,11 +223,15 @@ CONTAINS
   
     ! largest time step due to CFL condition
     dt_cfl = this%cfl / MAX(invdt_x, invdt_y)
+!!$PRINT '(ES14.6,A,ES14.6)', this%time," dt_cfl =",dt_cfl
     
     ! initialize this to be sure dt_src > 0
     dt_src = dt_cfl
-    CALL CalcTimestep_sources(Physics%sources,Mesh,Physics,this%pvar,this%cvar,dt_src)
+    CALL CalcTimestep_sources(Physics%sources,Mesh,Physics,this%time, &
+         this%pvar,this%cvar,dt_src)
     this%dt = MIN(dt_cfl,dt_src)
+!!$PRINT '(ES14.6,A,ES14.6)', this%time," dt_all =",this%dt
+!!$PRINT *,"---------------------------------------------------"
   END SUBROUTINE CalcTimestep
 
 
@@ -209,58 +253,78 @@ CONTAINS
     TYPE(Physics_TYP)  :: Physics
     TYPE(Fluxes_TYP)   :: Fluxes
     !------------------------------------------------------------------------!
-    INTEGER            :: bad_data
+    INTEGER            :: i,j
 #ifdef PARALLEL
-    INTEGER            :: bad_data_all
     INTEGER            :: ierror
+    REAL               :: err_all,dt_all
 #endif
+    REAL               :: err,dtold,dt,time
     !------------------------------------------------------------------------!
     INTENT(IN)         :: Mesh
     INTENT(INOUT)      :: this,Physics,Fluxes
     !------------------------------------------------------------------------!
-
-    DO
+    time = this%time
+    dt   = this%dt
+    this%dtmin= MIN(this%dtmin,dt)
+    DO WHILE (time+dt.LE.this%time+this%dt)
+       dtold = dt
        SELECT CASE(GetType(this))
        CASE(MODIFIED_EULER)
-          CALL SolveODE_modeuler(this,Mesh,Physics,Fluxes)
+          CALL SolveODE_modeuler(this,Mesh,Physics,Fluxes,time,dt,err)
        END SELECT
-
-       ! check data
-       bad_data = CheckData(Physics,Mesh,this%pvar,this%pold)
-       IF (bad_data.NE.0) THEN
-          IF ((this%dt * 0.5).LT.this%dtlimit) THEN
-             CALL Print_Checkdata(this,Mesh,Physics)
-             CALL Error(this,"SolveODE", "Time step to small, aborting.",GetRank(this))
-          END IF
-       END IF
 #ifdef PARALLEL
-       CALL MPI_Allreduce(bad_data,bad_data_all,1,MPI_LOGICAL,MPI_LOR,Mesh%comm_cart,ierror)
-       bad_data = bad_data_all
+       CALL MPI_Allreduce(err,err_all,1,DEFAULT_MPI_REAL,MPI_MAX,&
+            Mesh%comm_cart,ierror)
+       err = err_all
+       CALL MPI_Allreduce(dt,dt_all,1,DEFAULT_MPI_REAL,MPI_MIN,&
+            Mesh%comm_cart,ierror)
+       dt = dt_all
 #endif
-
-       ! adjust time step if necessary
-       IF (bad_data.NE.0) THEN
-          ! adjust time step
-          this%dt = this%dt * 0.5
-          ! abort if time step is to small
-          ! count adjustments for information
-          this%n_adj = this%n_adj + 1
-          ! set data to old values
+       ! check truncation error and restart if necessary
+       IF (err.LT.1.0) THEN
+          time=time+dtold
+          this%cold(:,:,:) = this%cvar(:,:,:)
+          this%pold(:,:,:) = this%pvar(:,:,:)
+          Fluxes%bxfold(:,:,:) = Fluxes%bxflux(:,:,:)
+          Fluxes%byfold(:,:,:) = Fluxes%byflux(:,:,:)
+!!$          PRINT '(A,4(A,ES12.6))'," Horray!"," t=",time," err=",err,&
+!!$               " dtold=",dtold," dt=",dt
+       ELSE
           this%cvar(:,:,:) = this%cold(:,:,:)
-          this%pvar(:,:,:) = this%pold(:,:,:)
+          this%pvar(:,:,:) = this%pold(:,:,:)          
           Fluxes%bxflux(:,:,:) = Fluxes%bxfold(:,:,:)
           Fluxes%byflux(:,:,:) = Fluxes%byfold(:,:,:)
-       ELSE
-          ! just for information
-          this%dtmin = MIN(this%dt,this%dtmin)
-          this%time  = this%time + this%dt
-          RETURN
+          ! count adjustments for information
+          this%n_adj = this%n_adj + 1
+          IF (dt.LT.this%dtmin) this%dtmin = dt
+!!$          PRINT '(A,4(A,ES12.6))'," Argggh!"," t=",time," err=",err,&
+!!$               " dtold=",dtold," dt=",dt
        END IF
-    END DO
+       IF (dt.LT.this%dtlimit) THEN
+          CALL Print_Checkdata(this,Mesh,Physics)
+          CALL Error(this,"SolveODE", "Time step to small, aborting.",&
+               GetRank(this))
+       END IF
+!!$       ! check data
+!!$       bad_data = CheckData(Physics,Mesh,this%pvar,this%pold)
+!!$       IF (bad_data.NE.0) THEN
+!!$          IF ((this%dt * 0.5).LT.this%dtlimit) THEN
+!!$             CALL Print_Checkdata(this,Mesh,Physics)
+!!$             CALL Error(this,"SolveODE", "Time step to small, aborting.",GetRank(this))
+!!$          END IF
+!!$       END IF
+!!$#ifdef PARALLEL
+!!$       CALL MPI_Allreduce(bad_data,bad_data_all,1,MPI_LOGICAL,MPI_LOR,Mesh%comm_cart,ierror)
+!!$       bad_data = bad_data_all
+!!$#endif
+!!$
+       END DO
+       this%time  = time
+       this%dtold = dt
   END SUBROUTINE SolveODE
 
- SUBROUTINE Print_Checkdata(this,Mesh,Physics)
-   IMPLICIT NONE
+  SUBROUTINE Print_Checkdata(this,Mesh,Physics)
+    IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Timedisc_TYP) :: this
     TYPE(Mesh_TYP)     :: Mesh
@@ -347,6 +411,8 @@ CONTAINS
     !------------------------------------------------------------------------!
     TYPE(Timedisc_TYP)   :: this
     !------------------------------------------------------------------------!
+    IF (.NOT.Initialized(this)) &
+        CALL Error(this,"CloseTimedisc","not initialized")
     ! call boundary destructors
     CALL CloseBoundary(this%Boundary,WEST)
     CALL CloseBoundary(this%Boundary,EAST)
@@ -359,9 +425,10 @@ CONTAINS
        CALL CloseTimedisc_modeuler(this)
     END SELECT
 
-    DEALLOCATE(this%pvar,this%cvar,this%pold,this%cold, &
-         this%geo_src,this%src,this%xflux,this%yflux,this%dxflux,this%dyflux, &
-         this%amax)
+    DEALLOCATE(this%pvar,this%cvar,this%pold,this%cold,this%ptmp,this%ctmp, &
+         this%geo_src,this%src,this%rhs,this%bxrhs,this%byrhs,&
+         this%xflux,this%yflux,this%amax,this%tol_abs)
+    CALL CloseTimedisc_common(this)
   END SUBROUTINE CloseTimedisc
 
 END MODULE timedisc_generic
