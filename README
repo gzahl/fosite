@@ -1,0 +1,120 @@
+fosite - 2D hydrodynamical simulation program
+--------------------------------------------
+
+
+1. INTRODUCTION
+
+Fosite is a 2D hydrodynamical simulation code written in FORTRAN 90/95. It
+is based on a numerical scheme for the solution of nonlinear hyperbolic
+conservation laws first introduced by Kurganov and Tadmor (Refs.:
+J. of Comp. Phys., vol. 160, pp. 241, 2000; Num. Meth. for PDEs,
+vol. 18, pp. 561, 2002). This method has been extended from Cartesian
+to general orthogonal grids (Ref.: T. Illenseer, PhD Thesis (German),
+University of Heidelberg, 2006). This version is a reimplementation of the
+adv2D program available at
+
+   http://archiv.ub.uni-heidelberg.de/volltextserver/volltexte/2007/7046/zip/adv2D.zip
+
+I wrote for my PhD thesis. It utilzes the object-oriented (OO) design patterns
+described by Decyk and Gardner (Ref.: submitted to Comp. in Sci. & Eng.,
+2006). Hence fosite incorporates the flexibility of OO-programming into
+Fortran 90/95 and preserves efficiency of the numerical computation.
+
+Although the core program is capable of dealing with almost any 2D advection
+problems the code shipped with this README solves only pure hydrodynamical
+problems without viscous processes. So far the physics module can deal with
+2D problems and 2.5D problems with angular momentum transport. The ideal gas 
+equation of state with constant ratio of specific heat capacities is
+implemented for both 2D and 2.5D simulations. Various curvilinear grids are
+supported including polar, cylindrical and spherical geometries. The data file
+for the output can either be simple in columns with a block structure or in
+OpenDX format (see http://www.opendx.org).
+
+
+2. COMPILING
+
+Although all source files have the extension .f90 the code uses some
+FORTRAN 95 extensions and therefore only compiles with a FORTRAN 95
+compiler.
+To customize the build process enter the directory with the source code
+and open the Makefile. Check the variables FC and FFLAGS. FC should point
+to your FORTRAN 95 compiler and FFLAGS should contain some appropriate
+command line arguments for the compile command. Then just type 
+
+   make
+
+at the command line. At the end of the build process there should be
+a new executable file named fosite in the directory. Type
+
+   ./fosite
+
+to start the calculation.
+The code has been verified to compile with the Intel(R) Fortran Compiler
+(vers. 8.x and 9.x (default)), GNU fortran compiler (vers. 4.1.0) and
+g95 (vers. 4.0.3) on various Linux boxes. If the program aborts immediately
+after initialization with a segmentation fault, try to increase the stack size
+(ulimit -s unlimited).
+
+
+3. SIMPLE CUSTOMIZATION
+
+Maybe the best way to learn how to customize the code is to take a look
+at the example setups in the examples subdirectory. To use one of them
+copy it into the base directory
+
+  cp examples/init_gauss3d.f90 ./init.f90
+
+rebuild the program and run it. The initialization module contains
+at least 2 subroutines which can be modified by the user.
+
+   InitProgram: set control variables
+   InitData: set initial conditions
+
+For a short description of some control variables take a look at the file
+types.f90 (deprecated) and files in the "common" subdirectory.
+
+
+4. ADVANCED CUSTOMIZATION
+
+Because of the modular structure of the code it is possible to introduce
+completely new physics with comparatively little effort. Take a look at
+these subdirectories to add new features:
+
+  boundary: add new boundary conditions
+  mesh:     geometry of the mesh
+  fluxes:   flux functions and reconstruction processes
+  physics:  change physical fluxes (i.e eigenvalues of the advection problem)
+  sources:  add new/modify existing source terms
+
+According to the OO-design patterns there is a generic module (e.g.
+geometry_generic) for almost any task. These modules can be considered
+as an interface between the basic modules (e.g. geometry_cartesian,
+geometry_polar, etc.) and the program. The data structures connected to
+the modules can be found in the subdirectory "common".
+To add a new feature follow these four steps:
+1. Create a new basic module in the particular subdirectory
+   (e.g. geometry_mygeo.f90 in ./mesh) using the existing modules as
+   a template.
+2. Edit the generic module and add a USE instruction with your new module
+   to the header.Then define a new flag as an integer constant
+   (e.g. INTEGER, PARAMETER :: MYGEO = 10) and customize the
+   generic subroutines and functions. There are SELECT .. CASE
+   branch instructions in which the specific routines are called.
+3. Modify your initilization file init.f90 to use the new
+   feature (e.g. CALL InitMesh(Mesh,Fluxes,MYGEO,..)).
+4. To compile the program with the new feature you have to add
+   an entry to the Makefile in the directory under consideration
+   (e.g. ./mesh/Makefile) to be sure the new module is compiled
+   before the generic module. Rebuild the whole program by doing
+   a "make distclean" first and then enter "make".
+
+The code is distributed under the GNU General Public License - see the
+accompanying LICENSE file for more details. So feel free to experiment
+with this.
+
+
+Copyright (C) 2006, 2007 Tobias Illenseer <tillense@astrophysik.uni-kiel.de>
+
+
+
+  

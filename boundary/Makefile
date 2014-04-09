@@ -1,0 +1,26 @@
+# some files
+TARGET=libboundary.a
+SOURCES=$(wildcard *.f90)
+OBJECTS=$(SOURCES:.f90=.o)
+
+.SUFFIXES: .f90
+
+.PHONY: clean distclean
+
+%.o : %.f90
+	$(FC) $(FFLAGS) -c $<
+
+$(TARGET) : $(OBJECTS)
+	$(AR) $(AFLAGS) $@ $(OBJECTS)
+
+clean :
+	rm -f $(OBJECTS) $(TARGET) *.mod
+
+distclean :
+	rm -f $(OBJECTS) $(TARGET) *.mod *.bak *~
+
+boundary_axis.o : boundary_reflecting.o
+boundary_folded.o : boundary_reflecting.o
+boundary_generic.o : boundary_nogradients.o boundary_periodic.o \
+	boundary_reflecting.o boundary_folded.o boundary_axis.o \
+	boundary_fixed.f90 boundary_extrapolation.o
