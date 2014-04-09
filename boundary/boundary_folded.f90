@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: boundary_folded.f90                                               #
 !#                                                                           #
-!# Copyright (C) 2006-2012                                                   #
+!# Copyright (C) 2006-2014                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -24,9 +24,16 @@
 !#############################################################################
 
 !----------------------------------------------------------------------------!
-! boundary module for folded boundary
-! i.e. copy value(IMIN)<->value(IMAX), value(IMIN+1)<->value(IMAX-1) ...
-! use this for oblate spheroidal coordinates
+!> \author Tobias Illenseer
+!!
+!! \brief Boundary module for folded conditions
+!! 
+!! Implementation of a folded boundary where data is copied from value(IMIN)
+!! to value(IMAX), value(IMIN+1) to value(IMAX-1), ... and vice versa. Use
+!! this for elliptical and oblate spheroidal coordinates.
+!!
+!! \extends boundary_reflecting
+!! \ingroup boundary
 !----------------------------------------------------------------------------!
 MODULE boundary_folded
   USE mesh_common, ONLY : Mesh_TYP
@@ -50,6 +57,7 @@ MODULE boundary_folded
 
 CONTAINS
 
+  !> \public Constructor for folded boundary conditions
   SUBROUTINE InitBoundary_folded(this,Mesh,Physics,btype,dir)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
@@ -82,6 +90,7 @@ CONTAINS
   END SUBROUTINE InitBoundary_folded
 
 
+  !> \public Applies the folded boundary condition
   PURE SUBROUTINE CenterBoundary_folded(this,Mesh,Physics,pvar)
     IMPLICIT NONE
     !------------------------------------------------------------------------!

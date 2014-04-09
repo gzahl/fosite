@@ -24,7 +24,11 @@
 !#############################################################################
 
 !----------------------------------------------------------------------------!
-! generic module for numerical flux functions
+!> \author Tobias Illenseer
+!!
+!! \brief generic module for numerical flux functions
+!!
+!! \ingroup fluxes
 !----------------------------------------------------------------------------!
 MODULE fluxes_generic
   USE physics_common, ONLY : Physics_TYP
@@ -33,6 +37,7 @@ MODULE fluxes_generic
   USE fluxes_trapezoidal
   USE mesh_generic
   USE reconstruction_generic
+  USE common_dict
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   PRIVATE
@@ -59,21 +64,18 @@ MODULE fluxes_generic
 
 CONTAINS
 
-  SUBROUTINE InitFluxes(this,Mesh,Physics,order,variables,limiter,theta)
+  SUBROUTINE InitFluxes(this,Mesh,Physics,config,IO)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    TYPE(Fluxes_TYP)  :: this
-    TYPE(Mesh_TYP)    :: Mesh
-    TYPE(Physics_TYP) :: Physics
-    INTEGER, OPTIONAL :: order
-    LOGICAL, OPTIONAL :: variables
-    INTEGER, OPTIONAL :: limiter
-    REAL, OPTIONAL    :: theta
+    TYPE(Fluxes_TYP)        :: this
+    TYPE(Mesh_TYP)          :: Mesh
+    TYPE(Physics_TYP)       :: Physics
+    TYPE(Dict_TYP),POINTER  :: config,IO
+    INTEGER                 :: scheme
+    INTEGER                 :: err
     !------------------------------------------------------------------------!
-    INTEGER                  :: err
-    !------------------------------------------------------------------------!
-    INTENT(IN)        :: Mesh,Physics,order,variables,limiter,theta
-    INTENT(INOUT)     :: this
+    INTENT(INOUT)           :: this
+    INTENT(IN)              :: Mesh, Physics
     !------------------------------------------------------------------------!
     ! check initialization of Mesh and Physics
     IF (.NOT.Initialized(Mesh).OR..NOT.Initialized(Physics)) &
@@ -84,7 +86,7 @@ CONTAINS
 !CDIR IEXPAND
     SELECT CASE(GetType(Mesh))
     CASE(MIDPOINT)
-       CALL InitFluxes_midpoint(this,Mesh,MIDPOINT)
+       CALL InitFluxes_midpoint(this,Mesh,MIDPOINT,config)
     CASE(TRAPEZOIDAL)
        CALL InitFluxes_trapezoidal(this,Mesh,TRAPEZOIDAL)
     CASE DEFAULT
@@ -95,7 +97,6 @@ CONTAINS
     ALLOCATE(this%cons(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,4,Physics%VNUM), &
          this%prim(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,4,Physics%VNUM), &
          this%pfluxes(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,4,Physics%VNUM), &
-         this%qfluxes(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,4,Physics%VNUM), &
          this%bxflux(Mesh%JGMIN:Mesh%JGMAX,2,Physics%VNUM), &
          this%byflux(Mesh%IGMIN:Mesh%IGMAX,2,Physics%VNUM), &
          this%bxfold(Mesh%JGMIN:Mesh%JGMAX,2,Physics%VNUM), &
@@ -109,7 +110,7 @@ CONTAINS
     CALL Info(this, " FLUXES---> quadrature rule    " // TRIM(GetName(this)))
 
     ! initialize reconstruction modules
-    CALL InitReconstruction(this%reconstruction,Mesh,Physics,order,variables,limiter,theta)
+    CALL InitReconstruction(this%reconstruction,Mesh,Physics,config,IO)
 
     ! set reconstruction pointer
 !CDIR IEXPAND
@@ -160,7 +161,7 @@ CONTAINS
     !------------------------------------------------------------------------!
     IF (.NOT.Initialized(this)) &
         CALL Error(this,"CloseFluxes","not initialized")
-    DEALLOCATE(this%cons,this%prim,this%pfluxes,this%qfluxes, &
+    DEALLOCATE(this%cons,this%prim,this%pfluxes, &
          this%bxflux,this%byflux,this%bxfold,this%byfold)
     SELECT CASE(GetType(this))
     CASE(MIDPOINT)

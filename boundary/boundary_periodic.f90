@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: boundary_periodic.f90                                             #
 !#                                                                           #
-!# Copyright (C) 2006-2008                                                   #
+!# Copyright (C) 2006-2014                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -24,7 +24,12 @@
 !#############################################################################
 
 !----------------------------------------------------------------------------!
-! module for periodic boundary conditions
+!> \author Tobias Illenseer
+!!
+!! \brief Boundary module for periodic boundary conditions
+!!
+!! \extends boundary_nogradients
+!! \ingroup boundary
 !----------------------------------------------------------------------------!
 MODULE boundary_periodic
   USE mesh_common, ONLY : Mesh_TYP
@@ -47,6 +52,7 @@ MODULE boundary_periodic
 
 CONTAINS
 
+  !> \public Constructor for periodic boundary conditions
   SUBROUTINE InitBoundary_periodic(this,btype,dir)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
@@ -59,7 +65,7 @@ CONTAINS
     CALL InitBoundary(this,btype,boundcond_name,dir)
   END SUBROUTINE InitBoundary_periodic
 
-
+  !> \public Applies the periodic boundary condition
   PURE SUBROUTINE CenterBoundary_periodic(this,Mesh,Physics,pvar)
     IMPLICIT NONE
     !------------------------------------------------------------------------!

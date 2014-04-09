@@ -23,27 +23,38 @@
 !#############################################################################
 
 !----------------------------------------------------------------------------!
-! define properties of a logarithmic 2D polar mesh with dimensionless radial
-! coordinate rho according to:
-!    x = r0 * exp(rho) * cos(phi)  
-!    y = r0 * exp(rho) * sin(phi)
+!> \author Tobias Illenseer
+!!
+!! \brief define properties of a logarithmic 2D polar mesh
+!!
+!! dimensionless radial coordinate rho according to:
+!!   x = r0 * exp(rho) * cos(phi)
+!!   y = r0 * exp(rho) * sin(phi)
+!!
+!! \extends geometry_cartesian
+!! \ingroup geometry
 !----------------------------------------------------------------------------!
 MODULE geometry_logpolar
   USE geometry_cartesian
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
+  ! exclude interface block from doxygen processing
+  !> \cond InterfaceBlock
   INTERFACE Convert2Cartesian_logpolar
      MODULE PROCEDURE Logpolar2Cartesian_coords, Logpolar2Cartesian_vectors
   END INTERFACE
   INTERFACE Convert2Curvilinear_logpolar
      MODULE PROCEDURE Cartesian2Logpolar_coords, Cartesian2Logpolar_vectors
   END INTERFACE
+  !> \endcond
   PRIVATE
   CHARACTER(LEN=32), PARAMETER :: geometry_name = "logpolar"
   !--------------------------------------------------------------------------!
   PUBLIC :: &
        InitGeometry_logpolar, &
        ScaleFactors_logpolar, &
+       Radius_logpolar, &
+       PositionVector_logpolar, &
        Convert2Cartesian_logpolar, &
        Convert2Curvilinear_logpolar, &
        Logpolar2Cartesian_coords, &
@@ -62,7 +73,7 @@ CONTAINS
     REAL, INTENT(IN) :: gp
     !------------------------------------------------------------------------!
     CALL InitGeometry(this,gt,geometry_name)
-    this%geoparam = gp
+    CALL SetScale(this,gp)
   END SUBROUTINE InitGeometry_logpolar
     
 
@@ -72,11 +83,29 @@ CONTAINS
     REAL, INTENT(IN)  :: gp,rho
     REAL, INTENT(OUT) :: hrho,hphi,hz
     !------------------------------------------------------------------------!
-    hrho = gp*EXP(rho)
+    hrho = Radius_logpolar(gp,rho)
     hphi = hrho
     hz   = 1.
   END SUBROUTINE ScaleFactors_logpolar
 
+  ELEMENTAL FUNCTION Radius_logpolar(gp,rho) RESULT(radius)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    REAL, INTENT(IN)  :: gp,rho
+    REAL :: radius
+    !------------------------------------------------------------------------!
+    radius = gp * EXP(rho)
+  END FUNCTION Radius_logpolar
+
+  ELEMENTAL SUBROUTINE PositionVector_logpolar(gp,rho,rx,ry)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    REAL, INTENT(IN)  :: gp,rho
+    REAL, INTENT(OUT) :: rx,ry
+    !------------------------------------------------------------------------!
+    rx = Radius_logpolar(gp,rho)
+    ry = 0.0
+  END SUBROUTINE PositionVector_logpolar
 
   ! coordinate transformations
   ELEMENTAL SUBROUTINE Logpolar2Cartesian_coords(gp,rho,phi,x,y)
@@ -98,7 +127,7 @@ CONTAINS
     REAL, INTENT(IN)  :: gp,x,y
     REAL, INTENT(OUT) :: rho,phi
     !------------------------------------------------------------------------!
-    REAL :: x1,y1
+    REAL :: x1,y1,r
     !------------------------------------------------------------------------!
     x1 = x/gp
     y1 = y/gp

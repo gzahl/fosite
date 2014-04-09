@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: boundary_noslip.f90                                               #
 !#                                                                           #
-!# Copyright (C) 2010-2012                                                   #
+!# Copyright (C) 2010-2014                                                   #
 !# Bjoern Sperling  <sperling@astrophysik.uni-kiel.de>                       #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
@@ -25,7 +25,13 @@
 !#############################################################################
 
 !----------------------------------------------------------------------------!
-! boundary module for noslip 
+!> \author Tobias Illenseer, Bjoern Sperling
+!!
+!!
+!! \brief Boundary module for noslip conditions
+!!
+!! \extends boundary_nogradients 
+!! \ingroup boundary
 !----------------------------------------------------------------------------!
 MODULE boundary_noslip
   USE mesh_common, ONLY : Mesh_TYP
@@ -58,6 +64,7 @@ MODULE boundary_noslip
 
 CONTAINS
 
+  !> \public Constructor for noslip boundary conditions
   SUBROUTINE InitBoundary_noslip(this,Mesh,Physics,btype,dir)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
@@ -90,6 +97,7 @@ CONTAINS
     END IF
   END SUBROUTINE InitBoundary_noslip
 
+  !> \public Applies the noslip boundary condition
   PURE SUBROUTINE CenterBoundary_noslip(this,Mesh,Physics,pvar)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
@@ -199,7 +207,7 @@ CONTAINS
     END SELECT
   END SUBROUTINE CenterBoundary_noslip
 
-
+  !> \public Destructor for noslip boundary conditions
   SUBROUTINE CloseBoundary_noslip(this)
     IMPLICIT NONE
     !------------------------------------------------------------------------!

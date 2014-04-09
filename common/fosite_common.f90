@@ -24,7 +24,7 @@
 !#############################################################################
 
 !----------------------------------------------------------------------------!
-! basic fosite module
+!> basic fosite module
 !----------------------------------------------------------------------------!
 MODULE fosite_common
   USE common_types, &
@@ -37,9 +37,12 @@ MODULE fosite_common
   USE physics_common, ONLY : Physics_TYP
   USE fileio_common, ONLY : FileIO_TYP
   USE timedisc_common, ONLY : Timedisc_TYP
+  USE common_dict, ONLY : Dict_TYP
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   PRIVATE
+  ! exclude interface block from doxygen processing
+  !> \cond InterfaceBlock
   INTERFACE GetType
      MODULE PROCEDURE GetSimType, GetType_common
   END INTERFACE
@@ -64,9 +67,23 @@ MODULE fosite_common
   INTERFACE Error
      MODULE PROCEDURE SimError, Error_common
   END INTERFACE
+  !> \endcond
   !--------------------------------------------------------------------------!
+  TYPE FositeStruc_TYP
+     CHARACTER(LEN=16)      :: name
+     INTEGER                :: pos
+     INTEGER                :: dim
+     INTEGER                :: rank     
+  END TYPE FositeStruc_TYP
+  !> Fosite data structure
+  !!
+  !! This is the basic data structure, which stores all other information
+  !! inside of it.
   TYPE Fosite_TYP
+     !> \name Variables
      TYPE(Common_TYP)       :: sim                 ! simulation              !
+     TYPE(Dict_TYP),POINTER :: config => null()    ! global config           !
+     TYPE(Dict_TYP),POINTER :: IO => null()    ! global In-/Output Dict  !
      TYPE(Mesh_TYP)         :: Mesh
      TYPE(Fluxes_TYP)       :: Fluxes
      TYPE(Physics_TYP)      :: Physics
@@ -80,17 +97,21 @@ MODULE fosite_common
      DOUBLE PRECISION       :: start_time          ! system clock start time !
      DOUBLE PRECISION       :: end_time            ! system clock end time   !
      DOUBLE PRECISION       :: run_time            ! = end_time - start_time !
+     INTEGER                :: start_count         ! system clock count
+     TYPE(Fositestruc_TYP),DIMENSION(:), POINTER &                                   
+                            :: structure           ! structure of variables  !
 #ifdef PARALLEL
      INTEGER                :: ierror
      REAL                   :: dt_all              ! min timestep of all     !
                                                    ! processes               ! 
 #endif
-
   END TYPE Fosite_TYP
+  !> \}
   !--------------------------------------------------------------------------!
   PUBLIC :: &
        ! types
        Fosite_TYP, &
+       FositeStruc_TYP, &
        ! methods
        InitSim, &
        CloseSim, &
@@ -107,6 +128,7 @@ MODULE fosite_common
 
 CONTAINS
 
+  !> \public
   SUBROUTINE InitSim(this,simtype,simname)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
@@ -123,6 +145,7 @@ CONTAINS
   END SUBROUTINE InitSim
 
 
+  !> \public
   PURE FUNCTION GetSimType(this) RESULT(ap)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
@@ -133,6 +156,7 @@ CONTAINS
   END FUNCTION GetSimType
 
 
+  !> \public
   PURE FUNCTION GetSimName(this) RESULT(an)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
@@ -143,6 +167,7 @@ CONTAINS
   END FUNCTION GetSimName
 
 
+  !> \public
   PURE FUNCTION GetSimRank(this) RESULT(r)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
@@ -152,6 +177,7 @@ CONTAINS
     r = GetRank_common(this%sim)
   END FUNCTION GetSimRank
 
+  !> \public
   PURE FUNCTION GetSimNumProcs(this) RESULT(p)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
@@ -173,6 +199,7 @@ CONTAINS
 !  END FUNCTION GetErrorMap
 
 
+  !> \public
   PURE FUNCTION SimInitialized(this) RESULT(i)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
@@ -183,6 +210,7 @@ CONTAINS
   END FUNCTION SimInitialized
 
  
+  !> \public
   SUBROUTINE SimInfo(this,msg)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
@@ -193,6 +221,7 @@ CONTAINS
   END SUBROUTINE SimInfo
 
 
+  !> \public
   SUBROUTINE SimWarning(this,modproc,msg)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
@@ -203,21 +232,20 @@ CONTAINS
   END SUBROUTINE SimWarning
 
 
-  SUBROUTINE SimError(this,modproc,msg,rank)
+  !> \public
+  SUBROUTINE SimError(this,modproc,msg,rank,rank_info)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Fosite_TYP), INTENT(IN)  :: this
     CHARACTER(LEN=*),  INTENT(IN) :: modproc,msg
     INTEGER, OPTIONAL, INTENT(IN) :: rank
+    LOGICAL, OPTIONAL, INTENT(IN) :: rank_info
     !------------------------------------------------------------------------!
-    IF (PRESENT(rank)) THEN
-       CALL Error_common(this%sim,modproc,msg,rank)
-    ELSE
-       CALL Error_common(this%sim,modproc,msg)
-    END IF
+    CALL Error_common(this%sim,modproc,msg,rank,rank_info)
   END SUBROUTINE SimError
 
 
+  !> \public
   SUBROUTINE CloseSim(this)
     IMPLICIT NONE
     !------------------------------------------------------------------------!

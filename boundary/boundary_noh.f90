@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: boundary_noh.f90                                                  #
 !#                                                                           #
-!# Copyright (C) 2006-2012                                                   #
+!# Copyright (C) 2006-2014                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -24,9 +24,16 @@
 !#############################################################################
 
 !----------------------------------------------------------------------------!
-! boundary module for inflow boundary conditions of the Noh problem
-! all values should be set to the fix auxiliary data except for the time
-! dependend density
+!> \author Tobias Illenseer
+!!
+!! \brief Boundary module for Noh problem
+!! 
+!! Implementation of inflow boundary conditions for the Noh problem.
+!! All values should be set to the fix auxiliary data except for the time
+!! dependend density.
+!!
+!! \extends boundary_fixed 
+!! \ingroup boundary
 !----------------------------------------------------------------------------!
 MODULE boundary_noh
   USE mesh_common, ONLY : Mesh_TYP
@@ -47,6 +54,7 @@ MODULE boundary_noh
 
 CONTAINS
 
+  !> \public Constructor for Noh boundary conditions
   SUBROUTINE InitBoundary_noh(this,Mesh,Physics,btype,dir,dim)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
@@ -78,23 +86,19 @@ CONTAINS
     SELECT CASE(GetDirection(this))
     CASE(WEST)
        this%invr(:,Mesh%JMIN:Mesh%JMAX) =&
-            1./SQRT(Mesh%bccart(Mesh%IGMIN:Mesh%IMIN-1,Mesh%JMIN:Mesh%JMAX,1)**2 &
-            + Mesh%bccart(Mesh%IGMIN:Mesh%IMIN-1,Mesh%JMIN:Mesh%JMAX,2)**2)
+            1./Mesh%bradius(Mesh%IGMIN:Mesh%IMIN-1,Mesh%JMIN:Mesh%JMAX)
     CASE(EAST)
        this%invr(:,Mesh%JMIN:Mesh%JMAX) =&
-            1./SQRT(Mesh%bccart(Mesh%IMAX+1:Mesh%IGMAX,Mesh%JMIN:Mesh%JMAX,1)**2 &
-            + Mesh%bccart(Mesh%IMAX+1:Mesh%IGMAX,Mesh%JMIN:Mesh%JMAX,2)**2)
+            1./Mesh%bradius(Mesh%IMAX+1:Mesh%IGMAX,Mesh%JMIN:Mesh%JMAX)
     CASE(SOUTH)
        this%invr(Mesh%IMIN:Mesh%IMAX,:) =&
-            1./SQRT(Mesh%bccart(Mesh%IMIN:Mesh%IMAX,Mesh%JGMIN:Mesh%JMIN-1,1)**2 &
-            + Mesh%bccart(Mesh%IMIN:Mesh%IMAX,Mesh%JGMIN:Mesh%JMIN-1,2)**2)
+            1./Mesh%bradius(Mesh%IMIN:Mesh%IMAX,Mesh%JGMIN:Mesh%JMIN-1)
     CASE(NORTH)
        this%invr(Mesh%IMIN:Mesh%IMAX,:) =&
-            1./SQRT(Mesh%bccart(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX+1:Mesh%JGMAX,1)**2 &
-            + Mesh%bccart(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX+1:Mesh%JGMAX,2)**2)
+            1./Mesh%bradius(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX+1:Mesh%JGMAX)
     END SELECT
     ! dimensional constant of the Noh problem;
-    ! for 1D, 2 for 2D, 3 for 3D
+    ! 2 for 2D, 3 for 3D
     IF (PRESENT(dim)) THEN
        this%nohdim = dim
     ELSE ! default
@@ -103,6 +107,7 @@ CONTAINS
    END SUBROUTINE InitBoundary_noh
 
 
+  !> \public Applies the Noh boundary condition
   PURE SUBROUTINE CenterBoundary_noh(this,Mesh,Physics,time,pvar)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
@@ -186,7 +191,7 @@ CONTAINS
     END SELECT
   END SUBROUTINE CenterBoundary_noh
 
-
+  !> \public Destructor for Noh boundary conditions
   SUBROUTINE CloseBoundary_noh(this)
     IMPLICIT NONE
     !------------------------------------------------------------------------!

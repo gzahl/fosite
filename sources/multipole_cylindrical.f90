@@ -24,7 +24,7 @@
 !#                                                                           #
 !#############################################################################
 !----------------------------------------------------------------------------!
-! module for cylindrical multipole expansion
+!> module for cylindrical multipole expansion
 !----------------------------------------------------------------------------!
 MODULE multipole_cylindrical
   USE physics_common, ONLY : Physics_TYP
@@ -36,17 +36,20 @@ MODULE multipole_cylindrical
   PRIVATE
   CHARACTER(LEN=32), PARAMETER :: EXP_NAME = "cylindrical"
   !--------------------------------------------------------------------------!
+  ! exclude interface block from doxygen processing
+  !> \cond InterfaceBlock
   INTERFACE CalculatePotential_cylindrical
-     MODULE PROCEDURE CalculatePotential_1_cylindrical, &
-                      CalculatePotential_2_cylindrical
+     MODULE PROCEDURE CalculatePotential_1_cyl, &
+                      CalculatePotential_2_cyl
   END INTERFACE
+  !> \endcond
   !--------------------------------------------------------------------------!
   PUBLIC :: &
        ! methods
        InitMultipole_cylindrical, &
        CalculatePotential_cylindrical, &
-       CalculatePotential_1_cylindrical, &
-       CalculatePotential_2_cylindrical, &
+       CalculatePotential_1_cyl, &
+       CalculatePotential_2_cyl, &
        CloseMultipole_cylindrical
   !--------------------------------------------------------------------------!
 
@@ -106,8 +109,7 @@ CONTAINS
     ! compute geometrical factors
     WHERE (this%iregion%mask(:,:))
        ! using wmass for temporary storage
-       this%wmass(:,:,1) = -this%volume(:,:) * this%invsqrtr(:,:) / PI &
-            * (0.25/PI)  ! FIXME: additional factor required for selfgravity module
+       this%wmass(:,:,1) = -this%volume(:,:) * this%invsqrtr(:,:) / PI 
     ELSEWHERE
        ! set wmass to 0 outside iregion
        this%wmass(:,:,1) = 0.0
@@ -134,7 +136,7 @@ CONTAINS
   END SUBROUTINE InitMultipole_cylindrical
 
 
-  PURE SUBROUTINE CalculatePotential_1_cylindrical(this,Physics,Selection,rho,Phi)
+  PURE SUBROUTINE CalculatePotential_1_cyl(this,Physics,Selection,rho,Phi)
     USE functions
     IMPLICIT NONE
     !------------------------------------------------------------------------!
@@ -170,10 +172,10 @@ CONTAINS
           END DO
        END DO
     END DO
-  END SUBROUTINE CalculatePotential_1_cylindrical
+  END SUBROUTINE CalculatePotential_1_cyl
 
 
-  PURE SUBROUTINE CalculatePotential_2_cylindrical(this,Physics,rho,Phi)
+  PURE SUBROUTINE CalculatePotential_2_cyl(this,Physics,rho,Phi)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Multipole_TYP)  :: this
@@ -201,7 +203,7 @@ CONTAINS
           END DO
        END DO
     END DO
-  END SUBROUTINE CalculatePotential_2_cylindrical
+  END SUBROUTINE CalculatePotential_2_cyl
 
 
   SUBROUTINE CloseMultipole_cylindrical(this)

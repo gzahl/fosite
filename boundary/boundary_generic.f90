@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: boundary_generic.f90                                              #
 !#                                                                           #
-!# Copyright (C) 2006-2011                                                   #
+!# Copyright (C) 2006-2014                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -22,9 +22,19 @@
 !# Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.                 #
 !#                                                                           #
 !#############################################################################
-
+!> \addtogroup boundary
+!! \key{western,INTEGER,boundary condition at western boundary}
+!! \key{eastern,INTEGER,boundary condition at eastern boundary}
+!! \key{southern,INTEGER,boundary condition at southern boundary}
+!! \key{northern,INTEGER,boundary condition at northern boundary}
 !----------------------------------------------------------------------------!
-! Subroutines for boundary conditions
+!> \author Tobias Illenseer
+!!
+!! \brief Generic boundary module
+!!
+!! This module provides the generic interface routines to all boundary
+!! modules.
+!!
 !----------------------------------------------------------------------------!
 MODULE boundary_generic
   USE timedisc_common, ONLY : Timedisc_TYP
@@ -42,10 +52,13 @@ MODULE boundary_generic
   USE boundary_extrapolation
   USE boundary_noh
   USE boundary_noslip
+  USE boundary_absorbing
   USE boundary_custom
   USE boundary_farfield
   USE physics_generic, ONLY : Physics_TYP, Initialized, &
-       Convert2Primitive, Convert2Conservative
+       Convert2Primitive, Convert2Conservative, &
+       EULER2D_ISOIAMT, EULER2D_IAMT, GetType
+  USE common_dict
 #ifdef PARALLEL
 #ifdef HAVE_MPI_MOD
   USE mpi
@@ -59,25 +72,29 @@ MODULE boundary_generic
 #endif
   !--------------------------------------------------------------------------!
   PRIVATE
+  ! exclude interface block from doxygen processing
+  !> \cond InterfaceBlock
   INTERFACE CloseBoundary
      MODULE PROCEDURE CloseBoundary_one, CloseBoundary_all
   END INTERFACE
+  !> \endcond
   !--------------------------------------------------------------------------!
 #ifdef PARALLEL
-  INTEGER, PARAMETER :: NONE          = 0
+  INTEGER, PARAMETER :: NONE            = 0
 #endif
-  INTEGER, PARAMETER :: NO_GRADIENTS  = 1
-  INTEGER, PARAMETER :: PERIODIC      = 2
-  INTEGER, PARAMETER :: REFLECTING    = 3
-  INTEGER, PARAMETER :: AXIS          = 4
-  INTEGER, PARAMETER :: FOLDED        = 5
-  INTEGER, PARAMETER :: FIXED         = 6
-  INTEGER, PARAMETER :: EXTRAPOLATION = 7
-  INTEGER, PARAMETER :: NOH2D         = 8
-  INTEGER, PARAMETER :: NOH3D         = 9
-  INTEGER, PARAMETER :: NOSLIP        = 10
-  INTEGER, PARAMETER :: CUSTOM        = 11
-  INTEGER, PARAMETER :: FARFIELD      = 12
+  INTEGER, PARAMETER :: NO_GRADIENTS    = 1
+  INTEGER, PARAMETER :: PERIODIC        = 2
+  INTEGER, PARAMETER :: REFLECTING      = 3
+  INTEGER, PARAMETER :: AXIS            = 4
+  INTEGER, PARAMETER :: FOLDED          = 5
+  INTEGER, PARAMETER :: FIXED           = 6
+  INTEGER, PARAMETER :: EXTRAPOLATION   = 7
+  INTEGER, PARAMETER :: NOH2D           = 8
+  INTEGER, PARAMETER :: NOH3D           = 9
+  INTEGER, PARAMETER :: NOSLIP          = 10
+  INTEGER, PARAMETER :: CUSTOM          = 11
+  INTEGER, PARAMETER :: FARFIELD        = 12
+  INTEGER, PARAMETER :: ABSORBING       = 13
   !--------------------------------------------------------------------------!
   PUBLIC :: &
        ! types
@@ -85,9 +102,13 @@ MODULE boundary_generic
        ! constants
        WEST, EAST, SOUTH, NORTH, &
        NO_GRADIENTS, PERIODIC, REFLECTING, AXIS, FOLDED, FIXED, EXTRAPOLATION, &
-       NOH2D, NOH3D, NOSLIP, CUSTOM, FARFIELD, &
+       NOH2D, NOH3D, NOSLIP, CUSTOM, FARFIELD, ABSORBING, &
        CUSTOM_NOGRAD, CUSTOM_PERIOD, CUSTOM_REFLECT, CUSTOM_REFLNEG, &
-       CUSTOM_EXTRAPOL, CUSTOM_FIXED, &
+       CUSTOM_EXTRAPOL, CUSTOM_FIXED, CUSTOM_LOGEXPOL, &
+       CUSTOM_OUTFLOW, CUSTOM_KEPLER, CUSTOM_ANGKEPLER, CUSTOM_POISSON, &
+#ifdef PARALLEL
+       NONE,&
+#endif
        ! methods
        InitBoundary, &
        CenterBoundary, &
@@ -126,6 +147,17 @@ CONTAINS
     INTENT(IN)    :: Mesh,Physics,btype,dir
     INTENT(INOUT) :: this
     !------------------------------------------------------------------------!
+    IF(((GetType(Physics).EQ.EULER2D_ISOIAMT).OR.&
+        (GetType(Physics).EQ.EULER2D_IAMT)).AND.&
+       ((dir.EQ.NORTH).OR.(dir.EQ.SOUTH)).AND.&
+       (.NOT.((btype.EQ.PERIODIC) &
+#ifdef PARALLEL
+              .OR.(btype.EQ.NONE) &
+#endif
+              ))) &
+      CALL Error(this, "InitBoundary_one", "All IAMT Physics need periodic" & 
+        // " boundary conditions in NORTH/SOUTH direction")
+
     ! set boundary properties
     SELECT CASE(btype)
 #ifdef PARALLEL
@@ -156,6 +188,8 @@ CONTAINS
        CALL InitBoundary_custom(this,Mesh,Physics,btype,dir)
     CASE(FARFIELD)
        CALL InitBoundary_farfield(this,Mesh,Physics,btype,dir)
+    CASE(ABSORBING)
+       CALL InitBoundary_absorbing(this,Mesh,Physics,btype,dir)
     CASE DEFAULT
        CALL Error(this, "InitBoundary_one", "Unknown boundary condition.")
     END SELECT
@@ -185,27 +219,40 @@ CONTAINS
   END SUBROUTINE InitBoundary_one
 
 
-  SUBROUTINE InitBoundary(this,Mesh,Physics,western,eastern,southern,northern)
+  SUBROUTINE InitBoundary(this,Mesh,Physics,config,IO)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Boundary_TYP), DIMENSION(4) :: this
     TYPE(Mesh_TYP)     :: Mesh
     TYPE(Physics_TYP)  :: Physics
+    TYPE(Dict_TYP),POINTER &
+                       :: config,IO
     INTEGER            :: western, eastern, southern, northern
     !------------------------------------------------------------------------!
     INTEGER            :: new_western, new_eastern, new_southern, new_northern
 #ifdef PARALLEL
-    INTEGER            :: comm_old
+    INTEGER            :: comm_old, dir
     INTEGER            :: sizeofreal, ignum, jgnum, twoslices
     INTEGER            :: ierr
     LOGICAL, DIMENSION(SIZE(Mesh%dims)) :: periods = .FALSE.
+    LOGICAL, DIMENSION(SIZE(Mesh%dims)) :: remain_dims = .FALSE.
 #endif
     !------------------------------------------------------------------------!
-    INTENT(IN)    :: Physics,western,eastern,southern,northern
+    INTENT(IN)    :: Physics
     INTENT(INOUT) :: this,Mesh
     !------------------------------------------------------------------------!
     IF (.NOT.Initialized(Physics).OR..NOT.Initialized(Mesh)) &
          CALL Error(this(WEST),"InitBoundary","physics and/or mesh module uninitialized")    
+
+    CALL RequireKey(config, "western")
+    CALL RequireKey(config, "eastern")
+    CALL RequireKey(config, "southern")
+    CALL RequireKey(config, "northern")
+
+    CALL GetAttr(config, "western", western)
+    CALL GetAttr(config, "eastern", eastern)
+    CALL GetAttr(config, "southern", southern)
+    CALL GetAttr(config, "northern", northern)
 
     new_western = western
     new_eastern = eastern
@@ -253,20 +300,31 @@ CONTAINS
     CALL MPI_Cart_shift(Mesh%comm_cart,0,1,Mesh%neighbor(WEST),Mesh%neighbor(EAST),ierr)
     CALL MPI_Cart_shift(Mesh%comm_cart,1,1,Mesh%neighbor(SOUTH),Mesh%neighbor(NORTH),ierr)
 
+    ! create communicators for every column and row of the cartesian
+    !	topology (used eg. for fargo shifts)
+    remain_dims = (/ .FALSE., .TRUE. /)
+    CALL MPI_Cart_Sub(Mesh%comm_cart,remain_dims,Mesh%Icomm,ierr)
+    remain_dims = (/ .TRUE., .FALSE. /)
+    CALL MPI_Cart_Sub(Mesh%comm_cart,remain_dims,Mesh%Jcomm,ierr)
+
     ! allocate memory for boundary data buffers
     ALLOCATE(this(WEST)%sendbuf(Mesh%GNUM,Mesh%JMIN:Mesh%JMAX,Physics%VNUM), &
          this(WEST)%recvbuf(Mesh%GNUM,Mesh%JMIN:Mesh%JMAX,Physics%VNUM), &
          this(EAST)%sendbuf(Mesh%GNUM,Mesh%JMIN:Mesh%JMAX,Physics%VNUM), &
          this(EAST)%recvbuf(Mesh%GNUM,Mesh%JMIN:Mesh%JMAX,Physics%VNUM), &
-         this(SOUTH)%sendbuf(Mesh%IMIN:Mesh%IMAX,Mesh%GNUM,Physics%VNUM), &
-         this(SOUTH)%recvbuf(Mesh%IMIN:Mesh%IMAX,Mesh%GNUM,Physics%VNUM), &
-         this(NORTH)%sendbuf(Mesh%IMIN:Mesh%IMAX,Mesh%GNUM,Physics%VNUM), &
-         this(NORTH)%recvbuf(Mesh%IMIN:Mesh%IMAX,Mesh%GNUM,Physics%VNUM), &
+         this(SOUTH)%sendbuf(Mesh%IGMIN:Mesh%IGMAX,Mesh%GNUM,Physics%VNUM), &
+         this(SOUTH)%recvbuf(Mesh%IGMIN:Mesh%IGMAX,Mesh%GNUM,Physics%VNUM), &
+         this(NORTH)%sendbuf(Mesh%IGMIN:Mesh%IGMAX,Mesh%GNUM,Physics%VNUM), &
+         this(NORTH)%recvbuf(Mesh%IGMIN:Mesh%IGMAX,Mesh%GNUM,Physics%VNUM), &
          STAT=ierr)
     IF (ierr.NE.0) THEN
        CALL Error(this(WEST),"InitBoundary", &
             "Unable to allocate memory for data buffers.")
     END IF
+    DO dir=WEST,NORTH
+      this(dir)%recvbuf = 0.
+      this(dir)%sendbuf = 0.
+    END DO
 #endif
 
   END SUBROUTINE InitBoundary
@@ -375,24 +433,24 @@ CONTAINS
 #ifdef MPI_USE_SENDRECV
     ! send boundary data to southern and receive from northern neighbor
     IF (Mesh%neighbor(SOUTH).NE.MPI_PROC_NULL) &
-         this(SOUTH)%sendbuf(:,:,:) = pvar(Mesh%IMIN:Mesh%IMAX, &
+         this(SOUTH)%sendbuf(:,:,:) = pvar(Mesh%IGMIN:Mesh%IGMAX, &
                                            Mesh%JMIN:Mesh%JMIN+Mesh%GNUM-1,1:Physics%VNUM)
-    CALL MPI_Sendrecv(this(SOUTH)%sendbuf,Mesh%GNUM*(Mesh%IMAX-Mesh%IMIN+1)*Physics%VNUM, &
+    CALL MPI_Sendrecv(this(SOUTH)%sendbuf,Mesh%GNUM*(Mesh%IGMAX-Mesh%IGMIN+1)*Physics%VNUM, &
          DEFAULT_MPI_REAL,Mesh%neighbor(SOUTH),10+SOUTH,this(NORTH)%recvbuf, &
-         Mesh%GNUM*(Mesh%IMAX-Mesh%IMIN+1)*Physics%VNUM,DEFAULT_MPI_REAL,Mesh%neighbor(NORTH), &
+         Mesh%GNUM*(Mesh%IGMAX-Mesh%IGMIN+1)*Physics%VNUM,DEFAULT_MPI_REAL,Mesh%neighbor(NORTH), &
          MPI_ANY_TAG,Mesh%comm_cart,status,ierr)
     IF (Mesh%neighbor(NORTH).NE.MPI_PROC_NULL) &
-         pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX+1:Mesh%JGMAX,1:Physics%VNUM) = this(NORTH)%recvbuf(:,:,:)
+         pvar(Mesh%IGMIN:Mesh%IGMAX,Mesh%JMAX+1:Mesh%JGMAX,1:Physics%VNUM) = this(NORTH)%recvbuf(:,:,:)
 #else
     ! receive boundary data from northern neighbor
-    CALL MPI_Irecv(this(NORTH)%recvbuf,Mesh%GNUM*(Mesh%IMAX-Mesh%IMIN+1)*Physics%vnum, &
+    CALL MPI_Irecv(this(NORTH)%recvbuf,Mesh%GNUM*(Mesh%IGMAX-Mesh%IGMIN+1)*Physics%vnum, &
          DEFAULT_MPI_REAL,Mesh%neighbor(NORTH),10+SOUTH,Mesh%comm_cart,req(1),ierr)
     ! fill send buffer if southern neighbor exists
     IF (Mesh%neighbor(SOUTH).NE.MPI_PROC_NULL) &
-         this(SOUTH)%sendbuf(:,:,:) = pvar(Mesh%IMIN:Mesh%IMAX, &
+         this(SOUTH)%sendbuf(:,:,:) = pvar(Mesh%IGMIN:Mesh%IGMAX, &
                                            Mesh%JMIN:Mesh%JMIN+Mesh%GNUM-1,1:Physics%VNUM)
     ! send boundary data to southern neighbor
-    CALL MPI_Issend(this(SOUTH)%sendbuf,Mesh%GNUM*(Mesh%IMAX-Mesh%IMIN+1)*Physics%vnum, &
+    CALL MPI_Issend(this(SOUTH)%sendbuf,Mesh%GNUM*(Mesh%IGMAX-Mesh%IGMIN+1)*Physics%vnum, &
          DEFAULT_MPI_REAL,Mesh%neighbor(SOUTH),10+SOUTH,Mesh%comm_cart,req(2),ierr)
 #endif
 #endif
@@ -402,25 +460,25 @@ CONTAINS
 #ifdef MPI_USE_SENDRECV
     ! send boundary data to northern and receive from southern neighbor
     IF (Mesh%neighbor(NORTH).NE.MPI_PROC_NULL) &
-         this(NORTH)%sendbuf(:,:,:) = pvar(Mesh%IMIN:Mesh%IMAX, &
+         this(NORTH)%sendbuf(:,:,:) = pvar(Mesh%IGMIN:Mesh%IGMAX, &
                                            Mesh%JMAX-Mesh%GNUM+1:Mesh%JMAX,1:Physics%VNUM)
 
-    CALL MPI_Sendrecv(this(NORTH)%sendbuf,Mesh%GNUM*(Mesh%IMAX-Mesh%IMIN+1)*Physics%VNUM, &
+    CALL MPI_Sendrecv(this(NORTH)%sendbuf,Mesh%GNUM*(Mesh%IGMAX-Mesh%IGMIN+1)*Physics%VNUM, &
          DEFAULT_MPI_REAL,Mesh%neighbor(NORTH),10+NORTH,this(SOUTH)%recvbuf, &
-         Mesh%GNUM*(Mesh%IMAX-Mesh%IMIN+1)*Physics%VNUM,DEFAULT_MPI_REAL,Mesh%neighbor(SOUTH), &
+         Mesh%GNUM*(Mesh%IGMAX-Mesh%IGMIN+1)*Physics%VNUM,DEFAULT_MPI_REAL,Mesh%neighbor(SOUTH), &
          MPI_ANY_TAG,Mesh%comm_cart,status,ierr)
     IF (Mesh%neighbor(SOUTH).NE.MPI_PROC_NULL) &
-         pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JGMIN:Mesh%JMIN-1,1:Physics%VNUM) = this(SOUTH)%recvbuf(:,:,:)
+         pvar(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JMIN-1,1:Physics%VNUM) = this(SOUTH)%recvbuf(:,:,:)
 #else
     ! receive boundary data from southern neighbor
-    CALL MPI_Irecv(this(SOUTH)%recvbuf,Mesh%GNUM*(Mesh%IMAX-Mesh%IMIN+1)*Physics%vnum, &
+    CALL MPI_Irecv(this(SOUTH)%recvbuf,Mesh%GNUM*(Mesh%IGMAX-Mesh%IGMIN+1)*Physics%vnum, &
          DEFAULT_MPI_REAL,Mesh%neighbor(SOUTH),10+NORTH,Mesh%comm_cart,req(3),ierr)
     ! fill send buffer if northern neighbor exists
     IF (Mesh%neighbor(NORTH).NE.MPI_PROC_NULL) &
-         this(NORTH)%sendbuf(:,:,:) = pvar(Mesh%IMIN:Mesh%IMAX, &
+         this(NORTH)%sendbuf(:,:,:) = pvar(Mesh%IGMIN:Mesh%IGMAX, &
                                            Mesh%JMAX-Mesh%GNUM+1:Mesh%JMAX,1:Physics%VNUM)
     ! send boundary data to northern neighbor
-    CALL MPI_Issend(this(NORTH)%sendbuf,Mesh%GNUM*(Mesh%IMAX-Mesh%IMIN+1)*Physics%vnum, &
+    CALL MPI_Issend(this(NORTH)%sendbuf,Mesh%GNUM*(Mesh%IGMAX-Mesh%IGMIN+1)*Physics%vnum, &
          DEFAULT_MPI_REAL,Mesh%neighbor(NORTH),10+NORTH,Mesh%comm_cart,req(4),ierr)
 #endif
 #endif
@@ -431,77 +489,81 @@ CONTAINS
     ! wait for unfinished MPI communication
     CALL MPI_Waitall(4,req,status,ierr)
     IF (Mesh%neighbor(SOUTH).NE.MPI_PROC_NULL) &
-         pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JGMIN:Mesh%JMIN-1,1:Physics%VNUM) = this(SOUTH)%recvbuf(:,:,:)
+         pvar(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JMIN-1,1:Physics%VNUM) = this(SOUTH)%recvbuf(:,:,:)
     IF (Mesh%neighbor(NORTH).NE.MPI_PROC_NULL) &
-         pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX+1:Mesh%JGMAX,1:Physics%VNUM) = this(NORTH)%recvbuf(:,:,:)
+         pvar(Mesh%IGMIN:Mesh%IGMAX,Mesh%JMAX+1:Mesh%JGMAX,1:Physics%VNUM) = this(NORTH)%recvbuf(:,:,:)
 #endif
 #endif
-
     ! FIXME: implement MPI communication to exchange corner values
     ! this is a quick hack to set defined boundary values in
     ! the corners outside the computational domain;
     ! this is also necessary, because we need some of these values in the
     ! viscosity module
-    IF ((Mesh%INUM.GT.1) .AND. (Mesh%JNUM.GT.1)) THEN
-       DO j=1,Mesh%GNUM
-          DO i=j+1,Mesh%GNUM
-             ! copy data left of the diagonal within the corner areas at
-             ! the western boundary
-             ! south west
-             pvar(Mesh%IMIN-i,Mesh%JMIN-j,:) = pvar(Mesh%IMIN-i,Mesh%JMIN-j+1,:)
-             ! north west
-             pvar(Mesh%IMIN-i,Mesh%JMAX+j,:) = pvar(Mesh%IMIN-i,Mesh%JMAX+j-1,:)
-
-             ! copy data right of the diagonal within the corner areas at
-             ! the eastern boundary
-             ! south east
-             pvar(Mesh%IMAX+i,Mesh%JMIN-j,:) = pvar(Mesh%IMAX+i,Mesh%JMIN-j+1,:)
-             ! north east
-             pvar(Mesh%IMAX+i,Mesh%JMAX+j,:) = pvar(Mesh%IMAX+i,Mesh%JMAX+j-1,:)
-
-             ! copy data below the diagonal within the corner areas at
-             ! the southern boundary (transposed problem i<->j)
-             ! south west
-             pvar(Mesh%IMIN-j,Mesh%JMIN-i,:) = pvar(Mesh%IMIN-j+1,Mesh%JMIN-i,:)
-             ! south east
-             pvar(Mesh%IMAX+j,Mesh%JMIN-i,:) = pvar(Mesh%IMAX+j-1,Mesh%JMIN-i,:)
-             ! copy data above the diagonal within the corner areas at
-             ! the northern boundary (transposed problem i<->j)
-             ! north west
-             pvar(Mesh%IMIN-j,Mesh%JMAX+i,:) = pvar(Mesh%IMIN-j+1,Mesh%JMAX+i,:)
-             ! north east
-             pvar(Mesh%IMAX+j,Mesh%JMAX+i,:) = pvar(Mesh%IMAX+j-1,Mesh%JMAX+i,:)
-          END DO
-       END DO
-       ! set the diagonal data 
-       DO i=1,Mesh%GNUM
-          ! south west
-          pvar(Mesh%IMIN-i,Mesh%JMIN-i,:) = 0.5 * (pvar(Mesh%IMIN-i,Mesh%JMIN,:) &
-               + pvar(Mesh%IMIN,Mesh%JMIN-i,:))
-          ! south east
-          pvar(Mesh%IMAX+i,Mesh%JMIN-i,:) = 0.5 * (pvar(Mesh%IMAX+i,Mesh%JMIN,:) &
-               + pvar(Mesh%IMAX,Mesh%JMIN-i,:))
-          ! north west
-          pvar(Mesh%IMIN-i,Mesh%JMAX+i,:) = 0.5 * (pvar(Mesh%IMIN-i,Mesh%JMAX,:) &
-               + pvar(Mesh%IMIN,Mesh%JMAX+i,:))
-          ! north east
-          pvar(Mesh%IMAX+i,Mesh%JMAX+i,:) = 0.5 * (pvar(Mesh%IMAX+i,Mesh%JMAX,:) &
-               + pvar(Mesh%IMAX,Mesh%JMAX+i,:))
-       END DO
-    ELSE IF (Mesh%JNUM.EQ.1) THEN
-       ! for 1D simulations along the x-direction copy internal data
-       ! into the ghost cells at the y-boundaries
-       DO j=1,Mesh%GNUM
-          pvar(:,Mesh%JMIN-j,:) = pvar(:,Mesh%JMIN,:)
-          pvar(:,Mesh%JMAX+j,:) = pvar(:,Mesh%JMAX,:)
-       END DO
+    ! Check if it is a real corner
+    IF (Mesh%JNUM.EQ.1) THEN
+      ! for 1D simulations along the x-direction copy internal data
+      ! into the ghost cells at the y-boundaries
+      DO j=1,Mesh%GNUM
+        pvar(:,Mesh%JMIN-j,:) = pvar(:,Mesh%JMIN,:)
+        pvar(:,Mesh%JMAX+j,:) = pvar(:,Mesh%JMAX,:)
+      END DO
     ELSE IF (Mesh%INUM.EQ.1) THEN
-       ! for 1D simulations along the y-direction copy internal data
-       ! into the ghost cells at the x-boundaries
-       DO i=1,Mesh%GNUM
-          pvar(Mesh%IMIN-i,:,:) = pvar(Mesh%IMIN,:,:)
-          pvar(Mesh%IMAX+i,:,:) = pvar(Mesh%IMAX,:,:)
-       END DO
+      ! for 1D simulations along the y-direction copy internal data
+      ! into the ghost cells at the x-boundaries
+      DO i=1,Mesh%GNUM
+        pvar(Mesh%IMIN-i,:,:) = pvar(Mesh%IMIN,:,:)
+        pvar(Mesh%IMAX+i,:,:) = pvar(Mesh%IMAX,:,:)
+      END DO
+    ELSE IF ((Mesh%INUM.GT.1) .AND. (Mesh%JNUM.GT.1) .AND.&
+      (.NOT.((GetType(this(NORTH)).EQ.PERIODIC).OR.(GetType(this(SOUTH)).EQ.PERIODIC) &
+#ifdef PARALLEL
+         .OR.(GetType(this(NORTH)).EQ.NONE).OR.(GetType(this(SOUTH)).EQ.NONE) &
+#endif
+      ))) THEN
+      DO j=1,Mesh%GNUM
+        DO i=j+1,Mesh%GNUM
+          ! copy data left of the diagonal within the corner areas at
+          ! the western boundary
+          ! south west
+          pvar(Mesh%IMIN-i,Mesh%JMIN-j,:) = pvar(Mesh%IMIN-i,Mesh%JMIN-j+1,:)
+          ! north west
+          pvar(Mesh%IMIN-i,Mesh%JMAX+j,:) = pvar(Mesh%IMIN-i,Mesh%JMAX+j-1,:)
+          ! copy data right of the diagonal within the corner areas at
+          ! the eastern boundary
+          ! south east
+          pvar(Mesh%IMAX+i,Mesh%JMIN-j,:) = pvar(Mesh%IMAX+i,Mesh%JMIN-j+1,:)
+          ! north east
+          pvar(Mesh%IMAX+i,Mesh%JMAX+j,:) = pvar(Mesh%IMAX+i,Mesh%JMAX+j-1,:)
+
+          ! copy data below the diagonal within the corner areas at
+          ! the southern boundary (transposed problem i<->j)
+          ! south west
+          pvar(Mesh%IMIN-j,Mesh%JMIN-i,:) = pvar(Mesh%IMIN-j+1,Mesh%JMIN-i,:)
+          ! south east
+          pvar(Mesh%IMAX+j,Mesh%JMIN-i,:) = pvar(Mesh%IMAX+j-1,Mesh%JMIN-i,:)
+          ! copy data above the diagonal within the corner areas at
+          ! the northern boundary (transposed problem i<->j)
+          ! north west
+          pvar(Mesh%IMIN-j,Mesh%JMAX+i,:) = pvar(Mesh%IMIN-j+1,Mesh%JMAX+i,:)
+          ! north east
+          pvar(Mesh%IMAX+j,Mesh%JMAX+i,:) = pvar(Mesh%IMAX+j-1,Mesh%JMAX+i,:)
+        END DO
+      END DO
+      ! set the diagonal data 
+      DO i=1,Mesh%GNUM
+        ! south west
+        pvar(Mesh%IMIN-i,Mesh%JMIN-i,:) = 0.5 * (pvar(Mesh%IMIN-i,Mesh%JMIN,:) &
+             + pvar(Mesh%IMIN,Mesh%JMIN-i,:))
+        ! south east
+        pvar(Mesh%IMAX+i,Mesh%JMIN-i,:) = 0.5 * (pvar(Mesh%IMAX+i,Mesh%JMIN,:) &
+             + pvar(Mesh%IMAX,Mesh%JMIN-i,:))
+        ! north west
+        pvar(Mesh%IMIN-i,Mesh%JMAX+i,:) = 0.5 * (pvar(Mesh%IMIN-i,Mesh%JMAX,:) &
+             + pvar(Mesh%IMIN,Mesh%JMAX+i,:))
+        ! north east
+        pvar(Mesh%IMAX+i,Mesh%JMAX+i,:) = 0.5 * (pvar(Mesh%IMAX+i,Mesh%JMAX,:) &
+             + pvar(Mesh%IMAX,Mesh%JMAX+i,:))
+      END DO
     END IF
     ! convert primitive variables in ghost cells
     CALL Convert2Conservative(Physics,Mesh,Mesh%IGMIN,Mesh%IMIN-1,&
@@ -547,6 +609,8 @@ CONTAINS
          CALL CenterBoundary_custom(this(dir),Mesh,Physics,pvar)
       CASE(FARFIELD)
          CALL CenterBoundary_farfield(this(dir),Mesh,Physics,pvar)
+      CASE(ABSORBING)
+         CALL CenterBoundary_absorbing(this(dir),Mesh,Physics,cvar,pvar)
       END SELECT
     END SUBROUTINE SetBoundaryData
 
@@ -584,6 +648,8 @@ CONTAINS
        CALL CloseBoundary_custom(this)
     CASE(FARFIELD)
        CALL CloseBoundary_farfield(this)
+    CASE(ABSORBING)
+       CALL CloseBoundary_absorbing(this)
     END SELECT
     CALL CloseBoundary_common(this)
   END SUBROUTINE CloseBoundary_one
@@ -603,6 +669,5 @@ CONTAINS
        CALL CloseBoundary_one(this(dir))
     END DO
   END SUBROUTINE CloseBoundary_all
-
 
 END MODULE boundary_generic

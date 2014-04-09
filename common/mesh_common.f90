@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: mesh_common.f90                                                   #
 !#                                                                           #
-!# Copyright (C) 2006-2012                                                   #
+!# Copyright (C) 2006-2014                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -22,9 +22,18 @@
 !# Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.                 #
 !#                                                                           #
 !#############################################################################
-
 !----------------------------------------------------------------------------!
-! basic mesh module
+!> \defgroup mesh mesh
+!! \{
+!! \brief Family of mesh modules
+!! \}
+!----------------------------------------------------------------------------!
+!> \author Tobias Illenseer
+!!
+!! \brief basic mesh module
+!!
+!! \extends common_types
+!! \ingroup mesh
 !----------------------------------------------------------------------------!
 MODULE mesh_common
   USE common_types, &
@@ -33,6 +42,7 @@ MODULE mesh_common
        Initialized_common => Initialized, Info_common => Info, &
        Warning_common => Warning, Error_common => Error
   USE geometry_common, ONLY : Geometry_TYP
+  USE common_dict
 #ifdef PARALLEL
 #ifdef HAVE_MPI_MOD
   USE mpi
@@ -46,6 +56,7 @@ MODULE mesh_common
 #endif
   !--------------------------------------------------------------------------!
   PRIVATE
+  !> \name Public Attributes
   INTEGER, PARAMETER :: NDIMS = 2          ! dimensions of cartesian topology
   INTEGER, PARAMETER :: VECLEN = &         ! vector length ..
 #if defined(NECSX8) || defined(NECSX9)
@@ -54,6 +65,8 @@ MODULE mesh_common
   1                                        ! .. of everthing else 
 #endif
   !--------------------------------------------------------------------------!
+  ! exclude interface block from doxygen processing
+  !> \cond InterfaceBlock
   INTERFACE GetType
      MODULE PROCEDURE GetMesh, GetType_common
   END INTERFACE
@@ -78,68 +91,91 @@ MODULE mesh_common
   INTERFACE Error
      MODULE PROCEDURE MeshError_rank0, MeshError_rankX, Error_common
   END INTERFACE
+  !> \endcond
   !--------------------------------------------------------------------------!
-  ! index selection type
+  !> index selection type
   TYPE Selection_TYP
-     INTEGER                    :: IMIN,IMAX       ! selection in x-direction!
-     INTEGER                    :: JMIN,JMAX       ! selection in y-direction!
-     LOGICAL, POINTER           :: mask(:,:)       ! optional selection mask !            
+     !> \name Variables
+     INTEGER           :: IMIN,IMAX       !< selection in x-direction
+     INTEGER           :: JMIN,JMAX       !< selection in y-direction
+     LOGICAL, POINTER  :: mask(:,:)       !< optional selection mask
   END type Selection_TYP
-  ! mesh data structure
+  !> mesh data structure
   TYPE Mesh_TYP
-     TYPE(Common_TYP)           :: mtype           ! mesh type               !
-     TYPE(Geometry_TYP)         :: Geometry        ! geometrical properties  !
-     INTEGER                    :: GNUM            ! num. ghost cells        !
-     INTEGER                    :: INUM,JNUM       ! resolution              !
-     INTEGER                    :: IMIN,IMAX       ! min. & max. index in x- !
-     INTEGER                    :: JMIN,JMAX       ! and y-direction         !
-     INTEGER                    :: IGMIN,IGMAX     ! same with ghost cells   !
-     INTEGER                    :: JGMIN,JGMAX     !                         !
+     !> \name Variables
+     TYPE(Common_TYP)  :: mtype           !< mesh type
+     TYPE(Geometry_TYP):: Geometry        !< geometrical properties
+     INTEGER           :: GNUM            !< number of ghost cells
+     INTEGER           :: INUM,JNUM       !< resolution
+     INTEGER           :: IMIN,IMAX       !< minimal & maximal index in x-direction
+     INTEGER           :: JMIN,JMAX       !< minimal & maximal index in y-direction
+     INTEGER           :: IGMIN,IGMAX     !< minimal & maximal index in x-direction with ghost cells
+     INTEGER           :: JGMIN,JGMAX     !< minimal & maximal index in y-direction with ghost cells
+     REAL              :: xmin, xmax      !< spatial extent of computational domain in x-direction
+     REAL              :: ymin, ymax      !< spatial extent of computational domain in y-direction
+     REAL              :: dx,dy,dz        !< curvilinear spatial differences 
+     REAL              :: invdx,invdy     !< inverse of curvilinear spatial differences 
+     !> \name
+     !! #### cell coordinates
+     REAL, DIMENSION(:,:,:), POINTER :: &
+                          center, &       !< geometrical centers
+                          bcenter, &      !< bary centers
+                          bccart          !< cartesian bary centers
+     REAL, DIMENSION(:,:,:,:), POINTER :: &
+                          fccart, &       !< cartesian face centered positions
+                          ccart, &        !< cartesian corner positions
+                          fpos, &         !< curvilinear face centered positions
+                          cpos            !< curvilinear corner positions
+     !> \name
+     !! #### line, area and volume elements
+     REAL, DIMENSION(:,:), POINTER :: &
+                          dlx,dly, &      !< cell centered line elements
+                          volume, &       !< cell volumes
+                          dxdV,dydV       !< dx/volume and dy/volume
+     REAL, DIMENSION(:,:,:), POINTER :: &
+                          dAx,dAy,dAz, &  !< cell surface area elements
+                          dAxdy,dAydx     !< dAx/dy and dAy/dx
+     !> \name
+     !! #### scale factors and commutator coefficients
+     REAL, DIMENSION(:,:), POINTER :: &
+                          bhx,bhy,bhz     !< scale factors at bary centers
+     REAL, DIMENSION(:,:,:), POINTER :: &
+                          fhx,fhy,fhz, &  !< scale factors at face centers
+                          chx,chy,chz, &  !< scale factors at cell corners
+                          cyxy,cxyx,czxz,czyz !< commutator coefficients
+     !> \name
+     !! #### radius and curvilinear position vector components
+     REAL, DIMENSION(:,:), POINTER :: &
+                          radius, &       !< geometrically centered radius
+                          bradius         !< bary centered radius
+     REAL, DIMENSION(:,:,:), POINTER :: &
+                          fradius, &      !< face centered radius
+                          posvec, &       !< geometrically centered curvilinear position vector components
+                          bposvec         !< bary centered curvilinear position vector components
+     REAL, DIMENSION(:,:,:,:), POINTER :: &
+                          fposvec         !< face centered curvilinear position vector components
+     !> \name
+     !! #### other geometrial quantities
+     REAL, DIMENSION(:,:), POINTER :: &
+                          sqrtg, &        !< square root of (det(g_ij))
+                          invsqrtg, &     !< 1/sqrtg
+                          rotation        !< rotation angle of local curvilinear orthonormal frames
+     REAL, DIMENSION(:,:,:,:), POINTER :: &
+                          weights         !< interpolation weights
 #ifdef PARALLEL
-     INTEGER                    :: MAXINUM,MAXJNUM ! max. of local INUM,JNUM !
-     INTEGER                    :: comm_cart       ! cartesian communicator  !
-     INTEGER, DIMENSION(4)      :: comm_boundaries ! comm. for bound. procs. !
-     INTEGER, DIMENSION(4)      :: rank0_boundaries! map rank0 -> world rank !
-     INTEGER, DIMENSION(4)      :: neighbor        ! ranks of neighbor proc. !
-     INTEGER, DIMENSION(NDIMS)  :: dims            ! dimensions of cart comm !
-     INTEGER, DIMENSION(NDIMS)  :: mycoords        ! par. proc coordinates   !
-!!$     INTEGER                 :: weblocks, snblocks ! boundary data handles   !
+     !> \name Variables in Parallel Mode
+     INTEGER                    :: MAXINUM,MAXJNUM !< max. of local INUM,JNUM
+     INTEGER                    :: MININUM,MINJNUM !< min. of local INUM,JNUM
+     INTEGER                    :: comm_cart       !< cartesian communicator
+     INTEGER                    :: Icomm,Jcomm     !< communicators for cartesian rows and cols
+     INTEGER, DIMENSION(4)      :: comm_boundaries !< communicators for boundary processes
+     INTEGER, DIMENSION(4)      :: rank0_boundaries!< map rank0 -> world rank
+     INTEGER, DIMENSION(4)      :: neighbor        !< ranks of neighbor proc.
+     INTEGER, DIMENSION(NDIMS)  :: dims            !< dimensions of cart comm
+     INTEGER, DIMENSION(NDIMS)  :: mycoords        !< par. proc coordinates
 #endif
-     REAL                       :: xmin, xmax      ! comput. domain in x-    !
-     REAL                       :: ymin, ymax      ! and y-direction         !
-     REAL                       :: dx,dy           ! width of cells in x-&   !
-     REAL                       :: invdx, invdy    ! y-direction; inverse    !
-     REAL, POINTER              :: center(:,:,:)   ! cell geometr. centers   !
-     REAL, POINTER              :: bcenter(:,:,:)  ! cell bary centers       !
-     REAL, POINTER              :: bccart(:,:,:)   ! cartesian bary centers  !
-     REAL, POINTER              :: fpos(:,:,:,:)   ! face centered positions !
-     REAL, POINTER              :: cpos(:,:,:,:)   ! corner positions        !
-     REAL, POINTER              :: cpcart(:,:,:,:) ! cartesian corner pos.   !
-     REAL, POINTER              :: fhx(:,:,:)      ! face centered scale     !
-     REAL, POINTER              :: fhy(:,:,:)      !  factors                !
-     REAL, POINTER              :: fhz(:,:,:)      !                         !
-     REAL, POINTER              :: chx(:,:,:)      ! corner scale factors    !
-     REAL, POINTER              :: chy(:,:,:)      !                         !
-     REAL, POINTER              :: chz(:,:,:)      !                         !
-     REAL, POINTER              :: bhx(:,:)        ! bary center scale       !
-     REAL, POINTER              :: bhy(:,:)        !  factors                !
-     REAL, POINTER              :: bhz(:,:)        !                         !
-     REAL, POINTER              :: cyxy(:,:,:)     ! commutator coefficients !
-     REAL, POINTER              :: cxyx(:,:,:)     ! for geometrical sources !
-     REAL, POINTER              :: czxz(:,:,:)
-     REAL, POINTER              :: czyz(:,:,:)
-     REAL, POINTER              :: sqrtg(:,:)      ! sqrt(det(g_ij))         !
-     REAL, POINTER              :: weights(:,:,:,:)! interpolation weights   !
-     REAL, POINTER              :: dlx(:,:)        ! line elements           !
-     REAL, POINTER              :: dly(:,:)        !   at cell centers       !
-     REAL, POINTER              :: dAx(:,:,:)      ! surface elements        !
-     REAL, POINTER              :: dAy(:,:,:)      !   on cell faces         !
-     REAL, POINTER              :: dAxdy(:,:,:)    ! surface elements divided!
-     REAL, POINTER              :: dAydx(:,:,:)    !   by dx or dy           !
-     REAL, POINTER              :: volume(:,:)     ! cell volumes            !
-     REAL, POINTER              :: dxdV(:,:)       ! inverse volume elements !
-     REAL, POINTER              :: dydV(:,:)       ! multiplied with dx or dy!
   END TYPE Mesh_TYP
+  !> \}
   !--------------------------------------------------------------------------!
   PUBLIC :: &
        ! types
@@ -163,44 +199,53 @@ MODULE mesh_common
 
 CONTAINS
 
-  SUBROUTINE InitMesh(this,mtype,mname,inum,jnum,xmin,xmax,ymin,ymax)
+  !> \public Constructor of common mesh class
+  SUBROUTINE InitMesh(this,mname,config)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    TYPE(Mesh_TYP)    :: this
-    INTEGER           :: mtype
-    CHARACTER(LEN=*)  :: mname
-    INTEGER           :: inum,jnum
-    REAL              :: xmin,xmax,ymin,ymax    
+    TYPE(Mesh_TYP)          :: this
+    TYPE(Dict_TYP),POINTER  :: config
+    INTEGER                 :: mtype
+    CHARACTER(LEN=*)        :: mname
     !------------------------------------------------------------------------!
     INTEGER           :: i,j
 #ifdef PARALLEL
-    INTEGER           :: maxinum, maxjnum
+    INTEGER           :: inum, jnum
 #endif    
     INTEGER           :: err
     REAL, DIMENSION(4,2) :: cfaces,ccorners
     !------------------------------------------------------------------------!
-    INTENT(IN)        :: inum,jnum,xmin,xmax,ymin,ymax
     INTENT(INOUT)     :: this
     !------------------------------------------------------------------------!
+    CALL RequireKey(config, "meshtype")
+    CALL GetAttr(config, "meshtype", mtype)
 
     CALL InitCommon(this%mtype,mtype,mname)
 
     ! total resolution
-    this%INUM = inum
-    this%JNUM = jnum
+    CALL RequireKey(config, "inum")
+    CALL RequireKey(config, "jnum")
+    CALL GetAttr(config, "inum", this%inum)
+    CALL GetAttr(config, "jnum", this%jnum)
 
     ! number of ghost rows/columns
     this%GNUM = 2
 
     ! coordinate domain
-    this%xmin = xmin
-    this%xmax = xmax
-    this%ymin = ymin
-    this%ymax = ymax
+    CALL RequireKey(config, "xmin")
+    CALL RequireKey(config, "xmax")
+    CALL RequireKey(config, "ymin")
+    CALL RequireKey(config, "ymax")
+    CALL GetAttr(config, "xmin", this%xmin)
+    CALL GetAttr(config, "xmax", this%xmax)
+    CALL GetAttr(config, "ymin", this%ymin)
+    CALL GetAttr(config, "ymax", this%ymax)
 
     ! coordinate differences in each direction
-    this%dx = (xmax - xmin) / inum
-    this%dy = (ymax - ymin) / jnum
+    this%dx = (this%xmax - this%xmin) / this%inum
+    this%dy = (this%ymax - this%ymin) / this%jnum
+    ! normaly 1 in case of rotational sym. 2*PI 
+    this%dz = 1.0
     
     ! inverse coordinate differences
     this%invdx = 1./this%dx
@@ -208,12 +253,14 @@ CONTAINS
 
     ! set index ranges
 #ifdef PARALLEL
-    CALL InitMesh_parallel(this)
+    CALL InitMesh_parallel(this, config)
     CALL MPI_Barrier(MPI_COMM_WORLD,err)
-    maxinum = this%IMAX - this%IMIN + 1
-    CALL MPI_Allreduce(maxinum,this%MAXINUM,1,MPI_INTEGER,MPI_MAX,MPI_COMM_WORLD,err)
-    maxjnum = this%JMAX - this%JMIN + 1
-    CALL MPI_Allreduce(maxjnum,this%MAXJNUM,1,MPI_INTEGER,MPI_MAX,MPI_COMM_WORLD,err)
+    inum = this%IMAX - this%IMIN + 1
+    CALL MPI_Allreduce(inum,this%MININUM,1,MPI_INTEGER,MPI_MIN,MPI_COMM_WORLD,err)
+    CALL MPI_Allreduce(inum,this%MAXINUM,1,MPI_INTEGER,MPI_MAX,MPI_COMM_WORLD,err)
+    jnum = this%JMAX - this%JMIN + 1
+    CALL MPI_Allreduce(jnum,this%MINJNUM,1,MPI_INTEGER,MPI_MIN,MPI_COMM_WORLD,err)
+    CALL MPI_Allreduce(jnum,this%MAXJNUM,1,MPI_INTEGER,MPI_MAX,MPI_COMM_WORLD,err)
 #else
     this%IMIN   = 1
     this%IMAX   = this%INUM
@@ -233,7 +280,8 @@ CONTAINS
          this%bccart(this%IGMIN:this%IGMAX,this%JGMIN:this%JGMAX,2), &
          this%fpos(this%IGMIN:this%IGMAX,this%JGMIN:this%JGMAX,4,2), &
          this%cpos(this%IGMIN:this%IGMAX,this%JGMIN:this%JGMAX,4,2), &
-         this%cpcart(this%IGMIN:this%IGMAX,this%JGMIN:this%JGMAX,4,2), &
+         this%fccart(this%IGMIN:this%IGMAX,this%JGMIN:this%JGMAX,4,2), &
+         this%ccart(this%IGMIN:this%IGMAX,this%JGMIN:this%JGMAX,4,2), &
          this%bhx(this%IGMIN:this%IGMAX,this%JGMIN:this%JGMAX), &
          this%bhy(this%IGMIN:this%IGMAX,this%JGMIN:this%JGMAX), &
          this%bhz(this%IGMIN:this%IGMAX,this%JGMIN:this%JGMAX), &
@@ -245,10 +293,22 @@ CONTAINS
          this%dydV(this%IGMIN:this%IGMAX,this%JGMIN:this%JGMAX), &
          this%dlx(this%IGMIN:this%IGMAX,this%JGMIN:this%JGMAX), &
          this%dly(this%IGMIN:this%IGMAX,this%JGMIN:this%JGMAX), &
-         STAT=err)
+         this%radius(this%IGMIN:this%IGMAX,this%JGMIN:this%JGMAX), &
+         this%bradius(this%IGMIN:this%IGMAX,this%JGMIN:this%JGMAX), &
+         this%fradius(this%IGMIN:this%IGMAX,this%JGMIN:this%JGMAX,4), &
+         this%posvec(this%IGMIN:this%IGMAX,this%JGMIN:this%JGMAX,2), &
+         this%bposvec(this%IGMIN:this%IGMAX,this%JGMIN:this%JGMAX,2), &
+         this%fposvec(this%IGMIN:this%IGMAX,this%JGMIN:this%JGMAX,4,2), &
+        STAT=err)
     IF (err.NE.0) THEN
        CALL Error(this,"InitMesh_common","Unable to allocate memory!")
     END IF
+
+    ! nullify remaining mesh arrays
+    NULLIFY(this%dAx,this%dAy,this%dAz,this%dAxdy,this%dAydx, &
+            this%chx,this%chy,this%chz,this%cyxy,this%cxyx, &
+            this%czxz,this%czyz,this%sqrtg,this%invsqrtg, &
+            this%rotation,this%weights)
 
     ! translation vectors for cell faces and cell corners
     ! (with respect to geometrical cell center)
@@ -292,10 +352,12 @@ CONTAINS
 
 
 #ifdef PARALLEL
-  SUBROUTINE InitMesh_parallel(this)
+  !> \public Initialize MPI (parallel mode only)
+  SUBROUTINE InitMesh_parallel(this, config)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Mesh_TYP) :: this
+    TYPE(Dict_TYP),POINTER :: config
     !------------------------------------------------------------------------!
     LOGICAL, DIMENSION(NDIMS) :: periods = .FALSE.
     INTEGER        :: num,rem
@@ -320,6 +382,22 @@ CONTAINS
        CALL Error(this,"InitMesh_parallel","Domain decomposition algorithm failed.")
     END IF
 
+    ! Check if the user set the decomposition dims himself and override the 
+    ! automatic settings
+    CALL RequireKey(config, "decomposition", this%dims(:))
+    CALL GetAttr(config, "decomposition", this%dims)
+    
+    ! If a dimension equals -1, replace it with the total number of processors
+    ! This makes it easy to define pure annular ring decompositions in polar 
+    ! coordinates like as "decomposition" / (/ -1, 1 /) 
+    WHERE(this%dims.EQ.-1) this%dims=GetNumProcs(this)
+
+    IF((this%dims(1).LE.0).OR.(this%dims(2).LE.0).OR.&
+       (this%dims(1)*this%dims(2).NE.GetNumProcs(this))) THEN
+        CALL Error(this,"InitMesh_parallel","Invalid user-defined MPI domain "&
+            //"decomposition with key='/mesh/decomposition'")
+    END IF
+    
     ! 2. create the cartesian communicator
     ! IMPORTANT: disable reordering of nodes
     CALL MPI_Cart_create(MPI_COMM_WORLD,NDIMS,this%dims,periods,.TRUE., &
@@ -579,7 +657,6 @@ CONTAINS
     p = GetNumProcs_common(this%mtype)
   END FUNCTION GetMeshNumProcs
 
-
   PURE FUNCTION MeshInitialized(this) RESULT(i)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
@@ -631,6 +708,7 @@ CONTAINS
   END SUBROUTINE MeshError_rankX
 
 
+  !> \public Destructor of common mesh class
   SUBROUTINE CloseMesh(this)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
@@ -644,10 +722,15 @@ CONTAINS
           CALL MPI_Comm_free(this%comm_boundaries(i),ierror)
     END DO
 #endif
-    DEALLOCATE(this%center,this%bcenter,this%bccart,this%fpos,this%cpos,this%cpcart, &
+    DEALLOCATE(this%center,this%bcenter,this%bccart, &
+         this%fpos,this%cpos,this%fccart,this%ccart, &
          this%bhx,this%bhy,this%bhz, &
          this%fhx,this%fhy,this%fhz, &
-         this%volume,this%dxdV,this%dydV,this%dlx,this%dly)
+         this%volume,this%dxdV,this%dydV,this%dlx,this%dly,&
+         this%radius,this%bradius,this%fradius,&
+         this%posvec,this%bposvec,this%fposvec)
+    IF(ASSOCIATED(this%rotation)) &
+        DEALLOCATE(this%rotation)
     CALL CloseCommon(this%mtype)
   END SUBROUTINE CloseMesh
 

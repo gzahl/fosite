@@ -23,9 +23,17 @@
 !# Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.                 #
 !#                                                                           #
 !#############################################################################
-
+!> \addtogroup physics
+!! - isothermal gas dynamics
+!!   \key{cs,REAL,isothermal sound speed,0.0}
 !----------------------------------------------------------------------------!
-! basic module for 2D isothermal Euler equations
+!> \author Tobias Illenseer
+!! \author Björn Sperling
+!!
+!! \brief basic module for 2D isothermal Euler equations
+!!
+!! \extends physics_common
+!! \ingroup physics
 !----------------------------------------------------------------------------!
 MODULE physics_euler2Disothm
   USE physics_common
@@ -33,9 +41,11 @@ MODULE physics_euler2Disothm
   USE mesh_generic
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
-  INTERFACE CalculateWaveSpeeds_euler2Dit
-     MODULE PROCEDURE CalculateWaveSpeeds_center
-     MODULE PROCEDURE CalculateWaveSpeeds_faces
+  ! exclude interface block from doxygen processing
+  !> \cond InterfaceBlock
+  INTERFACE CalcWaveSpeeds_euler2Dit
+     MODULE PROCEDURE CalcWaveSpeeds_center
+     MODULE PROCEDURE CalcWaveSpeeds_faces
   END INTERFACE
      INTERFACE GeometricalSources_euler2Dit
      MODULE PROCEDURE GeometricalSources_center
@@ -49,6 +59,7 @@ MODULE physics_euler2Disothm
      MODULE PROCEDURE Convert2Conservative_center
      MODULE PROCEDURE Convert2Conservative_faces
   END INTERFACE
+  !> \endcond
   !--------------------------------------------------------------------------!
   PRIVATE
   INTEGER, PARAMETER :: num_var = 3              ! number of variables       !
@@ -60,11 +71,14 @@ MODULE physics_euler2Disothm
        ! methods
        InitPhysics_euler2Dit, &
        ClosePhysics_euler2Dit, &
-       CheckData_euler2Dit, &
-       CalculateWaveSpeeds_euler2Dit, &
-       CalculateFluxesX_euler2Dit, &
-       CalculateFluxesY_euler2Dit, &
-       CalculateStresses_euler2Dit, &
+       CalcWaveSpeeds_euler2Dit, &
+       CalcFluxesX_euler2Dit, &
+       CalcFluxesY_euler2Dit, &
+       CalcCharSystemX_euler2Dit, &
+       CalcCharSystemY_euler2Dit, &
+       CalcBoundaryDataX_euler2Dit, &
+       CalcBoundaryDataY_euler2Dit, &
+       CalcStresses_euler2Dit, &
        GeometricalSources_euler2Dit, &
        ViscositySources_euler2Dit, &
        ExternalSources_euler2Dit, &
@@ -73,8 +87,14 @@ MODULE physics_euler2Disothm
        ReflectionMasks_euler2Dit, &
        AxisMasks_euler2Dit, &
        SetWaveSpeeds_euler2Dit, &
+       SetEigenValues_euler2Dit, &
+       SetBoundaryData_euler2Dit, &
+       SetCharVars_euler2Dit, &
+       CalcFlux_euler2Dit, &
        MomentumSourcesX_euler2Dit, &
        MomentumSourcesY_euler2Dit, &
+       Cons2Prim_euler2Dit, &
+       Prim2Cons_euler2Dit, &
        ClosePhysics, &
        GetType, &
        GetName, &
@@ -88,92 +108,50 @@ MODULE physics_euler2Disothm
 
 CONTAINS
 
-  SUBROUTINE InitPhysics_euler2Dit(this,Mesh,problem)
+  SUBROUTINE InitPhysics_euler2Dit(this,Mesh,problem,pname,nvar)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Physics_TYP) :: this
     TYPE(Mesh_TYP)    :: Mesh
     INTEGER           :: problem
+    CHARACTER(LEN=32), OPTIONAL :: pname
+    INTEGER,OPTIONAL  :: nvar
     !------------------------------------------------------------------------!
     INTEGER           :: err
     !------------------------------------------------------------------------!
-    INTENT(IN)        :: Mesh,problem
+    INTENT(IN)        :: Mesh,problem,pname
     INTENT(INOUT)     :: this
     !------------------------------------------------------------------------!
-    CALL InitPhysics(this,problem,problem_name,num_var)
+    IF (PRESENT(pname).AND.PRESENT(nvar)) THEN
+       CALL InitPhysics(this,problem,pname,nvar)
+    ELSE IF (PRESENT(pname).OR.PRESENT(nvar)) THEN
+       CALL Error(this, "InitPhysics_euler2Dit", "Both or no optional " &
+        // "arguments at all have to be defined.")
+    ELSE
+       CALL InitPhysics(this,problem,problem_name,num_var)
+    END IF
     ! set array indices
     this%DENSITY   = 1                                 ! mass density        !
     this%XVELOCITY = 2                                 ! x-velocity          !
     this%XMOMENTUM = 2                                 ! x-momentum          !
-    this%YVELOCITY = num_var                           ! y-velocity          !
-    this%YMOMENTUM = num_var                           ! y-momentum          !
+    this%YVELOCITY = 3                                 ! y-velocity          !
+    this%YMOMENTUM = 3                                 ! y-momentum          !
     this%ZVELOCITY = 0                                 ! no z-velocity       !
     this%ZMOMENTUM = 0                                 ! no z-momentum       !
     this%PRESSURE  = 0                                 ! no pressure         !
     this%ENERGY    = 0                                 ! no total energy     !
     ! set names for primitive and conservative variables
     this%pvarname(this%DENSITY)   = "density"
-    this%pvarname(this%XVELOCITY) = "x-velocity"
-    this%pvarname(this%YVELOCITY) = "y-velocity"
+    this%pvarname(this%XVELOCITY) = "xvelocity"
+    this%pvarname(this%YVELOCITY) = "yvelocity"
     this%cvarname(this%DENSITY)   = "density"
-    this%cvarname(this%XMOMENTUM) = "x-momentum"
-    this%cvarname(this%YMOMENTUM) = "y-momentum"
+    this%cvarname(this%XMOMENTUM) = "xmomentum"
+    this%cvarname(this%YMOMENTUM) = "ymomentum"
+    this%DIM = 2
 
-    ALLOCATE(this%structure(3),this%errormap(0:1),STAT = err)
-    ! abort if allocation fails
-    IF (err.NE.0) &
-         CALL Error(this, "InitPhysics_euler2Dit", "Unable to allocate memory.")
-    this%nstruc = 3
-    this%structure(1)%name = "coordinates"
-    this%structure(1)%pos = -1
-    this%structure(1)%rank = 1
-    this%structure(1)%dim  = 2
-    this%structure(2)%name = "density"
-    this%structure(2)%pos  = this%DENSITY
-    this%structure(2)%rank = 0
-    this%structure(2)%dim  = 1
-    this%structure(3)%name = "velocity"
-    this%structure(3)%pos  = this%XVELOCITY
-    this%structure(3)%rank = 1
-    this%structure(3)%dim  = 2
-
-    ! set errormapping (CheckData Symbols)
-    this%errormap(0) = 'X'
-    this%errormap(1) = 'D'
   END SUBROUTINE InitPhysics_euler2Dit
 
-
-  PURE FUNCTION CheckData_euler2Dit(this,Mesh,pvar,pold,mr) RESULT (bad_data)
-    IMPLICIT NONE
-    !------------------------------------------------------------------------!
-    ! checks for bad density or pressure on the whole grid including ghost cells
-    ! return values:
-    !   0 : valid density and pressure data
-    !   1 : density < this%rhomin, i.e. vacuum generated
-    !------------------------------------------------------------------------!
-    TYPE(Physics_TYP) :: this
-    TYPE(Mesh_TYP)    :: Mesh
-    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,this%VNUM) &
-         :: pvar,pold
-    INTEGER,DIMENSION(4) :: mr
-    INTEGER           :: bad_data
-    !------------------------------------------------------------------------!
-    REAL              :: rhomin
-    !------------------------------------------------------------------------!
-    INTENT(IN)        :: this,Mesh,pvar,pold,mr
-    !------------------------------------------------------------------------!
-    ! density minimum
-    rhomin = MINVAL(pvar(mr(1):mr(2),mr(3):mr(4),this%DENSITY))
-    IF (rhomin.LE.this%rhomin) THEN
-       bad_data = 1
-       RETURN
-    END IF
-    ! everything ok
-    bad_data = 0
-  END FUNCTION CheckData_euler2Dit
-
-
-  PURE SUBROUTINE CalculateWaveSpeeds_center(this,Mesh,pvar)
+  PURE SUBROUTINE CalcWaveSpeeds_center(this,Mesh,pvar)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Physics_TYP) :: this
@@ -192,18 +170,18 @@ CONTAINS
        DO i=Mesh%IGMIN,Mesh%IGMAX
           ! x-direction
 !CDIR IEXPAND
-          CALL SetWaveSpeeds_euler2Dit(this%csiso,pvar(i,j,this%XVELOCITY),&
+          CALL SetWaveSpeeds_euler2Dit(this%bccsound(i,j),pvar(i,j,this%XVELOCITY),&
                this%amin(i,j),this%amax(i,j))
           ! y-direction
 !CDIR IEXPAND
-          CALL SetWaveSpeeds_euler2Dit(this%csiso,pvar(i,j,this%YVELOCITY),&
+          CALL SetWaveSpeeds_euler2Dit(this%bccsound(i,j),pvar(i,j,this%YVELOCITY),&
                this%bmin(i,j),this%bmax(i,j))
        END DO
     END DO
-  END SUBROUTINE CalculateWaveSpeeds_center
+  END SUBROUTINE CalcWaveSpeeds_center
 
 
-  PURE SUBROUTINE CalculateWaveSpeeds_faces(this,Mesh,prim)
+  PURE SUBROUTINE CalcWaveSpeeds_faces(this,Mesh,prim)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Physics_TYP) :: this
@@ -222,19 +200,27 @@ CONTAINS
        DO i=Mesh%IGMIN,Mesh%IGMAX
           ! western
 !CDIR IEXPAND
-          CALL SetWaveSpeeds_euler2Dit(this%csiso,prim(i,j,1,this%XVELOCITY), &
+          CALL SetWaveSpeeds_euler2Dit(&
+               this%fcsound(i,j,1),&
+               prim(i,j,1,this%XVELOCITY), &
                this%tmin(i,j,1),this%tmax(i,j,1))
           ! eastern
 !CDIR IEXPAND
-          CALL SetWaveSpeeds_euler2Dit(this%csiso,prim(i,j,2,this%XVELOCITY), &
+          CALL SetWaveSpeeds_euler2Dit(&
+               this%fcsound(i,j,2),&
+               prim(i,j,2,this%XVELOCITY), &
                this%amin(i,j),this%amax(i,j))
           ! southern
 !CDIR IEXPAND
-          CALL SetWaveSpeeds_euler2Dit(this%csiso,prim(i,j,3,this%YVELOCITY), &
+          CALL SetWaveSpeeds_euler2Dit(&
+               this%fcsound(i,j,3), &
+               prim(i,j,3,this%YVELOCITY), &
                this%tmin(i,j,2),this%tmax(i,j,2))
           ! northern
 !CDIR IEXPAND
-          CALL SetWaveSpeeds_euler2Dit(this%csiso,prim(i,j,4,this%YVELOCITY), &
+          CALL SetWaveSpeeds_euler2Dit(&
+               this%fcsound(i,j,4), &
+               prim(i,j,4,this%YVELOCITY), &
                this%bmin(i,j),this%bmax(i,j))
        END DO
     END DO
@@ -258,10 +244,10 @@ CONTAINS
           this%bmax(i,j) = MAX(this%tmax(i,j+1,2),this%bmax(i,j))
        END DO
     END DO
-  END SUBROUTINE CalculateWaveSpeeds_faces
+  END SUBROUTINE CalcWaveSpeeds_faces
 
 
-  PURE SUBROUTINE CalculateFluxesX_euler2Dit(this,Mesh,nmin,nmax,prim,cons,xfluxes)
+  PURE SUBROUTINE CalcFluxesX_euler2Dit(this,Mesh,nmin,nmax,prim,cons,xfluxes)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Physics_TYP) :: this
@@ -273,14 +259,15 @@ CONTAINS
     INTENT(IN)        :: this,Mesh,nmin,nmax,prim,cons
     INTENT(OUT)       :: xfluxes
     !------------------------------------------------------------------------!
-    CALL CalculateFlux_euler2Dit(this%csiso,prim(:,:,nmin:nmax,this%DENSITY), &
+    CALL CalcFlux_euler2Dit(this%fcsound(:,:,nmin:nmax),&
+         prim(:,:,nmin:nmax,this%DENSITY), &
          prim(:,:,nmin:nmax,this%XVELOCITY),cons(:,:,nmin:nmax,this%XMOMENTUM),&
          cons(:,:,nmin:nmax,this%YMOMENTUM),xfluxes(:,:,nmin:nmax,this%DENSITY),&
          xfluxes(:,:,nmin:nmax,this%XMOMENTUM),xfluxes(:,:,nmin:nmax,this%YMOMENTUM))
-   END SUBROUTINE CalculateFluxesX_euler2Dit
+   END SUBROUTINE CalcFluxesX_euler2Dit
 
 
-  PURE SUBROUTINE CalculateFluxesY_euler2Dit(this,Mesh,nmin,nmax,prim,cons,yfluxes)
+  PURE SUBROUTINE CalcFluxesY_euler2Dit(this,Mesh,nmin,nmax,prim,cons,yfluxes)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Physics_TYP) :: this
@@ -292,14 +279,117 @@ CONTAINS
     INTENT(IN)        :: this,Mesh,nmin,nmax,prim,cons
     INTENT(OUT)       :: yfluxes
     !------------------------------------------------------------------------!
-    CALL CalculateFlux_euler2Dit(this%csiso,prim(:,:,nmin:nmax,this%DENSITY), &
+    CALL CalcFlux_euler2Dit(this%fcsound(:,:,nmin:nmax),&
+         prim(:,:,nmin:nmax,this%DENSITY), &
          prim(:,:,nmin:nmax,this%YVELOCITY),cons(:,:,nmin:nmax,this%YMOMENTUM), &
          cons(:,:,nmin:nmax,this%XMOMENTUM),yfluxes(:,:,nmin:nmax,this%DENSITY), &
          yfluxes(:,:,nmin:nmax,this%YMOMENTUM),yfluxes(:,:,nmin:nmax,this%XMOMENTUM))
-  END SUBROUTINE CalculateFluxesY_euler2Dit
+  END SUBROUTINE CalcFluxesY_euler2Dit
 
 
-  PURE SUBROUTINE CalculateStresses_euler2Dit(this,Mesh,pvar,dynvis,bulkvis, &
+  PURE SUBROUTINE CalcCharSystemX_euler2Dit(this,Mesh,i,dir,pvar,lambda,xvar)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Physics_TYP) :: this
+    TYPE(Mesh_TYP)    :: Mesh
+    INTEGER           :: i,dir
+    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,this%VNUM) :: pvar
+    REAL, DIMENSION(Mesh%JGMIN:Mesh%JGMAX,this%VNUM) :: lambda,xvar
+    !------------------------------------------------------------------------!
+    INTEGER           :: i1,i2
+    !------------------------------------------------------------------------!
+    INTENT(IN)        :: this,Mesh,i,dir,pvar
+    INTENT(INOUT)     :: lambda
+    INTENT(OUT)       :: xvar
+    !------------------------------------------------------------------------!
+    ! compute eigenvalues at i
+    CALL SetEigenValues_euler2Dit(this%csiso,pvar(i,:,this%XVELOCITY), &
+         lambda(:,1),lambda(:,2),lambda(:,3))
+    ! compute characteristic variables
+    i1 = i + SIGN(1,dir) ! left handed if dir<0 and right handed otherwise
+    i2 = MAX(i,i1)
+    i1 = MIN(i,i1)
+    CALL SetCharVars_euler2Dit(this%csiso,pvar(i1,:,this%DENSITY), &
+         pvar(i2,:,this%DENSITY),pvar(i1,:,this%XVELOCITY), &
+         pvar(i2,:,this%XVELOCITY),pvar(i1,:,this%YVELOCITY), &
+         pvar(i2,:,this%YVELOCITY),xvar(:,1),xvar(:,2),xvar(:,3))
+  END SUBROUTINE CalcCharSystemX_euler2Dit
+
+
+  PURE SUBROUTINE CalcCharSystemY_euler2Dit(this,Mesh,j,dir,pvar,lambda,xvar)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Physics_TYP) :: this
+    TYPE(Mesh_TYP)    :: Mesh
+    INTEGER           :: j,dir
+    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,this%VNUM) :: pvar
+    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,this%VNUM) :: lambda,xvar
+    !------------------------------------------------------------------------!
+    INTEGER           :: j1,j2
+    !------------------------------------------------------------------------!
+    INTENT(IN)        :: this,Mesh,j,dir,pvar
+    INTENT(INOUT)     :: lambda
+    INTENT(OUT)       :: xvar
+    !------------------------------------------------------------------------!
+    ! compute eigenvalues at j
+    CALL SetEigenValues_euler2Dit(this%csiso,pvar(:,j,this%YVELOCITY), &
+         lambda(:,1),lambda(:,2),lambda(:,3))
+    ! compute characteristic variables
+    j1 = j + SIGN(1,dir) ! left handed if dir<0 and right handed otherwise
+    j2 = MAX(j,j1)
+    j1 = MIN(j,j1)
+    CALL SetCharVars_euler2Dit(this%csiso,pvar(:,j1,this%DENSITY), &
+         pvar(:,j2,this%DENSITY),pvar(:,j1,this%YVELOCITY), &
+         pvar(:,j2,this%YVELOCITY),pvar(:,j1,this%XVELOCITY), &
+         pvar(:,j2,this%XVELOCITY),xvar(:,1),xvar(:,2),xvar(:,3))
+  END SUBROUTINE CalcCharSystemY_euler2Dit
+
+
+  PURE SUBROUTINE CalcBoundaryDataX_euler2Dit(this,Mesh,i1,dir,xvar,pvar)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Physics_TYP) :: this
+    TYPE(Mesh_TYP)    :: Mesh
+    INTEGER           :: i1,dir
+    REAL, DIMENSION(Mesh%JGMIN:Mesh%JGMAX,this%VNUM) :: xvar
+    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,this%VNUM) :: pvar
+    !------------------------------------------------------------------------!
+    INTEGER           :: i2
+    !------------------------------------------------------------------------!
+    INTENT(IN)        :: this,Mesh,i1,dir,xvar
+    INTENT(INOUT)     :: pvar
+    !------------------------------------------------------------------------!
+    i2 = i1 + SIGN(1,dir)  ! i +/- 1 depending on the sign of dir
+    CALL SetBoundaryData_euler2Dit(this%csiso,1.0*SIGN(1,dir), &
+         pvar(i1,:,this%DENSITY),pvar(i1,:,this%XVELOCITY), &
+         pvar(i1,:,this%YVELOCITY),xvar(:,1),xvar(:,2),xvar(:,3), &
+         pvar(i2,:,this%DENSITY),pvar(i2,:,this%XVELOCITY),pvar(i2,:,this%YVELOCITY))
+  END SUBROUTINE CalcBoundaryDataX_euler2Dit
+
+
+  PURE SUBROUTINE CalcBoundaryDataY_euler2Dit(this,Mesh,j1,dir,xvar,pvar)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Physics_TYP) :: this
+    TYPE(Mesh_TYP)    :: Mesh
+    INTEGER           :: j1,dir
+    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,this%VNUM) :: xvar
+    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,this%VNUM) :: pvar
+    !------------------------------------------------------------------------!
+    INTEGER           :: j2
+    !------------------------------------------------------------------------!
+    INTENT(IN)        :: this,Mesh,j1,dir,xvar
+    INTENT(INOUT)     :: pvar
+    !------------------------------------------------------------------------!
+    j2 = j1 + SIGN(1,dir)  ! j +/- 1 depending on the sign of dir
+    CALL SetBoundaryData_euler2Dit(this%csiso,1.0*SIGN(1,dir), &
+         pvar(:,j1,this%DENSITY),pvar(:,j1,this%YVELOCITY), &
+         pvar(:,j1,this%XVELOCITY),xvar(:,1),xvar(:,2),xvar(:,3), &
+         pvar(:,j2,this%DENSITY),pvar(:,j2,this%YVELOCITY),pvar(:,j2,this%XVELOCITY))
+  END SUBROUTINE CalcBoundaryDataY_euler2Dit
+
+
+  PURE SUBROUTINE CalcStresses_euler2Dit(this,Mesh,pvar,dynvis,bulkvis, &
        btxx,btxy,btyy)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
@@ -318,10 +408,10 @@ CONTAINS
     ! compute components of the stress tensor at cell bary centers
     ! inside the computational domain including one slice of ghost cells
 
-    ! compute bulk viscosity first and store the result in this%amin
+    ! compute bulk viscosity first and store the result in this%tmp
 !CDIR IEXPAND
-    CALL Divergence(Mesh,pvar(:,:,this%XVELOCITY),pvar(:,:,this%YVELOCITY),this%amin(:,:))
-    this%amin(:,:) = bulkvis(:,:)*this%amin(:,:)
+    CALL Divergence(Mesh,pvar(:,:,this%XVELOCITY),pvar(:,:,this%YVELOCITY),this%tmp(:,:))
+    this%tmp(:,:) = bulkvis(:,:)*this%tmp(:,:)
 
 !CDIR OUTERUNROLL=8
     DO j=Mesh%JMIN-1,Mesh%JMAX+1
@@ -331,12 +421,12 @@ CONTAINS
           btxx(i,j) = dynvis(i,j) * &
                ( (pvar(i+1,j,this%XVELOCITY) - pvar(i-1,j,this%XVELOCITY)) / Mesh%dlx(i,j) &
                + 2.0 * Mesh%cxyx(i,j,1) * pvar(i,j,this%YVELOCITY) ) &
-               + this%amin(i,j)
+               + this%tmp(i,j)
                
           btyy(i,j) = dynvis(i,j) * &
                ( (pvar(i,j+1,this%YVELOCITY) - pvar(i,j-1,this%YVELOCITY)) / Mesh%dly(i,j) &
                + 2.0 * Mesh%cyxy(i,j,1) * pvar(i,j,this%XVELOCITY) ) &
-               + this%amin(i,j)
+               + this%tmp(i,j)
 
           ! compute the off-diagonal elements (no bulk viscosity)
           btxy(i,j) = dynvis(i,j) * ( 0.5 * &
@@ -346,7 +436,7 @@ CONTAINS
                - Mesh%cyxy(i,j,1) * pvar(i,j,this%YVELOCITY) )
        END DO
     END DO
-  END SUBROUTINE CalculateStresses_euler2Dit
+  END SUBROUTINE CalcStresses_euler2Dit
 
 
   PURE SUBROUTINE GeometricalSources_center(this,Mesh,pvar,cvar,sterm)
@@ -370,11 +460,11 @@ CONTAINS
           ! geometrical source terms in momentum equationes
           sterm(i,j,this%XMOMENTUM) = MomentumSourcesX_euler2Dit(&
               cvar(i,j,this%YMOMENTUM),pvar(i,j,this%XVELOCITY),&
-              pvar(i,j,this%YVELOCITY),pvar(i,j,this%DENSITY)*this%csiso**2, &
+              pvar(i,j,this%YVELOCITY),pvar(i,j,this%DENSITY)*this%bccsound(i,j)**2, &
               Mesh%cxyx(i,j,1),Mesh%cyxy(i,j,1),Mesh%czxz(i,j,1))
           sterm(i,j,this%YMOMENTUM) = MomentumSourcesY_euler2Dit(&
               cvar(i,j,this%XMOMENTUM),pvar(i,j,this%XVELOCITY),&
-              pvar(i,j,this%YVELOCITY),pvar(i,j,this%DENSITY)*this%csiso**2, &
+              pvar(i,j,this%YVELOCITY),pvar(i,j,this%DENSITY)*this%bccsound(i,j)**2, &
               Mesh%cxyx(i,j,1),Mesh%cyxy(i,j,1),Mesh%czxz(i,j,1))
        END DO
     END DO
@@ -405,36 +495,36 @@ CONTAINS
           ! because it prevents COLLAPSING and causes poor vectorization
           sterm(i,j,this%XMOMENTUM) = MomentumSourcesX_euler2Dit(&
               cons(i,j,1,this%YMOMENTUM),prim(i,j,1,this%XVELOCITY),&
-              prim(i,j,1,this%YVELOCITY),prim(i,j,1,this%DENSITY)*this%csiso**2, &
+              prim(i,j,1,this%YVELOCITY),prim(i,j,1,this%DENSITY)*this%fcsound(i,j,1)**2, &
               Mesh%cxyx(i,j,1),Mesh%cyxy(i,j,1),Mesh%czxz(i,j,1)) &
             + MomentumSourcesX_euler2Dit(&
               cons(i,j,2,this%YMOMENTUM),prim(i,j,2,this%XVELOCITY),&
-              prim(i,j,2,this%YVELOCITY),prim(i,j,2,this%DENSITY)*this%csiso**2, &
+              prim(i,j,2,this%YVELOCITY),prim(i,j,2,this%DENSITY)*this%fcsound(i,j,2)**2, &
               Mesh%cxyx(i,j,2),Mesh%cyxy(i,j,2),Mesh%czxz(i,j,2)) &
             + MomentumSourcesX_euler2Dit(&
               cons(i,j,3,this%YMOMENTUM),prim(i,j,3,this%XVELOCITY),&
-              prim(i,j,3,this%YVELOCITY),prim(i,j,3,this%DENSITY)*this%csiso**2, &
+              prim(i,j,3,this%YVELOCITY),prim(i,j,3,this%DENSITY)*this%fcsound(i,j,3)**2, &
               Mesh%cxyx(i,j,3),Mesh%cyxy(i,j,3),Mesh%czxz(i,j,3)) &
             + MomentumSourcesX_euler2Dit(&
               cons(i,j,4,this%YMOMENTUM),prim(i,j,4,this%XVELOCITY),&
-              prim(i,j,4,this%YVELOCITY),prim(i,j,4,this%DENSITY)*this%csiso**2, &
+              prim(i,j,4,this%YVELOCITY),prim(i,j,4,this%DENSITY)*this%fcsound(i,j,4)**2, &
               Mesh%cxyx(i,j,4),Mesh%cyxy(i,j,4),Mesh%czxz(i,j,4))
 
           sterm(i,j,this%YMOMENTUM) = MomentumSourcesY_euler2Dit(&
               cons(i,j,1,this%XMOMENTUM),prim(i,j,1,this%XVELOCITY),&
-              prim(i,j,1,this%YVELOCITY),prim(i,j,1,this%DENSITY)*this%csiso**2, &
+              prim(i,j,1,this%YVELOCITY),prim(i,j,1,this%DENSITY)*this%fcsound(i,j,1)**2, &
               Mesh%cxyx(i,j,1),Mesh%cyxy(i,j,1),Mesh%czyz(i,j,1)) &
             + MomentumSourcesY_euler2Dit(&
               cons(i,j,2,this%XMOMENTUM),prim(i,j,2,this%XVELOCITY),&
-              prim(i,j,2,this%YVELOCITY),prim(i,j,2,this%DENSITY)*this%csiso**2, &
+              prim(i,j,2,this%YVELOCITY),prim(i,j,2,this%DENSITY)*this%fcsound(i,j,2)**2, &
               Mesh%cxyx(i,j,2),Mesh%cyxy(i,j,2),Mesh%czyz(i,j,2)) &
             + MomentumSourcesY_euler2Dit(&
               cons(i,j,3,this%XMOMENTUM),prim(i,j,3,this%XVELOCITY),&
-              prim(i,j,3,this%YVELOCITY),prim(i,j,3,this%DENSITY)*this%csiso**2, &
+              prim(i,j,3,this%YVELOCITY),prim(i,j,3,this%DENSITY)*this%fcsound(i,j,3)**2, &
               Mesh%cxyx(i,j,3),Mesh%cyxy(i,j,3),Mesh%czyz(i,j,3)) &
             + MomentumSourcesY_euler2Dit(&
               cons(i,j,4,this%XMOMENTUM),prim(i,j,4,this%XVELOCITY),&
-              prim(i,j,4,this%YVELOCITY),prim(i,j,4,this%DENSITY)*this%csiso**2, &
+              prim(i,j,4,this%YVELOCITY),prim(i,j,4,this%DENSITY)*this%fcsound(i,j,4)**2, &
               Mesh%cxyx(i,j,4),Mesh%cyxy(i,j,4),Mesh%czyz(i,j,4))
        END DO
     END DO
@@ -626,7 +716,52 @@ CONTAINS
   END SUBROUTINE SetWaveSpeeds_euler2Dit
 
 
-  ELEMENTAL SUBROUTINE CalculateFlux_euler2Dit(cs,rho,v,m1,m2,f1,f2,f3)
+  ELEMENTAL SUBROUTINE SetEigenValues_euler2Dit(cs,v,l1,l2,l3)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    REAL, INTENT(IN)  :: cs,v
+    REAL, INTENT(OUT) :: l1,l2,l3
+    !------------------------------------------------------------------------!
+    ! all eigenvalues of the isothermal euler problem
+    l1 = v - cs
+    l2 = v
+    l3 = v + cs
+  END SUBROUTINE SetEigenValues_euler2Dit
+
+
+  ELEMENTAL SUBROUTINE SetCharVars_euler2Dit(cs,rho1,rho2,u1,u2,v1,v2,&
+       xvar1,xvar2,xvar3)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    REAL, INTENT(IN)  :: cs,rho1,rho2,u1,u2,v1,v2
+    REAL, INTENT(OUT) :: xvar1,xvar2,xvar3
+    !------------------------------------------------------------------------!
+    REAL :: dlnrho,du
+    !------------------------------------------------------------------------!
+    dlnrho = LOG(rho2/rho1)
+    du = u2-u1
+    ! characteristic variables
+    xvar1 = cs*dlnrho - du
+    xvar2 = v2-v1
+    xvar3 = cs*dlnrho + du
+  END SUBROUTINE SetCharVars_euler2Dit
+
+
+  ELEMENTAL SUBROUTINE SetBoundaryData_euler2Dit(cs,dir,rho1,u1,v1,xvar1,xvar2, &
+       xvar3,rho2,u2,v2)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    REAL, INTENT(IN)  :: cs,dir,rho1,u1,v1,xvar1,xvar2,xvar3
+    REAL, INTENT(OUT) :: rho2,u2,v2
+    !------------------------------------------------------------------------!
+    ! extrapolate boundary values using characteristic variables
+    rho2 = rho1 * EXP(dir*0.5*(xvar3+xvar1)/cs)
+    u2   = u1 + dir*0.5*(xvar3-xvar1)
+    v2   = v1 + dir*xvar2
+  END SUBROUTINE SetBoundaryData_euler2Dit
+
+
+  ELEMENTAL SUBROUTINE CalcFlux_euler2Dit(cs,rho,v,m1,m2,f1,f2,f3)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     REAL, INTENT(IN)  :: cs,rho,v,m1,m2
@@ -635,7 +770,7 @@ CONTAINS
     f1 = rho*v
     f2 = m1*v + rho*cs*cs
     f3 = m2*v
-  END SUBROUTINE CalculateFlux_euler2Dit
+  END SUBROUTINE CalcFlux_euler2Dit
 
 
   ! momentum source terms due to inertial forces
@@ -693,7 +828,6 @@ CONTAINS
     !------------------------------------------------------------------------!
     INTENT(INOUT)     :: this
     !------------------------------------------------------------------------!
-    DEALLOCATE(this%structure,this%errormap)
     CALL ClosePhysics(this)
   END SUBROUTINE ClosePhysics_euler2Dit
 

@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: boundary_axis.f90                                                 #
 !#                                                                           #
-!# Copyright (C) 2006-2012                                                   #
+!# Copyright (C) 2006-2014                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -24,7 +24,12 @@
 !#############################################################################
 
 !----------------------------------------------------------------------------!
-! boundary module for axis boundaries
+!> \author Tobias Illenseer
+!!
+!! \brief Boundary module for axis boundaries
+!!
+!! \extends boundary_reflecting
+!! \ingroup boundary
 !----------------------------------------------------------------------------!
 MODULE boundary_axis
   USE mesh_common, ONLY : Mesh_TYP
@@ -49,6 +54,7 @@ MODULE boundary_axis
 
 CONTAINS
 
+  !> \public Constructor for the axis boundary condition
   SUBROUTINE InitBoundary_axis(this,Physics,btype,dir)
     IMPLICIT NONE
     !------------------------------------------------------------------------!

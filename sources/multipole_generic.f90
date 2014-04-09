@@ -24,7 +24,7 @@
 !#                                                                           #
 !#############################################################################
 !----------------------------------------------------------------------------!
-! generic module for multipole expansion
+!> generic module for multipole expansion
 !----------------------------------------------------------------------------!
 MODULE multipole_generic
   USE mesh_common, ONLY : Selection_TYP
@@ -38,9 +38,12 @@ MODULE multipole_generic
   INTEGER, PARAMETER :: SPHERMULTEXPAN       = 1
   INTEGER, PARAMETER :: CYLINMULTEXPAN       = 2
   !--------------------------------------------------------------------------!
+  ! exclude interface block from doxygen processing
+  !> \cond InterfaceBlock
   INTERFACE CalculatePotential
      MODULE PROCEDURE CalculatePotential_1, CalculatePotential_2
   END INTERFACE
+  !> \endcond
   !--------------------------------------------------------------------------!
   PUBLIC :: &
        ! types

@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: physics_common.f90                                                #
 !#                                                                           #
-!# Copyright (C) 2006-2010                                                   #
+!# Copyright (C) 2006-2014                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -22,9 +22,18 @@
 !# Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.                 #
 !#                                                                           #
 !#############################################################################
-
 !----------------------------------------------------------------------------!
-! basic physics module
+!> \defgroup physics physics
+!! \{
+!! \brief Family of physics modules
+!! \}
+!----------------------------------------------------------------------------!
+!> \author Tobias Illenseer
+!!
+!! \brief basic physics module
+!!
+!! \extends common_types
+!! \ingroup physics
 !----------------------------------------------------------------------------!
 MODULE physics_common
   USE common_types, &
@@ -34,9 +43,12 @@ MODULE physics_common
        Warning_common => Warning, Error_common => Error
   USE sources_common, ONLY : Sources_TYP
   USE constants_common, ONLY : Constants_TYP
+  USE common_dict, ONLY : Dict_TYP
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   PRIVATE
+  ! exclude interface block from doxygen processing
+  !> \cond InterfaceBlock
   INTERFACE GetType
      MODULE PROCEDURE GetAdvProblem, GetType_common
   END INTERFACE
@@ -61,50 +73,57 @@ MODULE physics_common
   INTERFACE Error
      MODULE PROCEDURE PhysicsError, Error_common
   END INTERFACE
+  !> \endcond
   !--------------------------------------------------------------------------!
-  TYPE PhysicsStruc_TYP
-     CHARACTER(LEN=16)      :: name                  ! descriptive name      !
-     INTEGER                :: pos                   ! array index           !
-     INTEGER                :: dim                   ! dimensionality and    !
-     INTEGER                :: rank                  !   rank of the data    !
-  END TYPE PhysicsStruc_TYP
   TYPE Physics_TYP
-     TYPE(Common_TYP)       :: advproblem            ! advection problem     !
-     TYPE(Constants_TYP)    :: constants             ! physical constants    !
+     !> \name Variables
+     TYPE(Common_TYP)    :: advproblem            !< advection problem
+     TYPE(Constants_TYP) :: constants             !< physical constants
      TYPE(Sources_TYP), POINTER &
-                            :: sources               ! list of source terms  !
-     REAL                   :: gamma                 ! ratio of spec. heats  !
-     REAL                   :: mu                    ! mean molecular weight !
-     REAL                   :: csiso                 ! isothermal sound speed!
-     REAL                   :: rhomin                ! density minimum       !
-     REAL                   :: pmin                  ! pressure minimum      !
-     REAL                   :: dpmax                 ! for time step control !
-     INTEGER                :: VNUM                  ! number of variables   !
-     INTEGER                :: DENSITY               ! array indices for     !
-     INTEGER                :: PRESSURE, ENERGY      !    primitive and      !
-     INTEGER                :: XVELOCITY, XMOMENTUM  !    conservative       !
-     INTEGER                :: YVELOCITY, YMOMENTUM  !    variables          !
-     INTEGER                :: ZVELOCITY, ZMOMENTUM  !                       !
-     TYPE(PhysicsStruc_TYP),DIMENSION(:), POINTER &
-                            :: structure             ! structure of variables!
-     INTEGER                :: nstruc                ! number of structure elem.!
+                         :: sources => null()     !< list of source terms
+     REAL                :: gamma,&               !< ratio of spec. heats
+                            time,&                !< simulation time       
+                            mu, &                 !< mean molecular weight
+                            csiso, &              !< isothermal sound speed
+                            Omega, &              !< speed of rotating
+                            centrot(2), &         !< center of rotation
+                            eps                   !< softening length
+     INTEGER             :: VNUM, &               !< number of variables
+                            DIM, &                !< Dimension (2 or 3)
+                            DENSITY,PRESSURE,ENERGY,SGSPRESSURE,SGSENERGY, &
+                            XVELOCITY,XMOMENTUM,YVELOCITY,YMOMENTUM,&
+                            ZVELOCITY,ZMOMENTUM   !< array indicies for primitive and conservative variables
+     LOGICAL             :: supports_absorbing    !< absorbing boundary conditions supported
+                            !! \details .TRUE. if absorbing boundary conditions are supported by the physics module
+     LOGICAL             :: supports_farfield     !< farfield boundary conditions supported
+                            !! \details .TRUE. if farfield boundary conditions are supported by the physics module
      CHARACTER(LEN=16), DIMENSION(:), POINTER &
-                            :: pvarname,cvarname     ! names of variables    !
-     CHARACTER(LEN=1), DIMENSION(:), POINTER :: errormap !mapping of errors to char !
-     REAL, DIMENSION(:,:,:), POINTER &
-                            :: csound                ! sound speed           !
+                         :: pvarname,cvarname     !< names of variables
      REAL, DIMENSION(:,:), POINTER &
-                            :: amin, amax, bmin, bmax! wave speeds           !
+                         :: bccsound, &           !< bary centered speed of sound
+                            amin, amax, &
+                            bmin, bmax, &         !< wave speeds
+                            bcradius, &           !< distance to the origin bary center values
+                            divposvec, &          !< divergence of the position vector
+                            bphi, &               !< bary centered constant gravitational potential
+                            tmp                   !< temporary storage
      REAL, DIMENSION(:,:,:), POINTER &
-                            :: tmin, tmax            ! temporary storage     !
+                         :: fcsound, &            !< speed of sound faces
+                            fradius, &            !< distance to the origin face values
+                            tmin, tmax, &         !< temporary storage
+                            bcposvec, &           !< curvilinear components of the position vector bary center values
+                            w, &                  !< fargo bulk velocity
+                            fphi, &               !< face centered constant gravitational potential
+                            hy                    !< chy or fhy depending on reconstruction
      REAL, DIMENSION(:,:,:,:), POINTER &
-                            :: fcent                 ! centrifugal force     !
+                         :: fcent, &              !< centrifugal force
+                            fposvec               !< curvilinear components of the position vector face values
   END TYPE Physics_TYP
+  !> \}
   !--------------------------------------------------------------------------!
   PUBLIC :: &
        ! types
        Physics_TYP, &
-       PhysicsStruc_TYP, &
        ! methods
        InitPhysics, &
        ClosePhysics, &
@@ -112,7 +131,6 @@ MODULE physics_common
        GetName, &
        GetRank, &
        GetNumProcs, &
-       GetErrorMap, &
        Initialized, &
        Info, &
        Warning, &
@@ -121,6 +139,7 @@ MODULE physics_common
 
 CONTAINS
 
+  !> \public Constructor of basic physics module
   SUBROUTINE InitPhysics(this,atype,aname,vnum)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
@@ -142,6 +161,7 @@ CONTAINS
   END SUBROUTINE InitPhysics
 
 
+  !> \public
   PURE FUNCTION GetAdvProblem(this) RESULT(ap)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
@@ -153,6 +173,7 @@ CONTAINS
   END FUNCTION GetAdvProblem
 
 
+  !> \public
   PURE FUNCTION GetAdvProblemName(this) RESULT(an)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
@@ -163,6 +184,7 @@ CONTAINS
   END FUNCTION GetAdvProblemName
 
 
+  !> \public
   PURE FUNCTION GetPhysicsRank(this) RESULT(r)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
@@ -172,6 +194,7 @@ CONTAINS
     r = GetRank_common(this%advproblem)
   END FUNCTION GetPhysicsRank
 
+  !> \public
   PURE FUNCTION GetPhysicsNumProcs(this) RESULT(p)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
@@ -181,18 +204,7 @@ CONTAINS
     p = GetNumProcs_common(this%advproblem)
   END FUNCTION GetPhysicsNumProcs
 
-
-  PURE FUNCTION GetErrorMap(this, error) RESULT(c)
-    IMPLICIT NONE
-    !------------------------------------------------------------------------!
-    TYPE(Physics_TYP), INTENT(IN) :: this
-    INTEGER, INTENT(IN):: error
-    CHARACTER(LEN=1) :: c
-    !------------------------------------------------------------------------!
-    c = this%errormap(error)
-  END FUNCTION GetErrorMap
-
-
+  !> \public
   PURE FUNCTION PhysicsInitialized(this) RESULT(i)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
@@ -202,7 +214,7 @@ CONTAINS
     i = Initialized_common(this%advproblem)
   END FUNCTION PhysicsInitialized
 
- 
+  !> \public
   SUBROUTINE PhysicsInfo(this,msg)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
@@ -213,6 +225,7 @@ CONTAINS
   END SUBROUTINE PhysicsInfo
 
 
+  !> \public
   SUBROUTINE PhysicsWarning(this,modproc,msg)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
@@ -223,6 +236,7 @@ CONTAINS
   END SUBROUTINE PhysicsWarning
 
 
+  !> \public
   SUBROUTINE PhysicsError(this,modproc,msg,rank)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
@@ -238,6 +252,7 @@ CONTAINS
   END SUBROUTINE PhysicsError
 
 
+  !> \public Destructor of basic physics module
   SUBROUTINE ClosePhysics(this)
     IMPLICIT NONE
     !------------------------------------------------------------------------!

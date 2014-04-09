@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: reconstruction_common.f90                                         #
 !#                                                                           #
-!# Copyright (C) 2006-2010                                                   #
+!# Copyright (C) 2006-2014                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -22,9 +22,18 @@
 !# Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.                 #
 !#                                                                           #
 !#############################################################################
-
 !----------------------------------------------------------------------------!
-! basic reconstruction module
+!> \defgroup reconstruction reconstruction
+!! \{
+!! \brief Family of reconstruction modules
+!! \}
+!----------------------------------------------------------------------------!
+!> \author Tobias Illenseer
+!!
+!! \brief basic reconstruction module
+!!
+!! \extends common_types
+!! \ingroup reconstruction
 !----------------------------------------------------------------------------!
 MODULE reconstruction_common
   USE common_types, &
@@ -35,6 +44,8 @@ MODULE reconstruction_common
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   PRIVATE
+  ! exclude interface block from doxygen processing
+  !> \cond InterfaceBlock
   INTERFACE GetType
      MODULE PROCEDURE GetOrder, GetType_common
   END INTERFACE
@@ -59,23 +70,28 @@ MODULE reconstruction_common
   INTERFACE Error
      MODULE PROCEDURE ReconstructionError, Error_common
   END INTERFACE
+  !> \endcond
   !--------------------------------------------------------------------------!
-  ! Reconstruction data structure
+  !> Reconstruction data structure
   TYPE Reconstruction_TYP
-     TYPE(Common_TYP)  :: order                    ! constant, linear, ...   !
-     TYPE(Common_TYP)  :: limiter                  ! limiter function        !
-     LOGICAL           :: primcons                 ! true if primitive       !
-     REAL              :: limiter_param            ! limiter parameter       !
+     !> \name Variables
+     TYPE(Common_TYP)  :: order                    !< constant, linear, ...
+     TYPE(Common_TYP)  :: limiter                  !< limiter function
+     LOGICAL           :: primcons                 !< true if primitive
+     REAL              :: limiter_param            !< limiter parameter
      REAL, DIMENSION(:,:,:), &
-          POINTER               :: xslopes,yslopes ! limited slopes          !
+          POINTER               :: xslopes,yslopes !< limited slopes
 !!$ FIXME: compute reconstruciton points once at initialization
 !!$        -> improves performance
 !!$     REAL, DIMENSION(:,:,:,:), &                   ! positions with respect  !
 !!$          POINTER               :: dx,dy           !   to cell bary centers  !
   END TYPE Reconstruction_TYP
   !--------------------------------------------------------------------------!
-  LOGICAL, PARAMETER :: PRIMITIVE    = .TRUE.
-  LOGICAL, PARAMETER :: CONSERVATIVE = .FALSE.
+  !> \name Public Attributes
+  INTEGER, PARAMETER :: PRIMITIVE    = 1           ! True  ! not type LOGICAL!
+  INTEGER, PARAMETER :: CONSERVATIVE = 0           ! False ! because it cant !
+                                                   ! be saved by netcdf      !
+  !> \}
   !--------------------------------------------------------------------------!
   PUBLIC :: &
        ! types
@@ -98,22 +114,28 @@ MODULE reconstruction_common
 
 CONTAINS
 
+  !> \public
   SUBROUTINE InitReconstruction(this,rtype,rname,pc)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Reconstruction_TYP) :: this
     INTEGER                  :: rtype
     CHARACTER(LEN=32)        :: rname
-    LOGICAL                  :: pc
+    INTEGER                  :: pc
     !------------------------------------------------------------------------!
     INTENT(IN)               :: rtype,rname,pc
     INTENT(INOUT)            :: this
     !------------------------------------------------------------------------!
     CALL InitCommon(this%order,rtype,rname)
-    this%primcons  = pc
+    IF(pc.EQ.0) THEN
+        this%primcons = .FALSE.
+    ELSE
+        this%primcons = .TRUE.
+    END IF
   END SUBROUTINE InitReconstruction
 
 
+  !> \public
   SUBROUTINE CloseReconstruction(this)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
@@ -123,6 +145,7 @@ CONTAINS
   END SUBROUTINE CloseReconstruction
 
 
+  !> \public
   PURE FUNCTION GetOrder(this) RESULT(rt)
     IMPLICIT NONE
     !------------------------------------------------------------------------!

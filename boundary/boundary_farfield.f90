@@ -3,8 +3,9 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: boundary_farfield.f90                                             #
 !#                                                                           #
-!# Copyright (C) 2006-2012                                                   #
+!# Copyright (C) 2006-2014                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
+!# Björn Sperling   <sperling@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
 !# it under the terms of the GNU General Public License as published by      #
@@ -24,7 +25,14 @@
 !#############################################################################
 
 !----------------------------------------------------------------------------!
-! inflow/outflow boundary conditions using Riemann invariants
+!> \author Tobias Illenseer
+!!
+!! \brief Boundary module for far field conditions
+!! 
+!! Implementation of inflow/outflow boundary conditions using Riemann invariants.
+!!
+!! \extends boundary_fixed 
+!! \ingroup boundary
 !----------------------------------------------------------------------------!
 MODULE boundary_farfield
   USE mesh_common, ONLY : Mesh_TYP
@@ -45,6 +53,7 @@ MODULE boundary_farfield
 
 CONTAINS
 
+  !> \public Constructor for farfield boundary conditions
   SUBROUTINE InitBoundary_farfield(this,Mesh,Physics,btype,dir)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
@@ -59,30 +68,25 @@ CONTAINS
     INTENT(INOUT) :: this
     !------------------------------------------------------------------------!
     CALL InitBoundary_fixed(this,Mesh,Physics,btype,dir,boundcond_name)
-    ! not working for isothermal Euler equations
-    IF ((GetType(Physics).EQ.EULER2D).OR.(GetType(Physics).EQ.EULER2D_ISOTHERM)) &
-         CALL Error(this,"InitBoundary_farfield", "Physics module is not " // &
-         "supported for this kind of boundary conditions.")
+    ! check if physics supports absorbing boundary conditions
+    IF (.NOT.Physics%supports_farfield) &
+       CALL Error(this,"InitBoundary_farfield", &
+                  "boundary condition not supported for this type of physics")
+    
     ! allocate memory for boundary data and mask
 !CDIR IEXPAND
     SELECT CASE(GetDirection(this))
     CASE(WEST,EAST)
-       ALLOCATE(this%data(Mesh%GNUM,Mesh%JMIN:Mesh%JMAX,Physics%VNUM), &
-            this%Rinv(Mesh%GNUM,Mesh%JMIN:Mesh%JMAX,2), &
-            this%Rtmp(Mesh%JMIN:Mesh%JMAX,2), &
-            this%cs(Mesh%JMIN:Mesh%JMAX), &
-            this%cs2gam(Mesh%JMIN:Mesh%JMAX), &
-            this%vn(Mesh%JMIN:Mesh%JMAX), &
-            this%s(Mesh%JMIN:Mesh%JMAX), &
+       ALLOCATE(this%data(Mesh%GNUM,Mesh%JGMIN:Mesh%JGMAX,Physics%VNUM), &
+            this%Rinv(Mesh%JGMIN:Mesh%JGMAX,Physics%VNUM), &
+            this%RinvInf(Mesh%JGMIN:Mesh%JGMAX,Physics%VNUM), &
+            this%lambda(Mesh%JGMIN:Mesh%JGMAX,Physics%VNUM), &
             STAT=err)
     CASE(SOUTH,NORTH)
-       ALLOCATE(this%data(Mesh%IMIN:Mesh%IMAX,Mesh%GNUM,Physics%VNUM), &
-            this%Rinv(Mesh%IMIN:Mesh%IMAX,Mesh%GNUM,2), &
-            this%Rtmp(Mesh%IMIN:Mesh%IMAX,2), &
-            this%cs(Mesh%IMIN:Mesh%IMAX), &
-            this%cs2gam(Mesh%IMIN:Mesh%IMAX), &
-            this%vn(Mesh%IMIN:Mesh%IMAX), &
-            this%s(Mesh%IMIN:Mesh%IMAX), &
+       ALLOCATE(this%data(Mesh%IGMIN:Mesh%IGMAX,Mesh%GNUM,Physics%VNUM), &
+            this%Rinv(Mesh%IGMIN:Mesh%IGMAX,Physics%VNUM), &
+            this%RinvInf(Mesh%IGMIN:Mesh%IGMAX,Physics%VNUM), &
+            this%lambda(Mesh%IGMIN:Mesh%IGMAX,Physics%VNUM), &
             STAT=err)
     END SELECT
     IF (err.NE.0) THEN
@@ -92,6 +96,7 @@ CONTAINS
   END SUBROUTINE InitBoundary_farfield
 
 
+  !> \public Applies the farfield boundary condition
   PURE SUBROUTINE CenterBoundary_farfield(this,Mesh,Physics,pvar)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
@@ -105,454 +110,91 @@ CONTAINS
     INTENT(IN)    :: Mesh,Physics
     INTENT(INOUT) :: this,pvar  
     !------------------------------------------------------------------------!
-!CDIR IEXPAND
-    SELECT CASE(GetDirection(this))
-    CASE(WEST)
-       IF (this%first_call) THEN
-          ! compute Riemann invariant (R+) associated with the incomming wave
-          ! using far field data; this has to be done only once per simulation
-          this%Rinv(:,:,1) = this%data(:,:,Physics%XVELOCITY)+2./(Physics%gamma-1.0) &
-               * GetSoundSpeed_adiabatic(Physics%gamma,this%data(:,:,Physics%DENSITY), &
-               this%data(:,:,Physics%PRESSURE))
-          this%first_call = .FALSE.
-       END IF
-       ! compute 2nd Riemann invariant (R-) associated with the outgoing wave
-       ! at internal points
-!CDIR UNROLL=2
-       DO i=0,1
-          this%Rtmp(:,i+1) = pvar(Mesh%IMIN+i,Mesh%JMIN:Mesh%JMAX,Physics%XVELOCITY) &
-               - 2./(Physics%gamma-1.0)*GetSoundSpeed_adiabatic(Physics%gamma, &
-               pvar(Mesh%IMIN+i,Mesh%JMIN:Mesh%JMAX,Physics%DENSITY), &
-               pvar(Mesh%IMIN+i,Mesh%JMIN:Mesh%JMAX,Physics%PRESSURE))
-       END DO
-       ! extrapolate R-
-       this%Rinv(1,:,2) = 1.5*this%Rtmp(:,1)-0.5*this%Rtmp(:,2)
-       DO i=2,Mesh%GNUM
-          this%Rinv(i,:,2) = this%Rinv(1,:,2)
-       END DO
-       ! speed of sound at the boundary
-       this%cs(:) = 0.25*(Physics%gamma-1.0)*(this%Rinv(1,:,1)-this%Rinv(1,:,2))
-       ! normal velocity at the boundary
-       this%vn(:) = 0.5*(this%Rinv(1,:,1)+this%Rinv(1,:,2))
-       ! UNROLL=Mesh%GNUM would be sufficient, but the compiler does
-       ! not know the value of Mesh%GNUM, hence we set UNROLL=4 and
-       ! hope that nobody sets Mesh%GNUM to a value greater than 4
-!CDIR UNROLL=4
-       DO i=1,Mesh%GNUM
-          WHERE (this%vn(:).LT.-this%cs(:))
-             ! supersonic outflow (extrapolation)
-!!$             pvar(Mesh%IMIN-i,Mesh%JMIN:Mesh%JMAX,Physics%DENSITY) = &
-!!$                  (i+1)*pvar(Mesh%IMIN,Mesh%JMIN:Mesh%JMAX,Physics%DENSITY) &
-!!$                  - i*pvar(Mesh%IMIN+1,Mesh%JMIN:Mesh%JMAX,Physics%DENSITY)
-!!$             pvar(Mesh%IMIN-i,Mesh%JMIN:Mesh%JMAX,Physics%XVELOCITY) = &
-!!$                  (i+1)*pvar(Mesh%IMIN,Mesh%JMIN:Mesh%JMAX,Physics%XVELOCITY) &
-!!$                  - i*pvar(Mesh%IMIN+1,Mesh%JMIN:Mesh%JMAX,Physics%XVELOCITY)
-!!$             pvar(Mesh%IMIN-i,Mesh%JMIN:Mesh%JMAX,Physics%YVELOCITY) = &
-!!$                  (i+1)*pvar(Mesh%IMIN,Mesh%JMIN:Mesh%JMAX,Physics%YVELOCITY) &
-!!$                  - i*pvar(Mesh%IMIN+1,Mesh%JMIN:Mesh%JMAX,Physics%YVELOCITY)
-!!$             pvar(Mesh%IMIN-i,Mesh%JMIN:Mesh%JMAX,Physics%ZVELOCITY) = &
-!!$                  (i+1)*pvar(Mesh%IMIN,Mesh%JMIN:Mesh%JMAX,Physics%ZVELOCITY) &
-!!$                  - i*pvar(Mesh%IMIN+1,Mesh%JMIN:Mesh%JMAX,Physics%ZVELOCITY)
-!!$             pvar(Mesh%IMIN-i,Mesh%JMIN:Mesh%JMAX,Physics%PRESSURE) = &
-!!$                  (i+1)*pvar(Mesh%IMIN,Mesh%JMIN:Mesh%JMAX,Physics%PRESSURE) &
-!!$                  - i*pvar(Mesh%IMIN+1,Mesh%JMIN:Mesh%JMAX,Physics%PRESSURE)
-             pvar(Mesh%IMIN-i,Mesh%JMIN:Mesh%JMAX,Physics%DENSITY) = &
-                  pvar(Mesh%IMIN,Mesh%JMIN:Mesh%JMAX,Physics%DENSITY)
-             pvar(Mesh%IMIN-i,Mesh%JMIN:Mesh%JMAX,Physics%XVELOCITY) = &
-                  pvar(Mesh%IMIN,Mesh%JMIN:Mesh%JMAX,Physics%XVELOCITY)
-             pvar(Mesh%IMIN-i,Mesh%JMIN:Mesh%JMAX,Physics%YVELOCITY) = &
-                  pvar(Mesh%IMIN,Mesh%JMIN:Mesh%JMAX,Physics%YVELOCITY)
-             pvar(Mesh%IMIN-i,Mesh%JMIN:Mesh%JMAX,Physics%ZVELOCITY) = &
-                  pvar(Mesh%IMIN,Mesh%JMIN:Mesh%JMAX,Physics%ZVELOCITY)
-             pvar(Mesh%IMIN-i,Mesh%JMIN:Mesh%JMAX,Physics%PRESSURE) = &
-                  pvar(Mesh%IMIN,Mesh%JMIN:Mesh%JMAX,Physics%PRESSURE)
-          ELSEWHERE (this%vn(:).GT.this%cs(:))
-             ! supersonic inflow (copy data)
-             pvar(Mesh%IMIN-i,Mesh%JMIN:Mesh%JMAX,Physics%DENSITY) = &
-                  this%data(i,Mesh%JMIN:Mesh%JMAX,Physics%DENSITY)
-             pvar(Mesh%IMIN-i,Mesh%JMIN:Mesh%JMAX,Physics%XVELOCITY) = &
-                  this%data(i,Mesh%JMIN:Mesh%JMAX,Physics%XVELOCITY)
-             pvar(Mesh%IMIN-i,Mesh%JMIN:Mesh%JMAX,Physics%YVELOCITY) = &
-                  this%data(i,Mesh%JMIN:Mesh%JMAX,Physics%YVELOCITY)
-             pvar(Mesh%IMIN-i,Mesh%JMIN:Mesh%JMAX,Physics%ZVELOCITY) = &
-                  this%data(i,Mesh%JMIN:Mesh%JMAX,Physics%ZVELOCITY)
-             pvar(Mesh%IMIN-i,Mesh%JMIN:Mesh%JMAX,Physics%PRESSURE) = &
-                  this%data(i,Mesh%JMIN:Mesh%JMAX,Physics%PRESSURE)
-          ELSEWHERE
-             ! subsonic flow
-             WHERE (this%vn(:).LT.0.0)
-                ! outflow
-                ! tangential velocities
-                pvar(Mesh%IMIN-i,Mesh%JMIN:Mesh%JMAX,Physics%YVELOCITY) = &
-                     pvar(Mesh%IMIN,Mesh%JMIN:Mesh%JMAX,Physics%YVELOCITY)
-                pvar(Mesh%IMIN-i,Mesh%JMIN:Mesh%JMAX,Physics%ZVELOCITY) = &
-                     pvar(Mesh%IMIN,Mesh%JMIN:Mesh%JMAX,Physics%ZVELOCITY) &
-                     * Mesh%bhz(Mesh%IMIN,Mesh%JMIN:Mesh%JMAX) &
-                     / Mesh%bhz(Mesh%IMIN-i,Mesh%JMIN:Mesh%JMAX)
-                ! entropy
-                this%s(:) = pvar(Mesh%IMIN,Mesh%JMIN:Mesh%JMAX,Physics%PRESSURE) &
-                     /pvar(Mesh%IMIN,Mesh%JMIN:Mesh%JMAX,Physics%DENSITY)**Physics%gamma
-             ELSEWHERE
-                ! inflow
-                ! tangential velocities
-                pvar(Mesh%IMIN-i,Mesh%JMIN:Mesh%JMAX,Physics%YVELOCITY) = &
-                     this%data(i,Mesh%JMIN:Mesh%JMAX,Physics%YVELOCITY)
-                pvar(Mesh%IMIN-i,Mesh%JMIN:Mesh%JMAX,Physics%ZVELOCITY) = &
-                     this%data(i,Mesh%JMIN:Mesh%JMAX,Physics%ZVELOCITY)
-                ! entropy
-                this%s(:) = this%data(i,Mesh%JMIN:Mesh%JMAX,Physics%PRESSURE) &
-                     /this%data(i,Mesh%JMIN:Mesh%JMAX,Physics%DENSITY)**Physics%gamma
-             END WHERE
-             ! normal velocity
-             pvar(Mesh%IMIN-i,Mesh%JMIN:Mesh%JMAX,Physics%XVELOCITY) = &
-                  0.5*(this%Rinv(i,:,1)+this%Rinv(i,:,2))
-             ! cs**2 / gamma
-             this%cs2gam(:) = (0.25*(Physics%gamma-1.0)*(this%Rinv(i,:,1) &
-                  -this%Rinv(i,:,2)))**2 / Physics%gamma
-             ! density
-             pvar(Mesh%IMIN-i,Mesh%JMIN:Mesh%JMAX,Physics%DENSITY) = (this%cs2gam(:) &
-                  /this%s(:))**(1./(Physics%gamma-1.0))
-             ! pressure
-             pvar(Mesh%IMIN-i,Mesh%JMIN:Mesh%JMAX,Physics%PRESSURE) = this%cs2gam(:)  &
-                  * pvar(Mesh%IMIN-i,Mesh%JMIN:Mesh%JMAX,Physics%DENSITY)
-          END WHERE
-       END DO
-    CASE(EAST)
-       IF (this%first_call) THEN
-          ! compute Riemann invariant (R-) associated with the incomming wave
-          ! using far field data; this has to be done only once per simulation
-          this%Rinv(:,:,2) = this%data(:,:,Physics%XVELOCITY)-2./(Physics%gamma-1.0) &
-               * GetSoundSpeed_adiabatic(Physics%gamma,this%data(:,:,Physics%DENSITY), &
-               this%data(:,:,Physics%PRESSURE))
-          this%first_call = .FALSE.
-       END IF
-       ! compute 1st Riemann invariant (R+) associated with the outgoing wave
-       ! at internal points
-!CDIR UNROLL=2
-       DO i=0,1
-          this%Rtmp(:,i+1) = pvar(Mesh%IMAX-i,Mesh%JMIN:Mesh%JMAX,Physics%XVELOCITY) &
-            + 2./(Physics%gamma-1.0)*GetSoundSpeed_adiabatic(Physics%gamma, &
-            pvar(Mesh%IMAX-i,Mesh%JMIN:Mesh%JMAX,Physics%DENSITY), &
-            pvar(Mesh%IMAX-i,Mesh%JMIN:Mesh%JMAX,Physics%PRESSURE))
-       END DO
-       ! extrapolate R+
-       this%Rinv(1,:,1) = 1.5*this%Rtmp(:,1)-0.5*this%Rtmp(:,2)
-       DO i=2,Mesh%GNUM
-          this%Rinv(i,:,1) = this%Rinv(1,:,1)
-       END DO
-       ! sound speed at the boundary
-       this%cs(:) = 0.25*(Physics%gamma-1.0)*(this%Rinv(1,:,1)-this%Rinv(1,:,2))
-       ! normal velocity at the boundary
-       this%vn(:) = 0.5*(this%Rinv(1,:,1)+this%Rinv(1,:,2))
-       ! UNROLL=Mesh%GNUM would be sufficient, but the compiler does
-       ! not know the value of Mesh%GNUM, hence we set UNROLL=4 and
-       ! hope that nobody sets Mesh%GNUM to a value greater than 4
-       ! speed of sound in boundary cells
-!CDIR UNROLL=4
-       DO i=1,Mesh%GNUM
-          WHERE (this%vn(:).GT.this%cs(:))
-             ! supersonic outflow (extrapolation)
-!!$             pvar(Mesh%IMAX+i,Mesh%JMIN:Mesh%JMAX,Physics%DENSITY) = &
-!!$                  (i+1)*pvar(Mesh%IMAX,Mesh%JMIN:Mesh%JMAX,Physics%DENSITY) &
-!!$                  - i*pvar(Mesh%IMAX-1,Mesh%JMIN:Mesh%JMAX,Physics%DENSITY)
-!!$             pvar(Mesh%IMAX+i,Mesh%JMIN:Mesh%JMAX,Physics%XVELOCITY) = &
-!!$                  (i+1)*pvar(Mesh%IMAX,Mesh%JMIN:Mesh%JMAX,Physics%XVELOCITY) &
-!!$                  - i*pvar(Mesh%IMAX-1,Mesh%JMIN:Mesh%JMAX,Physics%XVELOCITY)
-!!$             pvar(Mesh%IMAX+i,Mesh%JMIN:Mesh%JMAX,Physics%YVELOCITY) = &
-!!$                  (i+1)*pvar(Mesh%IMAX,Mesh%JMIN:Mesh%JMAX,Physics%YVELOCITY) &
-!!$                  - i*pvar(Mesh%IMAX-1,Mesh%JMIN:Mesh%JMAX,Physics%YVELOCITY)
-!!$             pvar(Mesh%IMAX+i,Mesh%JMIN:Mesh%JMAX,Physics%ZVELOCITY) = &
-!!$                  (i+1)*pvar(Mesh%IMAX,Mesh%JMIN:Mesh%JMAX,Physics%ZVELOCITY) &
-!!$                  - i*pvar(Mesh%IMAX-1,Mesh%JMIN:Mesh%JMAX,Physics%ZVELOCITY)
-!!$             pvar(Mesh%IMAX+i,Mesh%JMIN:Mesh%JMAX,Physics%PRESSURE) = &
-!!$                  (i+1)*pvar(Mesh%IMAX,Mesh%JMIN:Mesh%JMAX,Physics%PRESSURE) &
-!!$                  - i*pvar(Mesh%IMAX-1,Mesh%JMIN:Mesh%JMAX,Physics%PRESSURE)
-             pvar(Mesh%IMAX+i,Mesh%JMIN:Mesh%JMAX,Physics%DENSITY) = &
-                  pvar(Mesh%IMAX,Mesh%JMIN:Mesh%JMAX,Physics%DENSITY)
-             pvar(Mesh%IMAX+i,Mesh%JMIN:Mesh%JMAX,Physics%XVELOCITY) = &
-                  pvar(Mesh%IMAX,Mesh%JMIN:Mesh%JMAX,Physics%XVELOCITY)
-             pvar(Mesh%IMAX+i,Mesh%JMIN:Mesh%JMAX,Physics%YVELOCITY) = &
-                  pvar(Mesh%IMAX,Mesh%JMIN:Mesh%JMAX,Physics%YVELOCITY)
-             pvar(Mesh%IMAX+i,Mesh%JMIN:Mesh%JMAX,Physics%ZVELOCITY) = &
-                  pvar(Mesh%IMAX,Mesh%JMIN:Mesh%JMAX,Physics%ZVELOCITY)
-             pvar(Mesh%IMAX+i,Mesh%JMIN:Mesh%JMAX,Physics%PRESSURE) = &
-                  pvar(Mesh%IMAX,Mesh%JMIN:Mesh%JMAX,Physics%PRESSURE)
-          ELSEWHERE (this%vn(:).LT.-this%cs(:))
-             ! supersonic inflow (copy data)
-             pvar(Mesh%IMAX+i,Mesh%JMIN:Mesh%JMAX,Physics%DENSITY) = &
-                  this%data(i,Mesh%JMIN:Mesh%JMAX,Physics%DENSITY)
-             pvar(Mesh%IMAX+i,Mesh%JMIN:Mesh%JMAX,Physics%XVELOCITY) = &
-                  this%data(i,Mesh%JMIN:Mesh%JMAX,Physics%XVELOCITY)
-             pvar(Mesh%IMAX+i,Mesh%JMIN:Mesh%JMAX,Physics%YVELOCITY) = &
-                  this%data(i,Mesh%JMIN:Mesh%JMAX,Physics%YVELOCITY)
-             pvar(Mesh%IMAX+i,Mesh%JMIN:Mesh%JMAX,Physics%ZVELOCITY) = &
-                  this%data(i,Mesh%JMIN:Mesh%JMAX,Physics%ZVELOCITY)
-             pvar(Mesh%IMAX+i,Mesh%JMIN:Mesh%JMAX,Physics%PRESSURE) = &
-                  this%data(i,Mesh%JMIN:Mesh%JMAX,Physics%PRESSURE)
-          ELSEWHERE
-             ! subsonic flow
-             WHERE (this%vn(:).GT.0.0)
-                ! outflow
-                ! tangential velocities
-                pvar(Mesh%IMAX+i,Mesh%JMIN:Mesh%JMAX,Physics%YVELOCITY) = &
-                     pvar(Mesh%IMAX,Mesh%JMIN:Mesh%JMAX,Physics%YVELOCITY)
-                pvar(Mesh%IMAX+i,Mesh%JMIN:Mesh%JMAX,Physics%ZVELOCITY) = &
-                     pvar(Mesh%IMAX,Mesh%JMIN:Mesh%JMAX,Physics%ZVELOCITY) &
-                     * Mesh%bhz(Mesh%IMAX,Mesh%JMIN:Mesh%JMAX) &
-                     / Mesh%bhz(Mesh%IMAX+i,Mesh%JMIN:Mesh%JMAX)
-                ! entropy
-                this%s(:) = pvar(Mesh%IMAX,Mesh%JMIN:Mesh%JMAX,Physics%PRESSURE) &
-                     /pvar(Mesh%IMAX,Mesh%JMIN:Mesh%JMAX,Physics%DENSITY)**Physics%gamma
-             ELSEWHERE
-                ! inflow
-                ! tangential velocities
-                pvar(Mesh%IMAX+i,Mesh%JMIN:Mesh%JMAX,Physics%YVELOCITY) = &
-                     this%data(i,Mesh%JMIN:Mesh%JMAX,Physics%YVELOCITY)
-                pvar(Mesh%IMAX+i,Mesh%JMIN:Mesh%JMAX,Physics%ZVELOCITY) = &
-                     this%data(i,Mesh%JMIN:Mesh%JMAX,Physics%ZVELOCITY)
-                ! entropy
-                this%s(:) = this%data(i,Mesh%JMIN:Mesh%JMAX,Physics%PRESSURE) &
-                     /this%data(i,Mesh%JMIN:Mesh%JMAX,Physics%DENSITY)**Physics%gamma
-             END WHERE
-             ! normal velocity
-             pvar(Mesh%IMAX+i,Mesh%JMIN:Mesh%JMAX,Physics%XVELOCITY) =  &
-                  0.5*(this%Rinv(i,:,1)+this%Rinv(i,:,2))
-             ! cs**2 / gamma
-             this%cs2gam(:) = (0.25*(Physics%gamma-1.0)*(this%Rinv(i,:,1) &
-                  -this%Rinv(i,:,2)))**2 / Physics%gamma
-             ! density
-             pvar(Mesh%IMAX+i,Mesh%JMIN:Mesh%JMAX,Physics%DENSITY) = (this%cs2gam(:) &
-                  /this%s(:))**(1./(Physics%gamma-1.0))
-             ! pressure
-             pvar(Mesh%IMAX+i,Mesh%JMIN:Mesh%JMAX,Physics%PRESSURE) = this%cs2gam(:)  &
-                  * pvar(Mesh%IMAX+i,Mesh%JMIN:Mesh%JMAX,Physics%DENSITY)
-          END WHERE
-       END DO
-    CASE(SOUTH)
-       IF (this%first_call) THEN
-          ! compute Riemann invariant (R+) associated with the incomming wave
-          ! using far field data
-          this%Rinv(:,:,1) = this%data(:,:,Physics%YVELOCITY)+2./(Physics%gamma-1.0) &
-               * GetSoundSpeed_adiabatic(Physics%gamma,this%data(:,:,Physics%DENSITY), &
-               this%data(:,:,Physics%PRESSURE))
-          this%first_call = .FALSE.
-       END IF
-       ! compute 2nd Riemann invariant (R-) associated with the outgoing wave
-       ! at internal points
-!CDIR UNROLL=2
-       DO j=0,1
-          this%Rtmp(Mesh%IMIN:Mesh%IMAX,j+1) = &
-               pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN+j,Physics%YVELOCITY) &
-               - 2./(Physics%gamma-1.0)*GetSoundSpeed_adiabatic(Physics%gamma, &
-               pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN+j,Physics%DENSITY), &
-               pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN+j,Physics%PRESSURE))
-       END DO
-       ! extrapolate R-
-       this%Rinv(:,1,2) = 1.5*this%Rtmp(:,1)-0.5*this%Rtmp(:,2)
-       DO j=2,Mesh%GNUM
-          this%Rinv(:,j,2) = this%Rinv(:,1,2)
-       END DO
-       ! speed of sound at the boundary
-       this%cs(:) = 0.25*(Physics%gamma-1.0)*(this%Rinv(:,1,1)-this%Rinv(:,1,2))
-       ! normal velocity at the boundary
-       this%vn(:) = 0.5*(this%Rinv(:,1,1)+this%Rinv(:,1,2))
-       ! UNROLL=Mesh%GNUM would be sufficient, but the compiler does
-       ! not know the value of Mesh%GNUM, hence we set UNROLL=4 and
-       ! hope that nobody sets Mesh%GNUM to a value greater than 4
-!CDIR UNROLL=4
-       DO j=1,Mesh%GNUM
-          WHERE (this%vn(:).LT.-this%cs(:))
-             ! supersonic outflow (extrapolation)
-!!$             pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN-j,Physics%DENSITY) = &
-!!$                  (j+1)*pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN,Physics%DENSITY) &
-!!$                  - j*pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN+1,Physics%DENSITY)
-!!$             pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN-j,Physics%XVELOCITY) = &
-!!$                  (j+1)*pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN,Physics%XVELOCITY) &
-!!$                  - j*pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN+1,Physics%XVELOCITY)
-!!$             pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN-j,Physics%YVELOCITY) = &
-!!$                  (j+1)*pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN,Physics%YVELOCITY) &
-!!$                  - j*pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN+1,Physics%YVELOCITY)
-!!$             pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN-j,Physics%ZVELOCITY) = &
-!!$                  (j+1)*pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN,Physics%ZVELOCITY) &
-!!$                  - j*pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN+1,Physics%ZVELOCITY)
-!!$             pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN-j,Physics%PRESSURE) = &
-!!$                  (j+1)*pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN,Physics%PRESSURE) &
-!!$                  - j*pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN+1,Physics%PRESSURE)
-             pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN-j,Physics%DENSITY) = &
-                  pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN,Physics%DENSITY)
-             pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN-j,Physics%XVELOCITY) = &
-                  pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN,Physics%XVELOCITY)
-             pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN-j,Physics%YVELOCITY) = &
-                  pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN,Physics%YVELOCITY)
-             pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN-j,Physics%ZVELOCITY) = &
-                  pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN,Physics%ZVELOCITY)
-             pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN-j,Physics%PRESSURE) = &
-                  pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN,Physics%PRESSURE)
-          ELSEWHERE (this%vn(:).GT.this%cs(:))
-             ! supersonic inflow (copy data)
-             pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN-j,Physics%DENSITY) = &
-                  this%data(Mesh%IMIN:Mesh%IMAX,j,Physics%DENSITY)
-             pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN-j,Physics%XVELOCITY) = &
-                  this%data(Mesh%IMIN:Mesh%IMAX,j,Physics%XVELOCITY)
-             pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN-j,Physics%YVELOCITY) = &
-                  this%data(Mesh%IMIN:Mesh%IMAX,j,Physics%YVELOCITY)
-             pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN-j,Physics%ZVELOCITY) = &
-                  this%data(Mesh%IMIN:Mesh%IMAX,j,Physics%ZVELOCITY)
-             pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN-j,Physics%PRESSURE) = &
-                  this%data(Mesh%IMIN:Mesh%IMAX,j,Physics%PRESSURE)
-          ELSEWHERE
-             ! subsonic flow
-             WHERE (this%vn(:).LT.0.0)
-                ! outflow
-                ! tangential velocities
-                pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN-j,Physics%XVELOCITY) = &
-                     pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN,Physics%XVELOCITY)
-                pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN-j,Physics%ZVELOCITY) = &
-                     pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN,Physics%ZVELOCITY) &
-                     * Mesh%bhz(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN) &
-                     / Mesh%bhz(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN-j)
-                ! entropy
-                this%s(:) = pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN,Physics%PRESSURE) &
-                     /pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN,Physics%DENSITY)**Physics%gamma
-             ELSEWHERE
-                ! inflow
-                ! tangential velocities
-                pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN-j,Physics%XVELOCITY) = &
-                     this%data(Mesh%IMIN:Mesh%IMAX,j,Physics%XVELOCITY)
-                pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN-j,Physics%ZVELOCITY) = &
-                     this%data(Mesh%IMIN:Mesh%IMAX,j,Physics%ZVELOCITY)
-                ! entropy
-                this%s(:) = this%data(Mesh%IMIN:Mesh%IMAX,j,Physics%PRESSURE) &
-                     /this%data(Mesh%IMIN:Mesh%IMAX,j,Physics%DENSITY)**Physics%gamma
-             END WHERE
-             ! normal velocity
-             pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN-j,Physics%YVELOCITY) = &
-                  0.5*(this%Rinv(:,j,1)+this%Rinv(:,j,2))
-             ! cs**2 / gamma
-             this%cs2gam(:) = (0.25*(Physics%gamma-1.0)*(this%Rinv(:,j,1) &
-                  -this%Rinv(:,j,2)))**2 / Physics%gamma
-             ! density
-             pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN-j,Physics%DENSITY) = (this%cs2gam(:) &
-                  /this%s(:))**(1./(Physics%gamma-1.0))
-             ! pressure
-             pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN-j,Physics%PRESSURE) = this%cs2gam(:)  &
-                  * pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN-j,Physics%DENSITY)
-          END WHERE
-       END DO
-    CASE(NORTH)
-       IF (this%first_call) THEN
-          ! compute Riemann invariant (R-) associated with the incomming wave
-          ! using far field data
-          this%Rinv(:,:,2) = this%data(:,:,Physics%YVELOCITY)-2./(Physics%gamma-1.0) &
-               * GetSoundSpeed_adiabatic(Physics%gamma,this%data(:,:,Physics%DENSITY), &
-               this%data(:,:,Physics%PRESSURE))
-          this%first_call = .FALSE.
-       END IF
-       ! compute 2nd Riemann invariant (R+) associated with the outgoing wave
-       ! at internal points
-!CDIR UNROLL=2
-       DO j=0,1
-          this%Rtmp(:,j+1) = pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX-j,Physics%YVELOCITY) &
-            + 2./(Physics%gamma-1.0)*GetSoundSpeed_adiabatic(Physics%gamma, &
-            pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX-j,Physics%DENSITY), &
-            pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX-j,Physics%PRESSURE))
-       END DO
-       ! extrapolate R+
-       this%Rinv(:,1,1) = 1.5*this%Rtmp(:,1)-0.5*this%Rtmp(:,2)
-       DO j=2,Mesh%GNUM
-          this%Rinv(:,j,1) = this%Rinv(:,1,1)
-       END DO
-       ! sound speed at the boundary
-       this%cs(:) = 0.25*(Physics%gamma-1.0)*(this%Rinv(:,1,1)-this%Rinv(:,1,2))
-       ! normal velocity at the boundary
-       this%vn(:) = 0.5*(this%Rinv(:,1,1)+this%Rinv(:,1,2))
-       ! UNROLL=Mesh%GNUM would be sufficient, but the compiler does
-       ! not know the value of Mesh%GNUM, hence we set UNROLL=4 and
-       ! hope that nobody sets Mesh%GNUM to a value greater than 4
-!CDIR UNROLL=4
-       DO j=1,Mesh%GNUM
-          WHERE (this%vn(:).GT.this%cs(:))
-             ! supersonic outflow (extrapolation)
-!!$             pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX+j,Physics%DENSITY) = &
-!!$                  (j+1)*pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX,Physics%DENSITY) &
-!!$                  - j*pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX-1,Physics%DENSITY)
-!!$             pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX+j,Physics%XVELOCITY) = &
-!!$                  (j+1)*pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX,Physics%XVELOCITY) &
-!!$                  - j*pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX-1,Physics%XVELOCITY)
-!!$             pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX+j,Physics%YVELOCITY) = &
-!!$                  (j+1)*pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX,Physics%YVELOCITY) &
-!!$                  - j*pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX-1,Physics%YVELOCITY)
-!!$             pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX+j,Physics%ZVELOCITY) = &
-!!$                  (j+1)*pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX,Physics%ZVELOCITY) &
-!!$                  - j*pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX-1,Physics%ZVELOCITY)
-!!$             pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX+j,Physics%PRESSURE) = &
-!!$                  (j+1)*pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX,Physics%PRESSURE) &
-!!$                  - j*pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX-1,Physics%PRESSURE)
-             pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX+j,Physics%DENSITY) = &
-                  pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX,Physics%DENSITY)
-             pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX+j,Physics%XVELOCITY) = &
-                  pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX,Physics%XVELOCITY)
-             pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX+j,Physics%YVELOCITY) = &
-                  pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX,Physics%YVELOCITY)
-             pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX+j,Physics%ZVELOCITY) = &
-                  pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX,Physics%ZVELOCITY)
-             pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX+j,Physics%PRESSURE) = &
-                  pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX,Physics%PRESSURE)
-          ELSEWHERE (this%vn(:).LT.-this%cs(:))
-             ! supersonic inflow (copy data)
-             pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX+j,Physics%DENSITY) = &
-                  this%data(Mesh%IMIN:Mesh%IMAX,j,Physics%DENSITY)
-             pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX+j,Physics%XVELOCITY) = &
-                  this%data(Mesh%IMIN:Mesh%IMAX,j,Physics%XVELOCITY)
-             pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX+j,Physics%YVELOCITY) = &
-                  this%data(Mesh%IMIN:Mesh%IMAX,j,Physics%YVELOCITY)
-             pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX+j,Physics%ZVELOCITY) = &
-                  this%data(Mesh%IMIN:Mesh%IMAX,j,Physics%ZVELOCITY)
-             pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX+j,Physics%PRESSURE) = &
-                  this%data(Mesh%IMIN:Mesh%IMAX,j,Physics%PRESSURE)
-          ELSEWHERE
-             ! subsonic flow
-             WHERE (this%vn(:).GT.0.0)
-                ! outflow
-                ! tangential velocities
-                pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX+j,Physics%XVELOCITY) = &
-                     pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX,Physics%XVELOCITY)
-                pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX+j,Physics%ZVELOCITY) = &
-                     pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX,Physics%ZVELOCITY) &
-                     * Mesh%bhz(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX) &
-                     / Mesh%bhz(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX+j)
-                ! entropy
-                this%s(:) = pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX,Physics%PRESSURE) &
-                     /pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX,Physics%DENSITY)**Physics%gamma
-             ELSEWHERE
-                ! inflow
-                ! tangential velocities
-                pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX+j,Physics%XVELOCITY) = &
-                     this%data(Mesh%IMIN:Mesh%IMAX,j,Physics%XVELOCITY)
-                pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX+j,Physics%ZVELOCITY) = &
-                     this%data(Mesh%IMIN:Mesh%IMAX,j,Physics%ZVELOCITY)
-                ! entropy
-                this%s(:) = this%data(Mesh%IMIN:Mesh%IMAX,j,Physics%PRESSURE) &
-                     /this%data(Mesh%IMIN:Mesh%IMAX,j,Physics%DENSITY)**Physics%gamma
-             END WHERE
-             ! normal velocity
-             pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX+j,Physics%YVELOCITY) = &
-                  0.5*(this%Rinv(:,j,1)+this%Rinv(:,j,2))
-             ! cs**2 / gamma
-             this%cs2gam(:) = (0.25*(Physics%gamma-1.0)*(this%Rinv(:,j,1) &
-                  -this%Rinv(:,j,2)))**2 / Physics%gamma
-             ! density
-             pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX+j,Physics%DENSITY) = (this%cs2gam(:) &
-                  /this%s(:))**(1./(Physics%gamma-1.0))
-             ! pressure
-             pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX+j,Physics%PRESSURE) = this%cs2gam(:)  &
-                  * pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMAX+j,Physics%DENSITY)
-          END WHERE
-       END DO
-    END SELECT
+   SELECT CASE(GetDirection(this))
+   CASE(WEST)
+     IF (this%first_call) THEN
+        ! compute Riemann invariants at boundary (infinity)
+        pvar(Mesh%IMIN-1,:,:) = this%data(1,:,:) 
+        CALL CalculatePrim2RiemannX(Physics,Mesh,Mesh%IMIN-1,&
+                      pvar,this%lambda,this%RinvInf)
+        this%first_call = .FALSE.
+     END IF
+
+     DO i=1,Mesh%GNUM
+       ! compute Riemann invariants
+       CALL CalculatePrim2RiemannX(Physics,Mesh,Mesh%IMIN-i+1,&
+                                  pvar,this%lambda,this%Rinv)
+       ! set infinity Riemanns for inflow 
+       WHERE (this%lambda(:,:).GE.0.0)
+             this%Rinv(:,:) = this%RinvInf(:,:)
+       END WHERE
+       ! transform back to primitive variables at the boundary
+       CALL CalculateRiemann2PrimX(Physics,Mesh,Mesh%IMIN-i,this%Rinv,pvar) 
+     END DO
+   CASE(EAST)
+     IF (this%first_call) THEN
+        ! compute Riemann invariants at boundary (infinity)
+        pvar(Mesh%IMAX+1,:,:) = this%data(1,:,:) 
+        CALL CalculatePrim2RiemannX(Physics,Mesh,Mesh%IMAX+1,&
+                      pvar,this%lambda,this%RinvInf)
+        this%first_call = .FALSE.
+     END IF
+
+     DO i=1,Mesh%GNUM
+       ! compute Riemann invariants
+       CALL CalculatePrim2RiemannX(Physics,Mesh,Mesh%IMAX+i-1,&
+                                  pvar,this%lambda,this%Rinv)
+       ! set infinity Riemanns for inflow 
+       WHERE (this%lambda(:,:).LE.0.0)
+             this%Rinv(:,:) = this%RinvInf(:,:)
+       END WHERE
+       ! transform back to primitive variables at the boundary
+       CALL CalculateRiemann2PrimX(Physics,Mesh,Mesh%IMAX+i,this%Rinv,pvar) 
+     END DO
+   CASE(SOUTH)
+     IF (this%first_call) THEN
+        ! compute Riemann invariants at boundary (infinity)
+        pvar(:,Mesh%JMIN-1,:) = this%data(:,1,:) 
+        CALL CalculatePrim2RiemannY(Physics,Mesh,Mesh%JMIN-1,&
+                      pvar,this%lambda,this%RinvInf)
+        this%first_call = .FALSE.
+     END IF
+
+     DO j=1,Mesh%GNUM
+       ! compute Riemann invariants
+       CALL CalculatePrim2RiemannY(Physics,Mesh,Mesh%JMIN-j+1,&
+                                  pvar,this%lambda,this%Rinv)
+       ! set infinity Riemanns for inflow 
+       WHERE (this%lambda(:,:).GE.0.0)
+             this%Rinv(:,:) = this%RinvInf(:,:)
+       END WHERE
+       ! transform back to primitive variables at the boundary
+       CALL CalculateRiemann2PrimY(Physics,Mesh,Mesh%JMIN-j,this%Rinv,pvar) 
+     END DO
+   CASE(NORTH)
+     IF (this%first_call) THEN
+        ! compute Riemann invariants at boundary (infinity)
+        pvar(:,Mesh%JMAX+1,:) = this%data(:,1,:) 
+        CALL CalculatePrim2RiemannY(Physics,Mesh,Mesh%JMAX+1,&
+                      pvar,this%lambda,this%RinvInf)
+        this%first_call = .FALSE.
+     END IF
+
+     DO j=1,Mesh%GNUM
+       ! compute Riemann invariants
+       CALL CalculatePrim2RiemannY(Physics,Mesh,Mesh%JMAX+j-1,&
+                                  pvar,this%lambda,this%Rinv)
+       ! set infinity Riemanns for inflow 
+       WHERE (this%lambda(:,:).LE.0.0)
+             this%Rinv(:,:) = this%RinvInf(:,:)
+       END WHERE
+       ! transform back to primitive variables at the boundary
+       CALL CalculateRiemann2PrimY(Physics,Mesh,Mesh%JMAX+j,this%Rinv,pvar) 
+     END DO
+    END SELECT 
   END SUBROUTINE CenterBoundary_farfield
 
-
+  !> \public Destructor for farfield boundary conditions
   SUBROUTINE CloseBoundary_farfield(this)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
@@ -560,7 +202,7 @@ CONTAINS
     !------------------------------------------------------------------------!
     INTENT(INOUT) :: this
     !------------------------------------------------------------------------!
-    DEALLOCATE(this%data,this%Rinv,this%Rtmp,this%cs,this%cs2gam,this%vn,this%s)
+    DEALLOCATE(this%data,this%Rinv,this%RinvInf,this%lambda)
   END SUBROUTINE CloseBoundary_farfield
 
 END MODULE boundary_farfield

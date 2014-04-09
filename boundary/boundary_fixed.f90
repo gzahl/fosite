@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: boundary_fixed.f90                                                #
 !#                                                                           #
-!# Copyright (C) 2006-2012                                                   #
+!# Copyright (C) 2006-2014                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -24,8 +24,15 @@
 !#############################################################################
 
 !----------------------------------------------------------------------------!
-! boundary module for sub/supersonic in/outflow with
-! fixed boundary data
+!> \author Tobias Illenseer
+!!
+!! \brief Boundary module for fixed in/outflow conditions
+!! 
+!! Implementation of sub/supersonic in/outflow conditions with
+!! user defined fixed data.
+!!
+!! \extends boundary_nogradients
+!! \ingroup boundary
 !----------------------------------------------------------------------------!
 MODULE boundary_fixed
   USE mesh_common, ONLY : Mesh_TYP
@@ -45,6 +52,7 @@ MODULE boundary_fixed
 
 CONTAINS
 
+  !> \public Constructor for fixed boundary conditions
   SUBROUTINE InitBoundary_fixed(this,Mesh,Physics,btype,dir,bcname)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
@@ -83,6 +91,7 @@ CONTAINS
   END SUBROUTINE InitBoundary_fixed
 
 
+  !> \public Applies the fixed boundary condition
   PURE SUBROUTINE CenterBoundary_fixed(this,Mesh,Physics,pvar)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
@@ -152,7 +161,7 @@ CONTAINS
     END SELECT
   END SUBROUTINE CenterBoundary_fixed
 
-
+  !> \public Destructor for fixed boundary conditions
   SUBROUTINE CloseBoundary_fixed(this)
     IMPLICIT NONE
     !------------------------------------------------------------------------!

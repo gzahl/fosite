@@ -24,7 +24,12 @@
 !#############################################################################
 
 !----------------------------------------------------------------------------!
-! numerical fluxes module for midpoint quadrature rule
+!> \author Tobias Illenseer
+!!
+!! \brief numerical fluxes module for midpoint quadrature rule
+!!
+!! \extends fluxes_common
+!! \ingroup fluxes
 !----------------------------------------------------------------------------!
 MODULE fluxes_midpoint
   USE fluxes_common
@@ -36,6 +41,7 @@ MODULE fluxes_midpoint
        WEST, EAST, SOUTH, NORTH
   USE physics_generic
   USE reconstruction_generic
+  USE common_dict
 #ifdef PARALLEL
 #ifdef HAVE_MPI_MOD
   USE mpi
@@ -74,12 +80,13 @@ MODULE fluxes_midpoint
 
 CONTAINS
 
-  SUBROUTINE InitFluxes_midpoint(this,Mesh,qrule)
+  SUBROUTINE InitFluxes_midpoint(this,Mesh,qrule,config)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Fluxes_TYP)  :: this
     TYPE(Mesh_TYP)    :: Mesh
     INTEGER           :: qrule
+    TYPE(Dict_TYP),POINTER :: config
     !------------------------------------------------------------------------!
     INTEGER           :: err,n
     !------------------------------------------------------------------------!
@@ -93,6 +100,11 @@ CONTAINS
          STAT=err)
     IF (err.NE.0) &
        CALL Error(this, "InitFluxes_midpoint","Unable to allocate memory.")
+
+    ! Scale numerical viscosity
+    CALL RequireKey(config, "viscosity", 1.)
+    CALL GetAttr(config, "viscosity", this%viscosity)
+
     ! set relative positions for reconstruction points:
     ! cell face positions
     DO n=1,4
@@ -134,7 +146,11 @@ CONTAINS
   END SUBROUTINE CalculateFaceData
 
 
-  PURE SUBROUTINE CalculateFluxes_midpoint(this,Mesh,Physics,pvar,cvar,xflux,yflux)
+  ! ATTENTION: The return values xfluxdy and yfluxdx are the numerical fluxes
+  !            devided by dy or dx respectively. This reduces numerical errors
+  !            because otherwise we would multiply the fluxes by dy (or dx) here and
+  !            devide by dy (or dx) later when computing flux differences.
+  PURE SUBROUTINE CalculateFluxes_midpoint(this,Mesh,Physics,pvar,cvar,xfluxdy,yfluxdx)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Fluxes_TYP)  :: this
@@ -143,65 +159,61 @@ CONTAINS
     REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum) &
                       :: pvar,cvar
     REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum) &
-                      :: xflux,yflux
+                      :: xfluxdy,yfluxdx
     !------------------------------------------------------------------------!
     INTEGER           :: i,j,k
     !------------------------------------------------------------------------!
     INTENT(IN)        :: Mesh,pvar,cvar
     INTENT(INOUT)     :: this,Physics
-    INTENT(OUT)       :: xflux,yflux
+    INTENT(OUT)       :: xfluxdy,yfluxdx
     !------------------------------------------------------------------------!
 
     ! execute generic tasks common to all flux types
     CALL CalculateFaceData(this,Mesh,Physics,pvar,cvar)
 
-    ! west and east
+    ! compute numerical fluxes along x-direction (west and east) devided by dy
     IF (Mesh%INUM.GT.1) THEN
        ! physical fluxes
        CALL CalculateFluxesX(Physics,Mesh,1,2,this%prim,this%cons,this%pfluxes)
-       ! numerical fluxes
 !CDIR UNROLL=8
        DO k=1,Physics%VNUM
 !CDIR UNROLL=8
           DO j=Mesh%JGMIN,Mesh%JGMAX
 !CDIR NODEP
              DO i=Mesh%IMIN-1,Mesh%IMAX
-                ! x-direction
-                xflux(i,j,k) = Mesh%dAxdy(i+1,j,1) / &
+                xfluxdy(i,j,k) = Mesh%dAxdy(i+1,j,1) / &
                      (Physics%amax(i,j) - Physics%amin(i,j)) * &
                      (Physics%amax(i,j)*this%pfluxes(i,j,2,k) - &
                      Physics%amin(i,j)*this%pfluxes(i+1,j,1,k) + &
-                     Physics%amin(i,j)*Physics%amax(i,j) * &
+                     this%viscosity*Physics%amin(i,j)*Physics%amax(i,j) * &
                      (this%cons(i+1,j,1,k) - this%cons(i,j,2,k)))
              END DO
           END DO
        END DO
     ELSE
-       xflux(:,:,:) = 0.0
+       xfluxdy(:,:,:) = 0.0
     END IF
 
-    ! south and north
+    ! compute numerical fluxes along y-direction (south and north) devided by dx
     IF (Mesh%JNUM.GT.1) THEN
        ! physical fluxes
        CALL CalculateFluxesY(Physics,Mesh,3,4,this%prim,this%cons,this%pfluxes)
-       ! numerical fluxes
 !CDIR UNROLL=8
        DO k=1,Physics%VNUM
 !CDIR COLLAPSE
           DO j=Mesh%JMIN-1,Mesh%JMAX
              DO i=Mesh%IGMIN,Mesh%IGMAX
-                ! y-direction
-                yflux(i,j,k) = Mesh%dAydx(i,j+1,1) / &
+                yfluxdx(i,j,k) = Mesh%dAydx(i,j+1,1) / &
                      (Physics%bmax(i,j) - Physics%bmin(i,j)) * &
                      (Physics%bmax(i,j)*this%pfluxes(i,j,4,k) - &
                      Physics%bmin(i,j)*this%pfluxes(i,j+1,3,k) + &
-                     Physics%bmin(i,j)*Physics%bmax(i,j) * &
+                     this%viscosity*Physics%bmin(i,j)*Physics%bmax(i,j) * &
                      (this%cons(i,j+1,3,k) - this%cons(i,j,4,k)))
              END DO
           END DO
        END DO
     ELSE
-       yflux(:,:,:) = 0.0
+       yfluxdx(:,:,:) = 0.0
     END IF
   END SUBROUTINE CalculateFluxes_midpoint
 

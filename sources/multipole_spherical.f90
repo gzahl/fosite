@@ -24,19 +24,23 @@
 !#                                                                           #
 !#############################################################################
 !----------------------------------------------------------------------------!
-! module for spherical multipole expansion
+!> module for spherical multipole expansion
 !----------------------------------------------------------------------------!
 MODULE multipole_spherical
   USE physics_common, ONLY : Physics_TYP
   USE mesh_common, ONLY : Selection_TYP
   USE multipole_common, InitMultipole_common => InitMultipole
   USE geometry_generic
+  USE common_dict
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   PRIVATE
+  ! exclude interface block from doxygen processing
+  !> \cond InterfaceBlock
   INTERFACE InitMultipole
      MODULE PROCEDURE InitMultipole_basic, InitMultipole_common
   END INTERFACE
+  !> \endcond
   CHARACTER(LEN=32), PARAMETER :: EXP_NAME = "spherical"
   !--------------------------------------------------------------------------!
   PUBLIC :: &
@@ -72,6 +76,8 @@ Contains
     REAL, DIMENSION(imin:imax,jmin:jmax)   :: volume
     !------------------------------------------------------------------------!
     TYPE(Geometry_TYP)  :: geometry
+    TYPE(Dict_TYP),POINTER &
+                        :: gconfig => null()
     INTEGER             :: err
     !------------------------------------------------------------------------!
     INTENT(IN)          :: cart_coords,etype,ename,gtype,imin,imax,jmin,jmax, &
@@ -86,7 +92,8 @@ Contains
     IF (err.NE.0) CALL Error(this,"InitMultipole_basic","unable to allocate memory")
     ! generate temporary geometry object to compute
     ! some geometrical quantities
-    CALL InitGeometry(geometry,gtype)
+    CALL RequireKey(gconfig, "geometry", gtype)
+    CALL InitGeometry(geometry,gconfig)
     ! obtain curvilinear coordinates for the given geometry
     CALL Convert2Curvilinear(geometry,cart_coords,this%coords)
     ! assign cell volumes
@@ -164,8 +171,7 @@ Contains
        END DO
        WHERE (this%iregion%mask(:,:))
           ! multiply polynomials by volume elements
-          this%PldV(:,:,l) = this%Pl(:,:,l) * this%volume(:,:) &
-                  * (0.25/PI)  ! FIXME: additional factor required for selfgravity module
+          this%PldV(:,:,l) = this%Pl(:,:,l) * this%volume(:,:) 
        ELSEWHERE
           ! zero outside input region
           this%PldV(:,:,l) = 0.0
@@ -181,14 +187,12 @@ Contains
              this%Pl(i,j,l) = LegendrePolynomial(l,COS(this%coords(i,j,2)), &
                   this%Pl(i,j,l-1),this%Pl(i,j,l-2))
              ! multiply polynomials by volume elements
-             this%PldV(i,j,l) = this%Pl(i,j,l) * this%volume(i,j) &
-                  * (0.25/PI)  ! FIXME: additional factor required for selfgravity module
+             this%PldV(i,j,l) = this%Pl(i,j,l) * this%volume(i,j) 
           END DO
        END DO
        WHERE (this%iregion%mask(:,:))
           ! multiply polynomials by volume elements
-          this%PldV(:,:,l) = this%Pl(:,:,l) * this%volume(:,:) &
-                  * (0.25/PI)  ! FIXME: additional factor required for selfgravity module
+          this%PldV(:,:,l) = this%Pl(:,:,l) * this%volume(:,:)
        ELSEWHERE
           ! zero outside input region
           this%PldV(:,:,l) = 0.0

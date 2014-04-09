@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: boundary_nogradients.f90                                          #
 !#                                                                           #
-!# Copyright (C) 2006-2012                                                   #
+!# Copyright (C) 2006-2014                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -24,7 +24,14 @@
 !#############################################################################
 
 !----------------------------------------------------------------------------!
-! boundary module for vanishing gradients (zero order extrapolation)
+!> \author Tobias Illenseer
+!!
+!! \brief Boundary module for vanishing gradients.
+!!
+!! This module implements zero order extrapolation of boundary data.
+!!
+!! \extends boundary_common
+!! \ingroup boundary
 !----------------------------------------------------------------------------!
 MODULE boundary_nogradients
   USE boundary_common
@@ -33,6 +40,7 @@ MODULE boundary_nogradients
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   PRIVATE
+  !> string literal for boundary condition
   CHARACTER(LEN=32), PARAMETER  :: boundcond_name = "vanishing gradients"  
   !--------------------------------------------------------------------------!
   PUBLIC :: &
@@ -62,11 +70,15 @@ MODULE boundary_nogradients
 
 CONTAINS
 
+  !> \public Constructor for no_gradients boundary conditions
+  !!
+  !! Initilizes the boundary condition type and direction.
   SUBROUTINE InitBoundary_nogradients(this,btype,dir)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    TYPE(Boundary_TYP) :: this
-    INTEGER            :: btype,dir
+    TYPE(Boundary_TYP) :: this       !< \param [in,out] this boundary type
+    INTEGER            :: btype      !< \param [in] btype boundary type number
+    INTEGER            :: dir        !< \param [in] dir direction number
     !------------------------------------------------------------------------!
     INTENT(IN)    :: btype,dir
     INTENT(INOUT) :: this
@@ -75,12 +87,18 @@ CONTAINS
   END SUBROUTINE InitBoundary_nogradients
 
 
+  !> \public Applies the no_gradients boundary condition
+  !!
+  !! This is an implementation of zero order extrapolation. It just copies
+  !! the center data for primitive variables from boundary cells to adjacent
+  !! ghost cells.
   PURE SUBROUTINE CenterBoundary_nogradients(this,Mesh,Physics,pvar)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    TYPE(Boundary_TYP) :: this
-    TYPE(Mesh_TYP)     :: Mesh
-    TYPE(Physics_TYP)  :: Physics
+    TYPE(Boundary_TYP) :: this       !< \param [in,out] this boundary type
+    TYPE(Mesh_TYP)     :: Mesh       !< \param [in] Mesh mesh type
+    TYPE(Physics_TYP)  :: Physics    !< \param [in] Physics physics type
+    !> \param [in,out] pvar primitive variables mesh array
     REAL :: pvar(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum)
     !------------------------------------------------------------------------!
     INTEGER       :: i,j

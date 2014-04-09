@@ -3,8 +3,9 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: fileio_binary.f90                                                 #
 !#                                                                           #
-!# Copyright (C) 2008-2010                                                   #
+!# Copyright (C) 2008-2014                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
+!# Björn Sperling <sperling@astrophysik.uni-kiel.de>                         #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
 !# it under the terms of the GNU General Public License as published by      #
@@ -22,9 +23,26 @@
 !# Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.                 #
 !#                                                                           #
 !#############################################################################
-
 !----------------------------------------------------------------------------!
-! module for BINARY file I/O
+!> \author Tobias Illenseer
+!! \author Björn Sperling
+!!
+!! \brief I/O for binary file format
+!!
+!! This module implements file I/O, which writes array data and a
+!! short header with basic information to a file as binary data.
+!! It is possible to select which data arrays should be written. 
+!!
+!! Specification: [header],[data],[bflux],[timestamp],[[data],[bflux],....]
+!! - header : (4 + 10 * sizeof(INTEGER) + 10 * sizeof(REAL) + 4) bytes
+!! - data : (4 + sizeof(REAL) * INUM * JNUM * (2+VNUM) + 4) bytes
+!! - bflux : (4 + sizeof(REAL) * 4 * VNUM + 4) bytes
+!! - timestamp: (4 + sizeof(REAL) + 4) bytes
+!!
+!! the leading and trailing 4 bytes are caused by the Fortran output
+!!
+!! \extends fileio_gnuplot
+!! \ingroup fileio
 !----------------------------------------------------------------------------!
 MODULE fileio_binary
   USE fileio_gnuplot, CloseFile_binary => CloseFile_gnuplot
@@ -33,6 +51,7 @@ MODULE fileio_binary
   USE physics_common, ONLY : Physics_TYP, GetType
   USE timedisc_common, ONLY : Timedisc_TYP
   USE fluxes_generic, ONLY : Fluxes_TYP, GetBoundaryFlux
+  USE common_dict
 #ifdef PARALLEL
 #ifdef HAVE_MPI_MOD
   USE mpi
@@ -47,8 +66,9 @@ MODULE fileio_binary
   !--------------------------------------------------------------------------!
   PRIVATE
   ! size of header data fields
-  INTEGER, PARAMETER :: HISIZE = 10              ! integer data              !
-  INTEGER, PARAMETER :: HRSIZE = 10              ! real data                 !
+  INTEGER, PARAMETER :: HISIZE  = 10      !< number of integer data in header    
+  INTEGER, PARAMETER :: HRSIZE  = 10      !< number of real data in header
+  INTEGER, PARAMETER :: MAXCOLS = 40      !< max number of data fields
   !--------------------------------------------------------------------------!
   PUBLIC :: &
        ! types
@@ -68,33 +88,67 @@ MODULE fileio_binary
   !--------------------------------------------------------------------------!
 
 CONTAINS
-  
-  SUBROUTINE InitFileIO_binary(this,Mesh,Physics,fmt,filename,stoptime,dtwall,&
+  !> \public Constructor for the binary file I/O 
+  !!
+  !! Initilizes the file I/O type, filename, stoptime, number of outputs, 
+  !! number of files, unit number, config as a dict
+  SUBROUTINE InitFileIO_binary(this,Mesh,Physics,IO,fmt,fpath,filename,stoptime,dtwall,&
        count,fcycles,unit)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    TYPE(FileIO_TYP)  :: this
-    TYPE(Mesh_TYP)    :: Mesh
-    TYPE(Physics_TYP) :: Physics
-    INTEGER           :: fmt
-    CHARACTER(LEN=*)  :: filename
-    REAL              :: stoptime
-    INTEGER           :: dtwall
-    INTEGER           :: count
-    INTEGER           :: fcycles
-    INTEGER, OPTIONAL :: unit
+    TYPE(FileIO_TYP)  :: this          !< \param [in,out] this fileio type
+    TYPE(Mesh_TYP)    :: Mesh          !< \param [in] Mesh mesh type
+    TYPE(Physics_TYP) :: Physics       !< \param [in] Physics Physics type
+    TYPE(Dict_TYP),POINTER :: IO       !< \param [in] IO Dictionary for I/O 
+    INTEGER           :: fmt           !< \param [in] fmt fileio type number
+    CHARACTER(LEN=*)  :: fpath         !< \param [in] fpath
+    CHARACTER(LEN=*)  :: filename      !< \param [in] filename
+    REAL              :: stoptime      !< \param [in] stoptime
+    INTEGER           :: dtwall        !< \param [in] dtwall wall clock time
+    INTEGER           :: count         !< \param [in] count number of outputs
+    INTEGER           :: fcycles       !< \param [in] fcycles file cycle number
+    INTEGER, OPTIONAL :: unit          !< \param [in] unit fileio unit number
     !------------------------------------------------------------------------!
+    TYPE(Dict_TYP),POINTER :: node
+    REAL,DIMENSION(:,:),POINTER :: dummy2
+    REAL,DIMENSION(:,:,:),POINTER :: dummy3
     INTEGER           :: err
 #ifdef PARALLEL
     INTEGER, DIMENSION(2) :: gsizes,lsizes,indices
     INTEGER           :: lb,extent
 #endif
     !------------------------------------------------------------------------!
-    INTENT(IN)    :: Mesh,Physics,fmt,filename,stoptime,count,fcycles,unit
+    INTENT(IN)    :: Mesh,Physics,fmt,fpath,filename,stoptime,count,fcycles,unit
     INTENT(INOUT) :: this
     !------------------------------------------------------------------------!
-    CALL InitFileIO(this,Mesh,Physics,fmt,"binary",filename,"bin",stoptime, &
+    CALL InitFileIO(this,Mesh,Physics,fmt,"binary",fpath,filename,"bin",stoptime, &
          dtwall,count,fcycles,.FALSE.,unit)
+
+    ALLOCATE(this%output(MAXCOLS),STAT=err)
+    IF (this%error.NE.0) THEN
+       CALL Error(this,"InitFileIO_binary","Unable to allocate memory.")
+    END IF
+
+    CALL GetAttr(IO,"/mesh/bary_curv/value",dummy3)
+    ! pointer to sub-array: set lower bounds
+    ! use special function for bound remapping
+    IF (Mesh%INUM.EQ.1) THEN
+      ! use format string as temp
+      this%output(1)%val => remap_bounds2(Mesh%IGMIN,Mesh%JGMIN,dummy3(:,:,2))
+      this%cols = 1
+    ELSE IF (Mesh%JNUM.EQ.1) THEN 
+      this%output(1)%val => remap_bounds2(Mesh%IGMIN,Mesh%JGMIN,dummy3(:,:,1))
+      this%cols = 1
+    ELSE
+      this%output(1)%val => remap_bounds2(Mesh%IGMIN,Mesh%JGMIN,dummy3(:,:,1))
+      this%output(2)%val => remap_bounds2(Mesh%IGMIN,Mesh%JGMIN,dummy3(:,:,2))
+      this%cols = 2
+    END IF
+
+    ! set output-pointer
+    node => IO
+    CALL GetOutputPointer(this,Mesh,node,this%cols)
+
     ! allocate memory
     ALLOCATE(this%header%idata(HISIZE),this%header%rdata(HRSIZE), &
          ! for output buffer
@@ -132,7 +186,8 @@ CONTAINS
     this%header%idata(2) = GetType(Mesh%Geometry)
     this%header%idata(3) = Mesh%INUM
     this%header%idata(4) = Mesh%JNUM
-    this%header%idata(5:HISIZE) = 0      ! insert additional parameters here !
+    this%header%idata(5) = this%cols     
+    this%header%idata(6:HISIZE) = 0      ! insert additional parameters here !
     ! 2. real data:
     this%header%rdata(1) = Mesh%xmin
     this%header%rdata(2) = Mesh%xmax
@@ -141,12 +196,110 @@ CONTAINS
     this%header%rdata(5:HRSIZE) = 0.0    ! insert additional parameters here !
   END SUBROUTINE InitFileIO_binary
 
+  !> Sets pointer to rank 2 array with a given lower bound
+  !!
+  !! This function sets a pointer to a rank 2 array with new
+  !! lower boundaries. This is necessary because the lower bound of a array 
+  !! will be set to zero when it is saved in a dictionary. 
+  !! \todo reuse remap_bounds2 function from gnuplot 
+  !! \return pointer to data array with new bounds
+  FUNCTION remap_bounds2(lb1,lb2,array) RESULT(ptr)
+    INTEGER, INTENT(IN) :: lb1      !< \param [in] lb1 new lower bound
+    INTEGER, INTENT(IN) :: lb2      !< \param [in] lb2 new lower bound
+    !> \param [in] array data array
+    REAL, DIMENSION(lb1:,lb2:), INTENT(IN), TARGET :: array
+  !------------------------------------------------------------------------!
+    REAL, DIMENSION(:,:), POINTER                  :: ptr
+  !------------------------------------------------------------------------!
+    ptr => array 
+  END FUNCTION
 
+  !> Creates a list of all data arrays which will be written to file
+  !!
+  !! Therefore it ignores all arrays of coordinates and checks if the data 
+  !! arrays are of the same dimension as the mesh.
+  !! \todo reuse GetOutputPointer subroutine from gnuplot 
+  RECURSIVE SUBROUTINE GetOutputPointer(this,Mesh,node,k)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(FileIO_TYP)       :: this  !< \param [in,out] this fileio type
+    TYPE(Mesh_TYP)         :: Mesh  !< \param [in] mesh mesh type
+    TYPE(Dict_TYP),POINTER :: node  !< \param [in,out] node pointer to (sub-)dict
+    INTEGER                :: k     !< \param [in,out] k number of data arrays
+    !------------------------------------------------------------------------!
+    TYPE(Dict_TYP),POINTER :: dir
+    REAL,DIMENSION(:,:),POINTER :: dummy2
+    REAL,DIMENSION(:,:,:),POINTER :: dummy3
+    REAL,DIMENSION(:,:,:,:),POINTER :: dummy4
+    INTEGER                :: dim3,dim4,i
+    !------------------------------------------------------------------------!
+    INTENT(IN)        :: Mesh
+    INTENT(INOUT)     :: this,k
+    !------------------------------------------------------------------------!
+    DO WHILE(ASSOCIATED(node))
+      IF(GetDataType(node) .EQ. DICT_DIR .AND. GetKey(node) .NE. "mesh") THEN
+      ! recursion
+        CALL GetAttr(node,GetKey(node),dir)
+        CALL GetOutputPointer(this,Mesh,dir,k)
+      ELSE IF (GetKey(node) .EQ. "value") THEN
+      ! value found!
+        SELECT CASE(GetDataType(node))
+        CASE(DICT_REAL_TWOD)
+          CALL GetAttr(node,GetKey(node),dummy2)
+          IF (LBOUND(dummy2,DIM=1) .EQ. Mesh%IGMIN .AND.&
+             UBOUND(dummy2,DIM=1) .EQ. Mesh%IGMAX .AND.&
+             LBOUND(dummy2,DIM=2) .EQ. Mesh%JGMIN .AND.&
+             UBOUND(dummy2,DIM=2) .EQ. Mesh%JGMAX) THEN
+            k = k+1
+            IF (k .GT. MAXCOLS) &
+              CALL Error(this,"GetOutputPointer_binary","reached MAXCOLS")
+            this%output(k)%val=> dummy2
+          END IF
+        CASE(DICT_REAL_THREED)
+          CALL GetAttr(node,GetKey(node),dummy3)
+          IF (LBOUND(dummy3,DIM=1) .EQ. Mesh%IGMIN .AND.&
+             UBOUND(dummy3,DIM=1) .EQ. Mesh%IGMAX .AND.&
+             LBOUND(dummy3,DIM=2) .EQ. Mesh%JGMIN .AND.&
+             UBOUND(dummy3,DIM=2) .EQ. Mesh%JGMAX) THEN
+            dim3 = SIZE(dummy3, DIM = 3)
+            IF (k+dim3 .GT. MAXCOLS)&
+              CALL Error(this,"GetOutputPointer_binary","reached MAXCOLS")
+            DO i=k+1, k+dim3
+              this%output(i)%val => remap_bounds2(Mesh%IGMIN,Mesh%JGMIN,dummy3(:,:,i-k))
+            END DO
+            k = k+dim3  
+          END IF     
+        CASE(DICT_REAL_FOURD)
+          CALL GetAttr(node,GetKey(node),dummy4)
+          IF (LBOUND(dummy4,DIM=1) .EQ. Mesh%IGMIN .AND.&
+             UBOUND(dummy4,DIM=1) .EQ. Mesh%IGMAX .AND.&
+             LBOUND(dummy4,DIM=2) .EQ. Mesh%JGMIN .AND.&
+             UBOUND(dummy4,DIM=2) .EQ. Mesh%JGMAX) THEN
+            dim3 = SIZE(dummy4, DIM = 3)
+            dim4 = SIZE(dummy4, DIM = 4)
+            IF (k+dim3*dim4 .GT. MAXCOLS)&
+              CALL Error(this,"GetOutputPointer_binary","reached MAXCOLS")
+            DO i=k+1, k+dim3*dim4
+              this%output(k)%val => remap_bounds2(Mesh%IGMIN,Mesh%JGMIN,&
+                  dummy4(:,:,(i-k-1)/dim4+1,mod((i-k-1),dim4)+1))
+            END DO
+            k = dim3*dim4
+          END IF
+        CASE DEFAULT
+          !do nothing (wrong type)
+        END SELECT
+      END IF
+      node=>GetNext(node)
+    END DO
+  END SUBROUTINE GetOutputPointer
+
+  !> \public Specific routine to open a file for binary I/O
+  !!
   SUBROUTINE OpenFile_binary(this,action)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    TYPE(FileIO_TYP) :: this
-    INTEGER          :: action
+    TYPE(FileIO_TYP) :: this    !< \param [in,out] this fileio type
+    INTEGER          :: action  !< \param [in] action mode of file access
     !------------------------------------------------------------------------!
     INTENT(IN)       :: action
     INTENT(INOUT)    :: this
@@ -220,13 +373,14 @@ CONTAINS
     IF (PRESENT(error)) error=err
   END SUBROUTINE SeekBackwards
 
-
+  !> \public Writes a short file format description as a header
+  !!
   SUBROUTINE WriteHeader_binary(this)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    TYPE(FileIO_TYP) :: this
+    TYPE(FileIO_TYP) :: this  !< \param [in,out] this fileio type
     !------------------------------------------------------------------------!
-    INTEGER(KIND=4)  :: size  ! force 4 byte integer
+    INTEGER(KIND=4)  :: size  !< force 4 byte integer
     !------------------------------------------------------------------------!
     INTENT(INOUT)    :: this
     !------------------------------------------------------------------------!
@@ -254,11 +408,13 @@ CONTAINS
   END SUBROUTINE WriteHeader_binary
 
 
+  !> \public Reads header from file and checks if it is consistent with simulation
+  !!
   SUBROUTINE ReadHeader_binary(this,success)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    TYPE(FileIO_TYP) :: this
-    LOGICAL          :: success
+    TYPE(FileIO_TYP) :: this     !< \param [in,out] this fileio type
+    LOGICAL          :: success  !< \param [out] success consistent
     !------------------------------------------------------------------------!
 #ifdef PARALLEL
     INTEGER(KIND=4)  :: size1, size2    ! force 4 byte integer
@@ -314,6 +470,10 @@ CONTAINS
           CALL Warning(this,"ReadHeader_binary","resolution mismatch")
           success = .FALSE.
        END IF
+       IF (idata(5).NE.this%header%idata(5)) THEN
+          CALL Warning(this,"ReadHeader_binary","number of data fields mismatch")
+          success = .FALSE.
+       END IF
        IF (ALL(rdata(1:4).NE.this%header%rdata(1:4))) THEN
           CALL Warning(this,"ReadHeader_binary","computational domain mismatch")
           success = .FALSE.
@@ -321,12 +481,13 @@ CONTAINS
     END IF
   END SUBROUTINE ReadHeader_binary
 
-
+  !> \public Writes timestamp to file
+  !!
   SUBROUTINE WriteTimestamp_binary(this,time)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    TYPE(FileIO_TYP) :: this
-    REAL             :: time
+    TYPE(FileIO_TYP) :: this  !< \param [in,out] this fileio type
+    REAL             :: time  !< \param [in] time timestamp
     !------------------------------------------------------------------------!
 #ifdef PARALLEL
     INTEGER(KIND=4)  :: size  ! force 4 byte integer
@@ -356,11 +517,13 @@ CONTAINS
   END SUBROUTINE WriteTimestamp_binary
 
 
+  !> \public Reads timestamp to file
+  !!
   SUBROUTINE ReadTimestamp_binary(this,time)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    TYPE(FileIO_TYP) :: this
-    REAL             :: time
+    TYPE(FileIO_TYP) :: this  !< \param [in,out] this fileio type
+    REAL             :: time  !< \param [out] time timestamp
     !------------------------------------------------------------------------!
 #ifdef PARALLEL
     INTEGER(KIND=4) :: size
@@ -393,17 +556,18 @@ CONTAINS
 #endif
   END SUBROUTINE ReadTimestamp_binary
 
-
+  !> \public Writes all desired data arrays to a file 
+  !!
   SUBROUTINE WriteDataset_binary(this,Mesh,Physics,Fluxes,Timedisc)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    TYPE(FileIO_TYP)  :: this
-    TYPE(Mesh_TYP)    :: Mesh
-    TYPE(Physics_TYP) :: Physics
-    TYPE(Fluxes_TYP)  :: Fluxes
-    TYPE(Timedisc_TYP):: Timedisc
+    TYPE(FileIO_TYP)  :: this      !< \param [in,out] this fileio type
+    TYPE(Mesh_TYP)    :: Mesh      !< \param [in] mesh mesh type
+    TYPE(Physics_TYP) :: Physics   !< \param [in] physics physics type
+    TYPE(Fluxes_TYP)  :: Fluxes    !< \param [in] fluxes fluxes type
+    TYPE(Timedisc_TYP):: Timedisc  !< \param [in] timedisc timedisc type
     !------------------------------------------------------------------------!
-    INTEGER          :: i,j,kx,ky
+    INTEGER          :: i,j,k
 #ifdef PARALLEL
     INTEGER(KIND=4)  :: size  ! force 4 byte integer
     INTEGER(KIND=MPI_OFFSET_KIND) :: offset
@@ -413,25 +577,14 @@ CONTAINS
     INTENT(IN)       :: Mesh,Physics,Fluxes,Timedisc
     INTENT(INOUT)    :: this
     !------------------------------------------------------------------------!
-    IF (Mesh%INUM.GT.1) THEN
-       kx=1
-    ELSE
-       kx=0
-    END IF
-    IF (Mesh%JNUM.GT.1) THEN
-       ky=kx+1
-    ELSE
-       ky=kx
-    END IF
     ! prepare data for output
-    DO j=Mesh%JMIN,Mesh%JMAX
-       DO i=Mesh%IMIN,Mesh%IMAX
-          ! copy coordinates
-          IF (kx.GT.0) this%binout(kx,i,j) = Mesh%bcenter(i,j,1)
-          IF (ky.GT.kx) this%binout(ky,i,j) = Mesh%bcenter(i,j,2)
+    DO k=1,this%cols
+      DO j=Mesh%JMIN,Mesh%JMAX
+        DO i=Mesh%IMIN,Mesh%IMAX
           ! copy data
-          this%binout(ky+1:ky+Physics%vnum,i,j) = Timedisc%pvar(i,j,1:Physics%vnum)
-       END DO
+          this%binout(k,i,j) = this%output(k)%val(i,j)
+        END DO
+      END DO
     END DO
 
     ! write data
@@ -508,14 +661,15 @@ CONTAINS
 #endif
   END SUBROUTINE WriteDataset_binary
 
-
+  !> \public Reads all data arrays from file 
+  !!
   SUBROUTINE ReadDataset_binary(this,Mesh,Physics,Timedisc)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    TYPE(FileIO_TYP)  :: this
-    TYPE(Mesh_TYP)    :: Mesh
-    TYPE(Physics_TYP) :: Physics
-    TYPE(Timedisc_TYP):: Timedisc
+    TYPE(FileIO_TYP)  :: this      !< \param [in,out] this fileio type
+    TYPE(Mesh_TYP)    :: Mesh      !< \param [in] mesh mesh type
+    TYPE(Physics_TYP) :: Physics   !< \param [in] physics physics type
+    TYPE(Timedisc_TYP):: Timedisc  !< \param [in] timedisc timedisc type
     !------------------------------------------------------------------------!
     INTEGER           :: i,j,k,k0
 #ifdef PARALLEL
@@ -548,30 +702,43 @@ CONTAINS
        CALL MPI_File_set_view(this%handle,this%offset,&
             this%basictype,this%filetype, 'native', MPI_INFO_NULL, this%error)
        !*****************************************************************!
-       ! This collective call doesn't work for pvfs2 -> bug in ROMIO ?
-!!$       CALL MPI_File_write_all(this%handle,this%binout,this%bufsize,&  
-!!$            this%basictype, this%status, this%error)
+       ! This collective call doesn't work for older pvfs2 versions 
+       ! (maybe a bug in ROMIO) but the performance is better.
+       CALL MPI_File_write_all(this%handle,this%binout,this%bufsize,&  
+            this%basictype, this%status, this%error)
        !*****************************************************************!
-       CALL MPI_File_iread(this%handle,this%binout,this%bufsize,this%basictype,&
-            request,this%error)
-       CALL MPI_Wait(request,this%status,this%error)
+       ! use non-collective calls only if collective call doesn't work
+!       CALL MPI_File_iread(this%handle,this%binout,this%bufsize,this%basictype,&
+!            request,this%error)
+!       CALL MPI_Wait(request,this%status,this%error)
 #else
        READ (this%unit,IOSTAT=this%error) this%binout(:,:,:)
 #endif
     END IF
     IF (this%error.NE.0) CALL Error(this,"ReadDataset_binary",&
          "reading data set failed")
+
     ! copy data
-    k0 = this%cols-Physics%vnum
-    FORALL (i=Mesh%IMIN:Mesh%IMAX,j=Mesh%JMIN:Mesh%JMAX,k=1:Physics%vnum) &
-       Timedisc%pvar(i,j,k) = this%binout(k0+k,i,j)
+    k0 = 0
+    IF (Mesh%INUM .GT. 1) k0= 1
+    IF (Mesh%JNUM .GT. 1) k0= k0+1
+
+    DO k=k0+1,this%cols
+      DO j=Mesh%JMIN,Mesh%JMAX
+        DO i=Mesh%IMIN,Mesh%IMAX
+          ! copy data
+          this%output(k)%val(i,j) = this%binout(k,i,j)
+        END DO
+      END DO
+    END DO
   END SUBROUTINE ReadDataset_binary
 
-
+  !> \public Closes the file I/O
+  !!
   SUBROUTINE CloseFileIO_binary(this)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    TYPE(FileIO_TYP) :: this
+    TYPE(FileIO_TYP) :: this   !< \param [in,out] this fileio type
     !------------------------------------------------------------------------!
     DEALLOCATE(this%header%idata,this%header%rdata,&
 #ifdef PARALLEL

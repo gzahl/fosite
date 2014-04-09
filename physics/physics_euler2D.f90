@@ -23,27 +23,42 @@
 !# Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.                 #
 !#                                                                           #
 !#############################################################################
-
+!> \addtogroup physics
+!! - non-isothermal gas dynamics
+!!   \key{gamma,REAL,ratio of specific heats (default is for diatomic
+!!      molecular gas),1.4}
 !----------------------------------------------------------------------------!
-! basic module for 2D Euler equations
+!> \author Tobias Illenseer
+!! \author Björn Sperling
+!!
+!! \brief basic module for 2D Euler equations
+!!
+!! \extends physics_common
+!! \ingroup physics
 !----------------------------------------------------------------------------!
 MODULE physics_euler2D
   USE physics_common
   USE mesh_common, ONLY : Mesh_TYP
   USE sources_common, ONLY : Sources_TYP
-  USE physics_euler2Disothm, &
-       CalculateStresses_euler2D => CalculateStresses_euler2Dit, &
-       SetWaveSpeeds_euler2D => SetWaveSpeeds_euler2Dit, &
+  USE physics_euler2Disothm, ONLY : &
+       CalcStresses_euler2D => CalcStresses_euler2Dit, &
        MomentumSourcesX_euler2D => MomentumSourcesX_euler2Dit, &
-       MomentumSourcesY_euler2D => MomentumSourcesY_euler2Dit
+       MomentumSourcesY_euler2D => MomentumSourcesY_euler2Dit, &
+       CalcWaveSpeeds_euler2D => CalcWaveSpeeds_euler2Dit, &
+       SetEigenValues_euler2Dit, &
+       ViscositySources_euler2Dit, &
+       ClosePhysics_euler2Dit
+
   USE mesh_generic
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
-  INTERFACE CalculateWaveSpeeds_euler2D
-     MODULE PROCEDURE CalculateWaveSpeeds_center
-     MODULE PROCEDURE CalculateWaveSpeeds_faces
+  ! exclude interface block from doxygen processing
+  !> \cond InterfaceBlock
+  INTERFACE CalcSoundSpeeds_euler2D
+     MODULE PROCEDURE CalcSoundSpeeds_center
+     MODULE PROCEDURE CalcSoundSpeeds_faces
   END INTERFACE
-     INTERFACE GeometricalSources_euler2D
+  INTERFACE GeometricalSources_euler2D
      MODULE PROCEDURE GeometricalSources_center
      MODULE PROCEDURE GeometricalSources_faces
   END INTERFACE
@@ -55,6 +70,7 @@ MODULE physics_euler2D
      MODULE PROCEDURE Convert2Conservative_center
      MODULE PROCEDURE Convert2Conservative_faces
   END INTERFACE
+  !> \endcond
   !--------------------------------------------------------------------------!
   PRIVATE
   INTEGER, PARAMETER :: num_var = 4              ! number of variables       !
@@ -66,11 +82,19 @@ MODULE physics_euler2D
        ! methods
        InitPhysics_euler2D, &
        ClosePhysics_euler2D, &
-       CheckData_euler2D, &
-       CalculateWaveSpeeds_euler2D, &
-       CalculateFluxesX_euler2D, &
-       CalculateFluxesY_euler2D, &
-       CalculateStresses_euler2D, &
+       CalcWaveSpeeds_euler2D, &
+       CalcSoundSpeeds_euler2D, &
+       CalcFluxesX_euler2D, &
+       CalcFluxesY_euler2D, &
+       CalcCharSystemX_euler2D, &
+       CalcCharSystemY_euler2D, &
+       CalcBoundaryDataX_euler2D, &
+       CalcBoundaryDataY_euler2D, &
+       CalcPrim2RiemannX_euler2D, &
+       CalcPrim2RiemannY_euler2D, &
+       CalcRiemann2PrimX_euler2D, &
+       CalcRiemann2PrimY_euler2D, &
+       CalcStresses_euler2D, &
        GeometricalSources_euler2D, &
        ViscositySources_euler2D, &
        ExternalSources_euler2D, &
@@ -79,6 +103,7 @@ MODULE physics_euler2D
        ReflectionMasks_euler2D, &
        AxisMasks_euler2D, &
        GetSoundSpeed_euler2D, &
+       SetEigenValues_euler2D, &
        SetWaveSpeeds_euler2D, &
        MomentumSourcesX_euler2D, &
        MomentumSourcesY_euler2D
@@ -86,19 +111,24 @@ MODULE physics_euler2D
 
 CONTAINS
 
-  SUBROUTINE InitPhysics_euler2D(this,Mesh,problem)
+  SUBROUTINE InitPhysics_euler2D(this,Mesh,problem,pname)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Physics_TYP) :: this
     TYPE(Mesh_TYP)    :: Mesh
     INTEGER           :: problem
+    CHARACTER(LEN=32), OPTIONAL :: pname
     !------------------------------------------------------------------------!
     INTEGER           :: err
     !------------------------------------------------------------------------!
-    INTENT(IN)        :: Mesh,problem
+    INTENT(IN)        :: Mesh,problem,pname
     INTENT(INOUT)     :: this
     !------------------------------------------------------------------------!
-    CALL InitPhysics(this,problem,problem_name,num_var)
+    IF (PRESENT(pname)) THEN
+       CALL InitPhysics(this,problem,pname,num_var)
+    ELSE
+       CALL InitPhysics(this,problem,problem_name,num_var)
+    END IF
     ! set array indices
     this%DENSITY   = 1                                 ! mass density        !
     this%PRESSURE  = num_var                           ! pressure            !
@@ -111,203 +141,19 @@ CONTAINS
     this%ZMOMENTUM = 0                                 ! no z-momentum       !
     ! set names for primitive and conservative variables
     this%pvarname(this%DENSITY)   = "density"
-    this%pvarname(this%XVELOCITY) = "x-velocity"
-    this%pvarname(this%YVELOCITY) = "y-velocity"
+    this%pvarname(this%XVELOCITY) = "xvelocity"
+    this%pvarname(this%YVELOCITY) = "yvelocity"
     this%pvarname(this%PRESSURE)  = "pressure"
     this%cvarname(this%DENSITY)   = "density"
-    this%cvarname(this%XMOMENTUM) = "x-momentum"
-    this%cvarname(this%YMOMENTUM) = "y-momentum"
+    this%cvarname(this%XMOMENTUM) = "xmomentum"
+    this%cvarname(this%YMOMENTUM) = "ymomentum"
     this%cvarname(this%ENERGY)    = "energy"
-    
-    ! allocate memory for arrays used in Euler2D
-    ALLOCATE(this%csound(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,4), &
-         this%structure(4),this%errormap(0:3),STAT = err)
-    ! abort if allocation fails
-    IF (err.NE.0) &
-      CALL Error(this,"InitPhysics_euler2D","Unable to allocate memory.")
+    this%DIM = 2
 
-    this%nstruc = 4
-    this%structure(1)%name = "coordinates"
-    this%structure(1)%pos = -1
-    this%structure(1)%rank = 1
-    this%structure(1)%dim  = 2
-    this%structure(2)%name = "density"
-    this%structure(2)%pos  = this%DENSITY
-    this%structure(2)%rank = 0
-    this%structure(2)%dim  = 1
-    this%structure(3)%name = "velocity"
-    this%structure(3)%pos  = this%XVELOCITY
-    this%structure(3)%rank = 1
-    this%structure(3)%dim  = 2
-    this%structure(4)%name = "pressure"
-    this%structure(4)%pos  = this%PRESSURE
-    this%structure(4)%rank = 0
-    this%structure(4)%dim  = 1
-
-    !set errormapping (CheckData Symbols)
-    this%errormap(0) = 'X'
-    this%errormap(1) = 'D'
-    this%errormap(2) = 'P'
-    this%errormap(3) = 'B'
   END SUBROUTINE InitPhysics_euler2D
 
 
-  PURE FUNCTION CheckData_euler2D(this,Mesh,pvar,pold,mr) RESULT (bad_data)
-    IMPLICIT NONE
-    !------------------------------------------------------------------------!
-    ! checks for bad density or pressure on the whole grid including ghost cells
-    ! return values:
-    !   0 : valid density and pressure data
-    !   1 : density < this%rhomin, i.e. vacuum generated
-    !   2 : pressure < this%pmin
-    !   3 : (pold - pvar)/pold < dpmax pressure variations to large
-    !------------------------------------------------------------------------!
-    TYPE(Physics_TYP) :: this
-    TYPE(Mesh_TYP)    :: Mesh
-    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,this%VNUM) &
-         :: pvar,pold
-    INTEGER, DIMENSION(4) :: mr
-    INTEGER, DIMENSION(4) :: def_mr
-    INTEGER           :: bad_data
-    !------------------------------------------------------------------------!
-    REAL              :: pmin,dpmax,rhomin
-    !------------------------------------------------------------------------!
-    INTENT(IN)        :: this,Mesh,pvar,pold,mr
-    !------------------------------------------------------------------------!
-    ! density minimum
-    rhomin = MINVAL(pvar(mr(1):mr(2),mr(3):mr(4),this%DENSITY))
-    ! check for density underflow or irregular values, i.e. inf/nan
-    IF ((rhomin.LE.this%rhomin).OR.(rhomin*0.0.NE.0.0)) THEN
-       bad_data = 1
-       RETURN
-    END IF
-    ! pressure minimum
-    pmin  = MINVAL(pvar(mr(1):mr(2),mr(3):mr(4),this%PRESSURE))
-    ! check for pressure underflow or irregular values, i.e. inf/nan
-    IF ((pmin.LE.this%pmin).OR.(pmin*0.0.NE.0.0)) THEN
-       bad_data = 2
-       RETURN
-    END IF
-    ! pressure variations (check only within computational domain, otherwise
-    ! farfield (and maybe other) boundary conditions will not work)
-    !Meshrange: IMIN,IMAX,JMIN,JMAX (no ghost cells!)
-    def_mr(1) = max(Mesh%IMIN,mr(1))
-    def_mr(2) = min(Mesh%IMAX,mr(2))
-    def_mr(3) = max(Mesh%JMIN,mr(3))
-    def_mr(4) = min(Mesh%JMAX,mr(4))
-    dpmax = MAXVAL(ABS(1.0-pvar(def_mr(1):def_mr(2),def_mr(3):def_mr(4),this%PRESSURE) &
-         / pold(def_mr(1):def_mr(2),def_mr(3):def_mr(4),this%PRESSURE)))
-    IF (dpmax.GT.this%dpmax) THEN
-       bad_data = 3
-       RETURN
-    END IF
-    ! everything ok
-    bad_data = 0
-  END FUNCTION CheckData_euler2D
-
-
-  PURE SUBROUTINE CalculateWaveSpeeds_center(this,Mesh,pvar)
-    IMPLICIT NONE
-    !------------------------------------------------------------------------!
-    TYPE(Physics_TYP) :: this
-    TYPE(Mesh_TYP)    :: Mesh
-    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,this%VNUM) &
-         :: pvar
-    !------------------------------------------------------------------------!
-    INTEGER           :: i,j
-    REAL              :: cs
-    !------------------------------------------------------------------------!
-    INTENT(IN)        :: Mesh,pvar
-    INTENT(INOUT)     :: this
-    !------------------------------------------------------------------------!
-    ! compute minimal and maximal wave speeds at cell centers
-!CDIR COLLAPSE
-    DO j=Mesh%JGMIN,Mesh%JGMAX
-       DO i=Mesh%IGMIN,Mesh%IGMAX
-          ! sound speed
-!CDIR IEXPAND
-          cs = GetSoundSpeed_euler2D(this%gamma, &
-               pvar(i,j,this%DENSITY),pvar(i,j,this%PRESSURE))
-          ! x-direction
-!CDIR IEXPAND
-          CALL SetWaveSpeeds_euler2D(cs,pvar(i,j,this%XVELOCITY),&
-               this%amin(i,j),this%amax(i,j))
-          ! y-direction
-!CDIR IEXPAND
-          CALL SetWaveSpeeds_euler2D(cs,pvar(i,j,this%YVELOCITY),&
-               this%bmin(i,j),this%bmax(i,j))
-       END DO
-    END DO
-  END SUBROUTINE CalculateWaveSpeeds_center
-
-
-  PURE SUBROUTINE CalculateWaveSpeeds_faces(this,Mesh,prim)
-    IMPLICIT NONE
-    !------------------------------------------------------------------------!
-    TYPE(Physics_TYP) :: this
-    TYPE(Mesh_TYP)    :: Mesh
-    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,4,this%VNUM) &
-         :: prim
-    !------------------------------------------------------------------------!
-    INTEGER           :: i,j
-    !------------------------------------------------------------------------!
-    INTENT(IN)        :: Mesh,prim
-    INTENT(INOUT)     :: this
-    !------------------------------------------------------------------------!
-    ! compute minimal and maximal wave speeds at cell interfaces
-!CDIR COLLAPSE
-    DO j=Mesh%JGMIN,Mesh%JGMAX
-       DO i=Mesh%IGMIN,Mesh%IGMAX
-          ! western
-!CDIR IEXPAND
-          CALL SetWaveSpeeds_euler2D(GetSoundSpeed_euler2D(this%gamma, &
-               prim(i,j,1,this%DENSITY),prim(i,j,1,this%PRESSURE)), &
-               prim(i,j,1,this%XVELOCITY), &
-               this%tmin(i,j,1),this%tmax(i,j,1))
-          ! eastern
-!CDIR IEXPAND
-          CALL SetWaveSpeeds_euler2D(GetSoundSpeed_euler2D(this%gamma, &
-               prim(i,j,2,this%DENSITY),prim(i,j,2,this%PRESSURE)), &
-               prim(i,j,2,this%XVELOCITY), &
-               this%amin(i,j),this%amax(i,j))
-          ! southern
-!CDIR IEXPAND
-          CALL SetWaveSpeeds_euler2D(GetSoundSpeed_euler2D(this%gamma, &
-               prim(i,j,3,this%DENSITY),prim(i,j,3,this%PRESSURE)), &
-               prim(i,j,3,this%YVELOCITY), &
-               this%tmin(i,j,2),this%tmax(i,j,2))
-          ! northern
-!CDIR IEXPAND
-          CALL SetWaveSpeeds_euler2D(GetSoundSpeed_euler2D(this%gamma, &
-               prim(i,j,4,this%DENSITY),prim(i,j,4,this%PRESSURE)), &
-               prim(i,j,4,this%YVELOCITY), &
-               this%bmin(i,j),this%bmax(i,j))
-       END DO
-    END DO
-    ! set minimal and maximal wave speeds at cell interfaces of neighboring cells
-    DO j=Mesh%JGMIN,Mesh%JGMAX
-!CDIR NODEP
-       DO i=Mesh%IMIN-1,Mesh%IMAX
-          ! western interfaces
-          this%amin(i,j) = MIN(this%tmin(i+1,j,1),this%amin(i,j))
-          ! eastern interfaces
-          this%amax(i,j) = MAX(this%tmax(i+1,j,1),this%amax(i,j))
-       END DO
-    END DO
-!CDIR COLLAPSE
-    DO j=Mesh%JMIN-1,Mesh%JMAX
-!CDIR NODEP
-       DO i=Mesh%IGMIN,Mesh%IGMAX
-          ! southern interfaces
-          this%bmin(i,j) = MIN(this%tmin(i,j+1,2),this%bmin(i,j))
-          ! northern interfaces
-          this%bmax(i,j) = MAX(this%tmax(i,j+1,2),this%bmax(i,j))
-       END DO
-    END DO
-  END SUBROUTINE CalculateWaveSpeeds_faces
-
-
-  PURE SUBROUTINE CalculateFluxesX_euler2D(this,Mesh,nmin,nmax,prim,cons,xfluxes)
+  PURE SUBROUTINE CalcFluxesX_euler2D(this,Mesh,nmin,nmax,prim,cons,xfluxes)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Physics_TYP) :: this
@@ -319,16 +165,16 @@ CONTAINS
     INTENT(IN)        :: this,Mesh,nmin,nmax,prim,cons
     INTENT(OUT)       :: xfluxes
     !------------------------------------------------------------------------!
-    CALL CalculateFlux_euler2D(prim(:,:,nmin:nmax,this%DENSITY), &
+    CALL CalcFlux_euler2D(prim(:,:,nmin:nmax,this%DENSITY), &
          prim(:,:,nmin:nmax,this%XVELOCITY),prim(:,:,nmin:nmax,this%PRESSURE), &
          cons(:,:,nmin:nmax,this%XMOMENTUM),cons(:,:,nmin:nmax,this%YMOMENTUM), &
          cons(:,:,nmin:nmax,this%ENERGY),xfluxes(:,:,nmin:nmax,this%DENSITY),&
          xfluxes(:,:,nmin:nmax,this%XMOMENTUM),xfluxes(:,:,nmin:nmax,this%YMOMENTUM), &
          xfluxes(:,:,nmin:nmax,this%ENERGY))
-  END SUBROUTINE CalculateFluxesX_euler2D
+  END SUBROUTINE CalcFluxesX_euler2D
 
 
-  PURE SUBROUTINE CalculateFluxesY_euler2D(this,Mesh,nmin,nmax,prim,cons,yfluxes)
+  PURE SUBROUTINE CalcFluxesY_euler2D(this,Mesh,nmin,nmax,prim,cons,yfluxes)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Physics_TYP) :: this
@@ -340,14 +186,218 @@ CONTAINS
     INTENT(IN)        :: this,Mesh,nmin,nmax,prim,cons
     INTENT(OUT)       :: yfluxes
     !------------------------------------------------------------------------!
-    CALL CalculateFlux_euler2D(prim(:,:,nmin:nmax,this%DENSITY), &
+    CALL CalcFlux_euler2D(prim(:,:,nmin:nmax,this%DENSITY), &
          prim(:,:,nmin:nmax,this%YVELOCITY),prim(:,:,nmin:nmax,this%PRESSURE), &
          cons(:,:,nmin:nmax,this%YMOMENTUM),cons(:,:,nmin:nmax,this%XMOMENTUM), &
          cons(:,:,nmin:nmax,this%ENERGY),yfluxes(:,:,nmin:nmax,this%DENSITY), &
          yfluxes(:,:,nmin:nmax,this%YMOMENTUM),yfluxes(:,:,nmin:nmax,this%XMOMENTUM), &
          yfluxes(:,:,nmin:nmax,this%ENERGY))
-  END SUBROUTINE CalculateFluxesY_euler2D
+  END SUBROUTINE CalcFluxesY_euler2D
 
+
+  PURE SUBROUTINE CalcCharSystemX_euler2D(this,Mesh,i,dir,pvar,lambda,xvar)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Physics_TYP) :: this
+    TYPE(Mesh_TYP)    :: Mesh
+    INTEGER           :: i,dir
+    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,this%VNUM) :: pvar
+    REAL, DIMENSION(Mesh%JGMIN:Mesh%JGMAX,this%VNUM) :: lambda,xvar
+    !------------------------------------------------------------------------!
+    INTEGER           :: i1,i2
+    !------------------------------------------------------------------------!
+    INTENT(IN)        :: this,Mesh,i,dir,pvar
+    INTENT(INOUT)     :: lambda
+    INTENT(OUT)       :: xvar
+    !------------------------------------------------------------------------!
+    ! compute eigenvalues at i
+!CDIR IEXPAND
+    CALL SetEigenValues_euler2D(this%gamma,pvar(i,:,this%DENSITY), &
+         pvar(i,:,this%XVELOCITY), pvar(i,:,this%PRESSURE),&
+         lambda(:,1),lambda(:,2),lambda(:,3),lambda(:,4))
+    ! compute characteristic variables
+    i1 = i + SIGN(1,dir) ! left handed if dir<0 and right handed otherwise
+    i2 = MAX(i,i1)
+    i1 = MIN(i,i1)
+!CDIR IEXPAND
+    CALL SetCharVars_euler2D(this%gamma,pvar(i1,:,this%DENSITY), &
+         pvar(i2,:,this%DENSITY),pvar(i1,:,this%XVELOCITY), &
+         pvar(i2,:,this%XVELOCITY),pvar(i1,:,this%YVELOCITY), &
+         pvar(i2,:,this%YVELOCITY),pvar(i1,:,this%PRESSURE), &
+         pvar(i2,:,this%PRESSURE),lambda(:,1),lambda(:,2),lambda(:,3), &
+         lambda(:,4),xvar(:,1),xvar(:,2),xvar(:,3),xvar(:,4))
+  END SUBROUTINE CalcCharSystemX_euler2D
+
+
+  PURE SUBROUTINE CalcCharSystemY_euler2D(this,Mesh,j,dir,pvar,lambda,xvar)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Physics_TYP) :: this
+    TYPE(Mesh_TYP)    :: Mesh
+    INTEGER           :: j,dir
+    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,this%VNUM) :: pvar
+    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,this%VNUM) :: lambda,xvar
+    !------------------------------------------------------------------------!
+    INTEGER           :: j1,j2
+    !------------------------------------------------------------------------!
+    INTENT(IN)        :: this,Mesh,j,dir,pvar
+    INTENT(INOUT)     :: lambda
+    INTENT(OUT)       :: xvar
+    !------------------------------------------------------------------------!
+    ! compute eigenvalues at j
+!CDIR IEXPAND
+    CALL SetEigenValues_euler2D(this%gamma,pvar(:,j,this%DENSITY), &
+         pvar(:,j,this%YVELOCITY), pvar(:,j,this%PRESSURE), &
+         lambda(:,1),lambda(:,2),lambda(:,3),lambda(:,4))
+    ! compute characteristic variables
+    j1 = j + SIGN(1,dir) ! left handed if dir<0 and right handed otherwise
+    j2 = MAX(j,j1)
+    j1 = MIN(j,j1)
+!CDIR IEXPAND
+   CALL SetCharVars_euler2D(this%gamma,pvar(:,j1,this%DENSITY), &
+         pvar(:,j2,this%DENSITY),pvar(:,j1,this%YVELOCITY), &
+         pvar(:,j2,this%YVELOCITY),pvar(:,j1,this%XVELOCITY), &
+         pvar(:,j2,this%XVELOCITY),pvar(:,j1,this%PRESSURE), &
+         pvar(:,j2,this%PRESSURE),lambda(:,1),lambda(:,2),lambda(:,3), &
+         lambda(:,4),xvar(:,1),xvar(:,2),xvar(:,3),xvar(:,4))
+  END SUBROUTINE CalcCharSystemY_euler2D
+
+
+  PURE SUBROUTINE CalcBoundaryDataX_euler2D(this,Mesh,i1,dir,xvar,pvar)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Physics_TYP) :: this
+    TYPE(Mesh_TYP)    :: Mesh
+    INTEGER           :: i1,dir
+    REAL, DIMENSION(Mesh%JGMIN:Mesh%JGMAX,this%VNUM) :: xvar
+    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,this%VNUM) :: pvar
+    !------------------------------------------------------------------------!
+    INTEGER           :: i2
+    !------------------------------------------------------------------------!
+    INTENT(IN)        :: this,Mesh,i1,dir,xvar
+    INTENT(INOUT)     :: pvar
+    !------------------------------------------------------------------------!
+    i2 = i1 + SIGN(1,dir)  ! i +/- 1 depending on the sign of dir
+!CDIR IEXPAND
+    CALL SetBoundaryData_euler2D(this%gamma,1.0*SIGN(1,dir),pvar(i1,:,this%DENSITY), &
+         pvar(i1,:,this%XVELOCITY),pvar(i1,:,this%YVELOCITY),pvar(i1,:,this%PRESSURE), &
+         xvar(:,1),xvar(:,2),xvar(:,3),xvar(:,4),pvar(i2,:,this%DENSITY), &
+         pvar(i2,:,this%XVELOCITY),pvar(i2,:,this%YVELOCITY),pvar(i2,:,this%PRESSURE))
+  END SUBROUTINE CalcBoundaryDataX_euler2D
+
+
+  PURE SUBROUTINE CalcBoundaryDataY_euler2D(this,Mesh,j1,dir,xvar,pvar)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Physics_TYP) :: this
+    TYPE(Mesh_TYP)    :: Mesh
+    INTEGER           :: j1,dir
+    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,this%VNUM) :: xvar
+    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,this%VNUM) :: pvar
+    !------------------------------------------------------------------------!
+    INTEGER           :: j2
+    !------------------------------------------------------------------------!
+    INTENT(IN)        :: this,Mesh,j1,dir,xvar
+    INTENT(INOUT)     :: pvar
+    !------------------------------------------------------------------------!
+    j2 = j1 + SIGN(1,dir)  ! j +/- 1 depending on the sign of dir
+!CDIR IEXPAND
+    CALL SetBoundaryData_euler2D(this%gamma,1.0*SIGN(1,dir),pvar(:,j1,this%DENSITY), &
+         pvar(:,j1,this%YVELOCITY),pvar(:,j1,this%XVELOCITY),pvar(:,j1,this%PRESSURE), &
+         xvar(:,1),xvar(:,2),xvar(:,3),xvar(:,4),pvar(:,j2,this%DENSITY), &
+         pvar(:,j2,this%YVELOCITY),pvar(:,j2,this%XVELOCITY),pvar(:,j2,this%PRESSURE))
+  END SUBROUTINE CalcBoundaryDataY_euler2D
+
+  PURE SUBROUTINE CalcPrim2RiemannX_euler2D(this,Mesh,i,pvar,lambda,Rinv)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Physics_TYP) :: this
+    TYPE(Mesh_TYP)    :: Mesh
+    INTEGER           :: i
+    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,this%VNUM) :: pvar
+    REAL, DIMENSION(Mesh%JGMIN:Mesh%JGMAX,this%VNUM) :: lambda,Rinv
+    !------------------------------------------------------------------------!
+    INTENT(IN)        :: this,Mesh,i,pvar
+    INTENT(INOUT)     :: lambda
+    INTENT(OUT)       :: Rinv
+    !------------------------------------------------------------------------!
+    ! compute eigenvalues at i
+!CDIR IEXPAND
+    CALL SetEigenValues_euler2D(this%gamma,pvar(i,:,this%DENSITY), &
+         pvar(i,:,this%XVELOCITY),pvar(i,:,this%PRESSURE),&
+         lambda(:,1),lambda(:,2),lambda(:,3),lambda(:,4))
+    ! compute Riemann invariants
+!CDIR IEXPAND
+    CALL Prim2Riemann_euler2D(this%gamma,pvar(i,:,this%DENSITY), &
+         pvar(i,:,this%XVELOCITY),pvar(i,:,this%YVELOCITY), &
+         pvar(i,:,this%PRESSURE),lambda(:,1),lambda(:,2),lambda(:,3),&
+         lambda(:,4),Rinv(:,1),Rinv(:,2),Rinv(:,3),Rinv(:,4))
+  END SUBROUTINE CalcPrim2RiemannX_euler2D
+
+
+  PURE SUBROUTINE CalcPrim2RiemannY_euler2D(this,Mesh,j,pvar,lambda,Rinv)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Physics_TYP) :: this
+    TYPE(Mesh_TYP)    :: Mesh
+    INTEGER           :: j
+    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,this%VNUM) :: pvar
+    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,this%VNUM) :: lambda,Rinv
+    !------------------------------------------------------------------------!
+    INTENT(IN)        :: this,Mesh,j,pvar
+    INTENT(INOUT)     :: lambda
+    INTENT(OUT)       :: Rinv
+    !------------------------------------------------------------------------!
+    ! compute eigenvalues at j
+!CDIR IEXPAND
+    CALL SetEigenValues_euler2D(this%gamma,pvar(:,j,this%DENSITY), &
+         pvar(:,j,this%YVELOCITY),pvar(:,j,this%PRESSURE),&
+         lambda(:,1),lambda(:,2),lambda(:,3),lambda(:,4))
+    ! compute Riemann invariants
+!CDIR IEXPAND
+    CALL Prim2Riemann_euler2D(this%gamma,pvar(:,j,this%DENSITY), &
+         pvar(:,j,this%YVELOCITY),pvar(:,j,this%XVELOCITY), &
+         pvar(:,j,this%PRESSURE),lambda(:,1),lambda(:,2),lambda(:,3),&
+         lambda(:,4),Rinv(:,1),Rinv(:,2),Rinv(:,3),Rinv(:,4))
+  END SUBROUTINE CalcPrim2RiemannY_euler2D
+
+  PURE SUBROUTINE CalcRiemann2PrimX_euler2D(this,Mesh,i,Rinv,pvar)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Physics_TYP) :: this
+    TYPE(Mesh_TYP)    :: Mesh
+    INTEGER           :: i
+    REAL, DIMENSION(Mesh%JGMIN:Mesh%JGMAX,this%VNUM) :: Rinv
+    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,this%VNUM) :: pvar
+    !------------------------------------------------------------------------!
+
+    !------------------------------------------------------------------------!
+    INTENT(IN)        :: this,Mesh,i,Rinv
+    INTENT(INOUT)     :: pvar
+    !------------------------------------------------------------------------!
+!CDIR IEXPAND
+    CALL Riemann2Prim_euler2D(this%gamma,Rinv(:,1),Rinv(:,2),&
+       Rinv(:,3),Rinv(:,4),pvar(i,:,this%Density), pvar(i,:,this%XVELOCITY), &
+       pvar(i,:,this%YVELOCITY), pvar(i,:,this%PRESSURE))
+  END SUBROUTINE CalcRiemann2PrimX_euler2D
+
+  PURE SUBROUTINE CalcRiemann2PrimY_euler2D(this,Mesh,j,Rinv,pvar)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Physics_TYP) :: this
+    TYPE(Mesh_TYP)    :: Mesh
+    INTEGER           :: j
+    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,this%VNUM) :: Rinv
+    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,this%VNUM) :: pvar
+    !------------------------------------------------------------------------!
+    INTENT(IN)        :: this,Mesh,j,Rinv
+    INTENT(INOUT)     :: pvar
+    !------------------------------------------------------------------------!
+!CDIR IEXPAND
+    CALL Riemann2Prim_euler2D(this%gamma,Rinv(:,1),Rinv(:,2),&
+       Rinv(:,3),Rinv(:,4),pvar(:,j,this%Density), pvar(:,j,this%YVELOCITY), &
+       pvar(:,j,this%XVELOCITY), pvar(:,j,this%PRESSURE))
+  END SUBROUTINE CalcRiemann2PrimY_euler2D
 
   PURE SUBROUTINE GeometricalSources_center(this,Mesh,pvar,cvar,sterm)
     IMPLICIT NONE
@@ -492,7 +542,7 @@ CONTAINS
     this%amin(:,:)  = pvar(:,:,this%XVELOCITY)*btxx(:,:) &
                     + pvar(:,:,this%YVELOCITY)*btxy(:,:) 
 
-   !compute scalar product of v and tau (y-component)
+    !compute scalar product of v and tau (y-component)
     this%amax(:,:) = pvar(:,:,this%XVELOCITY)*btxy(:,:) &
                    + pvar(:,:,this%YVELOCITY)*btyy(:,:)
 
@@ -626,6 +676,58 @@ CONTAINS
   END SUBROUTINE AxisMasks_euler2D
 
 
+  PURE SUBROUTINE CalcSoundSpeeds_center(this,Mesh,pvar)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Physics_TYP) :: this
+    TYPE(Mesh_TYP)    :: Mesh
+    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,this%VNUM) &
+         :: pvar
+    !------------------------------------------------------------------------!
+    INTEGER           :: i,j
+    !------------------------------------------------------------------------!
+    INTENT(IN)        :: Mesh,pvar
+    INTENT(INOUT)     :: this
+    !------------------------------------------------------------------------!
+!CDIR COLLAPSE
+    DO j=Mesh%JGMIN,Mesh%JGMAX
+      DO i=Mesh%IGMIN,Mesh%IGMAX
+        this%bccsound(i,j) = GetSoundSpeed_euler2D(&
+          this%gamma,&
+          pvar(i,j,this%DENSITY),&
+          pvar(i,j,this%PRESSURE))
+      END DO
+    END DO
+  END SUBROUTINE CalcSoundSpeeds_center
+
+
+  PURE SUBROUTINE CalcSoundSpeeds_faces(this,Mesh,prim)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Physics_TYP) :: this
+    TYPE(Mesh_TYP)    :: Mesh
+    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,4,this%VNUM) &
+         :: prim
+    !------------------------------------------------------------------------!
+    INTEGER           :: i,j,k
+    !------------------------------------------------------------------------!
+    INTENT(IN)        :: Mesh,prim
+    INTENT(INOUT)     :: this
+    !------------------------------------------------------------------------!
+!CDIR COLLAPSE
+    DO k=1,4
+      DO j=Mesh%JGMIN,Mesh%JGMAX
+        DO i=Mesh%IGMIN,Mesh%IGMAX
+          this%fcsound(i,j,k) = GetSoundSpeed_euler2D(&
+            this%gamma,&
+            prim(i,j,k,this%DENSITY),&
+            prim(i,j,k,this%PRESSURE))
+        END DO
+      END DO
+    END DO
+  END SUBROUTINE CalcSoundSpeeds_faces
+
+
   ELEMENTAL FUNCTION GetSoundSpeed_euler2D(gamma,density,pressure) RESULT(cs)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
@@ -635,8 +737,117 @@ CONTAINS
     cs = SQRT(MAX(2.0*TINY(cs),gamma*pressure/density))
   END FUNCTION GetSoundSpeed_euler2D
 
-  
-  ELEMENTAL SUBROUTINE CalculateFlux_euler2D(rho,v,P,m1,m2,E,f1,f2,f3,f4)
+  ELEMENTAL SUBROUTINE SetWaveSpeeds_euler2D(cs,v,amin,amax)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    REAL, INTENT(IN)  :: cs,v
+    REAL, INTENT(OUT) :: amin,amax
+    !------------------------------------------------------------------------!
+    ! minimal and maximal wave speeds
+    amin = MIN(0.,v-cs)
+    amax = MAX(0.,v+cs)
+  END SUBROUTINE SetWaveSpeeds_euler2D
+
+  ELEMENTAL SUBROUTINE SetEigenValues_euler2D(gamma,rho,v,P,l1,l2,l3,l4)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    REAL, INTENT(IN)  :: gamma,rho,v,P
+    REAL, INTENT(OUT) :: l1,l2,l3,l4
+    !------------------------------------------------------------------------!
+    REAL :: cs
+    !------------------------------------------------------------------------!
+    ! adiabatic sound speed
+!CDIR IEXPAND
+    cs = GetSoundSpeed_euler2D(gamma,rho,P)
+    ! call subroutine for isothermal case with the adiabatic sound speed
+!CDIR IEXPAND
+    CALL SetEigenValues_euler2Dit(cs,v,l1,l2,l4)
+    ! set the missing eigenvalue l3
+    l3 = v
+  END SUBROUTINE SetEigenValues_euler2D
+
+
+  ELEMENTAL SUBROUTINE SetCharVars_euler2D(gamma,rho1,rho2,u1,u2,v1,v2,P1,P2, &
+       l1,l2,l3,l4,xvar1,xvar2,xvar3,xvar4)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    REAL, INTENT(IN)  :: gamma,rho1,rho2,u1,u2,v1,v2,P1,P2,l1,l2,l3,l4
+    REAL, INTENT(OUT) :: xvar1,xvar2,xvar3,xvar4
+    !------------------------------------------------------------------------!
+    REAL :: gamcs,dlnP,du
+    !------------------------------------------------------------------------!
+    gamcs= gamma / (l4-l1) ! = 2*gamma/cs
+    dlnP = LOG(P2/P1)         ! = LOG(P2)-LOG(P1)
+    du   = u2-u1
+    ! characteristic variables
+    xvar1 = dlnP - gamcs * du
+    xvar2 = -dlnP + gamma * LOG(rho2/rho1)
+    xvar3 = (v2-v1)
+    xvar4 = dlnP + gamcs * du 
+  END SUBROUTINE SetCharVars_euler2D
+
+
+  ELEMENTAL SUBROUTINE SetBoundaryData_euler2D(gamma,dir,rho1,u1,v1,P1,xvar1, &
+       xvar2,xvar3,xvar4,rho2,u2,v2,P2)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    REAL, INTENT(IN)  :: gamma,dir,rho1,u1,v1,P1,xvar1,xvar2,xvar3,xvar4
+    REAL, INTENT(OUT) :: rho2,u2,v2,P2
+    !------------------------------------------------------------------------!
+    REAL :: dlnP,csgam
+    !------------------------------------------------------------------------!
+    dlnP = 0.5 * (xvar4+xvar1)
+    ! extrapolate boundary values using characteristic variables
+    rho2 = rho1 * EXP(dir*(dlnP-xvar2)/gamma)
+    P2   = P1 * EXP(dir*dlnP)
+!CDIR IEXPAND
+    csgam= GetSoundSpeed_euler2D(gamma,rho1+rho2,P1+P2) / gamma
+    u2   = u1 + dir*csgam * 0.5*(xvar4-xvar1)
+    v2   = v1 + dir*xvar3
+  END SUBROUTINE SetBoundaryData_euler2D
+
+ ELEMENTAL SUBROUTINE Prim2Riemann_euler2D(gamma,rho,vx,vy,p,&
+                                       l1,l2,l3,l4,Rminus,Rs,Rvt,Rplus)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    REAL, INTENT(IN)  :: gamma,rho,vx,vy,p,l1,l2,l3,l4
+    REAL, INTENT(OUT) :: Rminus,Rs,Rvt,Rplus
+    !------------------------------------------------------------------------!
+    REAL :: cs
+    !------------------------------------------------------------------------!
+    cs = l4-l2 ! l2 = v, l4 = v+cs
+    ! compute 1st Riemann invariant (R+)
+    Rplus = vx + 2./(gamma-1.0) * cs     
+    ! compute 2st Riemann invariant (R-) 
+    Rminus = vx - 2./(gamma-1.0) * cs
+    ! compute entropy
+    Rs = p/rho**gamma
+    ! tangential velocities
+    Rvt = vy   
+  END SUBROUTINE Prim2Riemann_euler2D
+
+  ELEMENTAL SUBROUTINE Riemann2Prim_euler2D(gamma,Rminus,Rs,Rvt,Rplus,&
+       rho,vx,vy,p)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    REAL, INTENT(IN)  :: gamma,Rminus,Rs,Rvt,Rplus
+    REAL, INTENT(OUT) :: rho,vx,vy,p
+    !------------------------------------------------------------------------!
+    REAL :: cs2gam
+    !------------------------------------------------------------------------!
+    ! tangential velocity    
+    vy = Rvt  
+    ! normal velocity
+    vx = 0.5*(Rplus+Rminus)
+    ! cs**2 / gamma
+    cs2gam = (0.25*(gamma-1.0)*(Rplus-Rminus))**2 / gamma
+    ! density
+    rho = (cs2gam/Rs)**(1./(gamma-1.0))
+    ! pressure
+    p = cs2gam * rho
+  END SUBROUTINE Riemann2Prim_euler2D
+
+  ELEMENTAL SUBROUTINE CalcFlux_euler2D(rho,v,P,m1,m2,E,f1,f2,f3,f4)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     REAL, INTENT(IN)  :: rho,v,P,m1,m2,E
@@ -646,7 +857,7 @@ CONTAINS
     f2 = m1*v + P
     f3 = m2*v
     f4 = (E+P)*v
-  END SUBROUTINE CalculateFlux_euler2D
+  END SUBROUTINE CalcFlux_euler2D
 
 
   ELEMENTAL SUBROUTINE Cons2Prim_euler2D(gamma,rho_in,mu,mv,E,rho_out,u,v,P)
@@ -685,7 +896,6 @@ CONTAINS
     !------------------------------------------------------------------------!
     INTENT(INOUT)     :: this
     !------------------------------------------------------------------------!
-    DEALLOCATE(this%csound)
     CALL ClosePhysics_euler2Dit(this)
   END SUBROUTINE ClosePhysics_euler2D
 

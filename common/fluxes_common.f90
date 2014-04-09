@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: fluxes_common.f90                                                 #
 !#                                                                           #
-!# Copyright (C) 2006-2010                                                   #
+!# Copyright (C) 2006-2014                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -22,9 +22,18 @@
 !# Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.                 #
 !#                                                                           #
 !#############################################################################
-
 !----------------------------------------------------------------------------!
-! basic fluxes module
+!> \defgroup fluxes fluxes
+!! \{
+!! \brief Family of fluxes modules
+!! \}
+!----------------------------------------------------------------------------!
+!> \author Tobias Illenseer
+!!
+!! \brief basic fluxes module
+!!
+!! \extends common_types
+!! \ingroup fluxes
 !----------------------------------------------------------------------------!
 MODULE fluxes_common
   USE common_types, &
@@ -36,6 +45,8 @@ MODULE fluxes_common
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   PRIVATE
+  ! exclude interface block from doxygen processing
+  !> \cond InterfaceBlock
   INTERFACE GetType
      MODULE PROCEDURE GetQuadrule, GetType_common
   END INTERFACE
@@ -60,9 +71,11 @@ MODULE fluxes_common
   INTERFACE Error
      MODULE PROCEDURE FluxesError, Error_common
   END INTERFACE
+  !> \endcond
   !--------------------------------------------------------------------------!
-  ! fluxes data structure
+  !> fluxes data structure
   TYPE Fluxes_TYP
+     !> \name Variables
      TYPE(Common_TYP)           :: quadrule        ! midpoint, trapezoidal.. !
      TYPE(Reconstruction_TYP)   :: Reconstruction  ! store recon. settings   !
      ! various data fields
@@ -70,13 +83,15 @@ MODULE fluxes_common
                                 :: prim,cons       !   data on cell faces    !
      REAL, DIMENSION(:,:,:,:), POINTER &           ! reconstructed data:     !
                                 :: rstates         !   prim or cons          !
-     REAL, DIMENSION(:,:,:,:), POINTER &           ! physical fluxes         !
-                                :: pfluxes,qfluxes
+     REAL, DIMENSION(:,:,:,:), POINTER :: pfluxes  ! physical fluxes         !
      REAL, DIMENSION(:,:,:), POINTER &             ! coordinate differences  !
                                 :: dx,dy           ! centers to recon. pos.  !
      REAL, DIMENSION(:,:,:), POINTER &             ! boundary fluxes         !
                                 :: bxflux,byflux,bxfold,byfold
+     REAL                       :: viscosity       ! numerical viscosity     !
+                                                   ! parameter               ! 
   END TYPE Fluxes_TYP
+  !> \}
   !--------------------------------------------------------------------------!
   PUBLIC :: &
        ! types
@@ -96,6 +111,7 @@ MODULE fluxes_common
 
 CONTAINS
 
+  !> \public
   SUBROUTINE InitFluxes(this,qrule,qname)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
@@ -110,6 +126,7 @@ CONTAINS
   END SUBROUTINE InitFluxes
 
 
+  !> \public
   SUBROUTINE CloseFluxes(this)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
@@ -119,6 +136,7 @@ CONTAINS
   END SUBROUTINE CloseFluxes
 
 
+  !> \public
   PURE FUNCTION GetQuadrule(this) RESULT(qr)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
@@ -129,6 +147,7 @@ CONTAINS
   END FUNCTION GetQuadrule
 
 
+  !> \public
   PURE FUNCTION GetQuadruleName(this) RESULT(qn)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
@@ -139,6 +158,7 @@ CONTAINS
   END FUNCTION GetQuadruleName
 
 
+  !> \public
   PURE FUNCTION GetFluxesRank(this) RESULT(r)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
@@ -149,6 +169,7 @@ CONTAINS
   END FUNCTION GetFluxesRank
 
 
+  !> \public
   PURE FUNCTION GetFluxesNumProcs(this) RESULT(p)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
@@ -159,6 +180,7 @@ CONTAINS
   END FUNCTION GetFluxesNumProcs
 
 
+  !> \public
   PURE FUNCTION FluxesInitialized(this) RESULT(i)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
@@ -169,6 +191,7 @@ CONTAINS
   END FUNCTION FluxesInitialized
 
 
+  !> \public
   SUBROUTINE FluxesInfo(this,msg)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
@@ -179,6 +202,7 @@ CONTAINS
   END SUBROUTINE FluxesInfo
 
 
+  !> \public
   SUBROUTINE FluxesWarning(this,modproc,msg)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
@@ -189,6 +213,7 @@ CONTAINS
   END SUBROUTINE FluxesWarning
 
 
+  !> \public
   SUBROUTINE FluxesError(this,modproc,msg)
     IMPLICIT NONE
     !------------------------------------------------------------------------!

@@ -23,10 +23,15 @@
 !#############################################################################
 
 !----------------------------------------------------------------------------!
-! define properties of a 2.5D cylindrical mesh
+!> \author Tobias Illenseer
+!!
+!! \brief define properties of a 2.5D cylindrical mesh
+!!
+!! \extends geometry_cartesian
+!! \ingroup geometry
 !----------------------------------------------------------------------------!
 MODULE geometry_cylindrical
-  USE geometry_cartesian
+  USE geometry_cartesian, Radius_cylindrical => Radius_cartesian
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   PRIVATE
@@ -35,6 +40,7 @@ MODULE geometry_cylindrical
   PUBLIC :: &
       InitGeometry_cylindrical, &
       ScaleFactors_cylindrical, &
+      Radius_cylindrical, &
       Convert2Cartesian_cylindrical, &
       Convert2Curvilinear_cylindrical
   !--------------------------------------------------------------------------!

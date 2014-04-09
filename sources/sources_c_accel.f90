@@ -24,13 +24,20 @@
 !#                                                                           #
 !#############################################################################
 !----------------------------------------------------------------------------!
-! source terms module for constant acceleration 
+!> \author Björn Sperling
+!! \author Tobias Illenseer
+!!
+!! \brief source terms module for constant acceleration
+!!
+!! \extends sources_common
+!! \ingroup sources
 !----------------------------------------------------------------------------!
 MODULE sources_c_accel
-  USE sources_pointmass
+  USE sources_common
   USE fluxes_common, ONLY : Fluxes_TYP
   USE physics_generic
   USE mesh_generic
+  USE common_dict
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   PRIVATE
@@ -40,45 +47,61 @@ MODULE sources_c_accel
        ! types
        Sources_TYP, &
        ! methods
+       InitSources, &
+       CloseSources, &
        InitSources_c_accel, &
        ExternalSources_c_accel, &
-       CloseSources_c_accel
+       CloseSources_c_accel, &
+       GetSourcesPointer, &
+       GetType, &
+       GetName, &
+       GetRank, &
+       GetNumProcs, &
+       Initialized, &
+       Info, &
+       Warning, &
+       Error
   !--------------------------------------------------------------------------!
 
 CONTAINS
 
 
-  SUBROUTINE InitSources_c_accel(this,Mesh,Physics,stype,xaccel,yaccel)
+  SUBROUTINE InitSources_c_accel(this,Mesh,Physics,config)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Sources_TYP), POINTER :: this
-    TYPE(Mesh_TYP)    :: Mesh
-    TYPE(Fluxes_TYP)  :: Fluxes
-    TYPE(Physics_TYP) :: Physics
-    INTEGER           :: stype
-    REAL,OPTIONAL     :: xaccel, yaccel
+    TYPE(Mesh_TYP)          :: Mesh
+    TYPE(Fluxes_TYP)        :: Fluxes
+    TYPE(Physics_TYP)       :: Physics
+    TYPE(Dict_TYP),POINTER  :: config
+    INTEGER                 :: stype
+    REAL                    :: xaccel, yaccel, zaccel
     !------------------------------------------------------------------------!
-    INTEGER           :: err
+    INTEGER                 :: err
     !------------------------------------------------------------------------!
-    INTENT(IN)        :: Mesh,Physics,stype,xaccel,yaccel
+    INTENT(IN)              :: Mesh,Physics
     !------------------------------------------------------------------------!
+    CALL GetAttr(config, "stype", stype)
     CALL InitSources(this,stype,source_name)
   
-    ALLOCATE(this%accel(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,2), &
+    ALLOCATE(this%accel(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%DIM), &
          STAT = err)
     IF (err.NE.0) &
          CALL Error(this,"InitSources_c_accel","memory allocation failed")
 
     ! initialize constant acceleration
-    IF (PRESENT(xaccel)) THEN
-       this%accel(:,:,1) = xaccel
-    ELSE
-       this%accel(:,:,1) = 0.
-    END IF
-    IF (PRESENT(yaccel)) THEN
-       this%accel(:,:,2) = yaccel
-    ELSE
-       this%accel(:,:,2) = 0.
+    CALL RequireKey(config, "xaccel", 0.0)
+    CALL GetAttr(config, "xaccel", xaccel)
+    this%accel(:,:,1) = xaccel
+
+    CALL RequireKey(config, "yaccel", 0.0)
+    CALL GetAttr(config, "yaccel", yaccel)
+    this%accel(:,:,2) = yaccel
+
+    IF (Physics%DIM .GE. 3) THEN
+      CALL RequireKey(config, "zaccel", 0.0)
+      CALL GetAttr(config, "zaccel", zaccel)
+      this%accel(:,:,3) = zaccel
     END IF
   END SUBROUTINE InitSources_c_accel
 

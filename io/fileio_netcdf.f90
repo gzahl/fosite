@@ -23,9 +23,13 @@
 !# Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.                 #
 !#                                                                           #
 !#############################################################################
-
 !----------------------------------------------------------------------------!
-! module for NetCDF I/O
+!> \author Björn Sperling
+!!
+!! \brief I/O for NetCDF files 
+!!
+!! \extends fileio_gnuplot
+!! \ingroup fileio
 !----------------------------------------------------------------------------!
 MODULE fileio_netcdf
 #ifdef HAVE_NETCDF
@@ -42,6 +46,7 @@ MODULE fileio_netcdf
   USE mesh_common, ONLY : Mesh_TYP
   USE physics_common, ONLY : Physics_TYP, GetName, GetType
   USE timedisc_common, ONLY : Timedisc_TYP
+  USE common_dict
   IMPLICIT NONE
 #ifdef PARALLEL
 #ifdef HAVE_MPIF_H
@@ -50,10 +55,11 @@ MODULE fileio_netcdf
 #endif
   !--------------------------------------------------------------------------!
   PRIVATE
-  INTEGER :: DEFAULT_NF90_REAL                     ! default real data type  !
-  CHARACTER(LEN=*), PARAMETER :: IDIM_NAME="inum"  ! names for dimensions &  !
-  CHARACTER(LEN=*), PARAMETER :: JDIM_NAME="jnum"  !   variables             !
-  CHARACTER(LEN=*), PARAMETER :: CNUM_NAME="cnum"
+  INTEGER :: DEFAULT_NF90_REAL                     !< default real data type
+  !> names for dimensions and variables 
+  CHARACTER(LEN=*), PARAMETER :: IDIM_NAME="inum"  
+  CHARACTER(LEN=*), PARAMETER :: JDIM_NAME="jnum"  
+  CHARACTER(LEN=*), PARAMETER :: CNUM_NAME="cnum"  
   CHARACTER(LEN=*), PARAMETER :: VSIZE_NAME="vsize"
   CHARACTER(LEN=*), PARAMETER :: CVSIZE_NAME="cvsize" 
   CHARACTER(LEN=*), PARAMETER :: POSITIONS_NAME ="bary_centers"
@@ -90,29 +96,33 @@ MODULE fileio_netcdf
   !--------------------------------------------------------------------------!
 
 CONTAINS
-  
-  SUBROUTINE InitFileio_netcdf(this,Mesh,Physics,fmt,filename,stoptime,dtwall,&
+  !> \public Constructor for the netcdf file I/O 
+  !!
+  !! Initilizes the file I/O type, filename, stoptime, number of outputs, 
+  !! number of files, unit number, config as a dict
+  SUBROUTINE InitFileio_netcdf(this,Mesh,Physics,fmt,fpath,filename,stoptime,dtwall,&
        count,fcycles,ncfmt,unit)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    TYPE(FileIO_TYP)  :: this
-    TYPE(Mesh_TYP)    :: Mesh
-    TYPE(Physics_TYP) :: Physics
-    INTEGER           :: fmt
-    CHARACTER(LEN=*)  :: filename
-    REAL              :: stoptime
-    INTEGER           :: dtwall
-    INTEGER           :: count
-    INTEGER           :: fcycles
-    INTEGER           :: ncfmt
-    INTEGER, OPTIONAL :: unit
+    TYPE(FileIO_TYP)  :: this          !< \param [in,out] this fileio type
+    TYPE(Mesh_TYP)    :: Mesh          !< \param [in] Mesh mesh type
+    TYPE(Physics_TYP) :: Physics       !< \param [in] Physics Physics type
+    INTEGER           :: fmt           !< \param [in] fmt fileio type number
+    CHARACTER(LEN=*)  :: fpath         !< \param [in] fpath
+    CHARACTER(LEN=*)  :: filename      !< \param [in] filename
+    REAL              :: stoptime      !< \param [in] stoptime
+    INTEGER           :: dtwall        !< \param [in] dtwall wall clock time
+    INTEGER           :: count         !< \param [in] count number of outputs
+    INTEGER           :: fcycles       !< \param [in] fcycles file cycle number
+    INTEGER           :: ncfmt         !< \param [in] ncfmt netcdf format
+    INTEGER, OPTIONAL :: unit          !< \param [in] unit fileio unit number
     !------------------------------------------------------------------------!
     REAL              :: dummy
     !------------------------------------------------------------------------!
-    INTENT(IN)        :: Mesh,Physics,fmt,filename,stoptime,count,fcycles,ncfmt,unit
+    INTENT(IN)        :: Mesh,Physics,fmt,fpath,filename,stoptime,count,fcycles,ncfmt,unit
     INTENT(INOUT)     :: this
     !------------------------------------------------------------------------!
-    CALL InitFileIO(this,Mesh,Physics,fmt,"NetCDF",filename,"nc",stoptime,&
+    CALL InitFileIO(this,Mesh,Physics,fmt,"NetCDF",fpath,filename,"nc",stoptime,&
          dtwall,count,fcycles,.FALSE.,unit)
 #ifdef HAVE_NETCDF
 #ifdef PARALLEL
@@ -144,11 +154,13 @@ CONTAINS
   END SUBROUTINE InitFileIO_netcdf
 
 #ifdef HAVE_NETCDF
+  !> \public Specific routine to open a file for netcdf I/O
+  !!
   SUBROUTINE OpenFile_netcdf(this,action)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    TYPE(FileIO_TYP) :: this
-    INTEGER          :: action
+    TYPE(FileIO_TYP) :: this    !< \param [in,out] this fileio type
+    INTEGER          :: action  !< \param [in] action mode of file access
     !------------------------------------------------------------------------!
     INTENT(IN)       :: action
     INTENT(INOUT)    :: this
@@ -182,11 +194,12 @@ CONTAINS
          TRIM(nf90_strerror(this%error)))
   END SUBROUTINE OpenFile_netcdf
 
-
+  !> \public Closes the file I/O
+  !!
   SUBROUTINE CloseFile_netcdf(this)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    TYPE(FileIO_TYP) :: this
+    TYPE(FileIO_TYP) :: this   !< \param [in,out] this fileio type
     !------------------------------------------------------------------------!
     INTENT(INOUT)    :: this
     !------------------------------------------------------------------------!
@@ -195,13 +208,14 @@ CONTAINS
          TRIM(nf90_strerror(this%error)))    
   END SUBROUTINE CloseFile_netcdf
 
-
+  !> \public Writes the file header
+  !!
   SUBROUTINE WriteHeader_netcdf(this,Mesh,Physics)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    TYPE(FileIO_TYP)  :: this
-    TYPE(Mesh_TYP)    :: Mesh
-    TYPE(Physics_TYP) :: Physics
+    TYPE(FileIO_TYP)  :: this     !< \param [in,out] this fileio type
+    TYPE(Mesh_TYP)    :: Mesh     !< \param [in] mesh mesh type
+    TYPE(Physics_TYP) :: Physics  !< \param [in] physics physics type
     !------------------------------------------------------------------------!
     CHARACTER(LEN=8)  :: series_attr
     INTEGER           :: k
@@ -367,14 +381,15 @@ CONTAINS
          TRIM(nf90_strerror(this%error)))
   END SUBROUTINE WriteHeader_netcdf
 
-
+  !> \public Reads the file header
+  !!
   SUBROUTINE ReadHeader_netcdf(this,Mesh,Physics,success)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    TYPE(FileIO_TYP)  :: this
-    TYPE(Mesh_TYP)    :: Mesh
-    TYPE(Physics_TYP) :: Physics
-    LOGICAL           :: success
+    TYPE(FileIO_TYP)  :: this     !< \param [in,out] this fileio type
+    TYPE(Mesh_TYP)    :: Mesh     !< \param [in] mesh mesh type
+    TYPE(Physics_TYP) :: Physics  !< \param [in] physics physics type
+    LOGICAL           :: success  !< \param [out] success 
     !------------------------------------------------------------------------!
     INTEGER           :: dimid,posid
     INTEGER           :: check_phys,check_geo,check_inum,check_jnum
@@ -441,7 +456,7 @@ CONTAINS
        success = .FALSE.
     END IF
     IF ((check_xmin.NE.Mesh%xmin).OR.(check_xmax.NE.Mesh%xmax).OR. &
-        (check_ymin.NE.Mesh%ymin).OR.(check_xmax.NE.Mesh%ymax)) THEN
+        (check_ymin.NE.Mesh%ymin).OR.(check_ymax.NE.Mesh%ymax)) THEN
        CALL Warning(this,"ReadHeader_netcdf","computational domain mismatch")
        success = .FALSE.
     END IF
@@ -516,24 +531,26 @@ CONTAINS
     ! write corner positions to file
     ! x-coordinates
     this%error = nf90_put_var(this%ncid,cposid,&
-         Mesh%cpcart(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN:Mesh%JMAX,:,1), &
+         Mesh%ccart(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN:Mesh%JMAX,:,1), &
          start=start,count=num)
     ! y-coordinates
     start(:)  = (/ Mesh%IMIN, Mesh%JMIN, 1, 2 /)
     IF (this%error.EQ.NF90_NOERR) &
          this%error = nf90_put_var(this%ncid,cposid,&
-              Mesh%cpcart(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN:Mesh%JMAX,:,2), &
+              Mesh%ccart(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN:Mesh%JMAX,:,2), &
               start=start,count=num)
 
     IF (this%error.NE.NF90_NOERR) CALL Error(this,"WriteCPositions_netcdf",&
          TRIM(nf90_strerror(this%error)))
   END SUBROUTINE WriteCPositions_netcdf
 
+  !> \public Writes timestamp to file
+  !!
   SUBROUTINE WriteTimestamp_netcdf(this,time)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    TYPE(FileIO_TYP) :: this
-    REAL             :: time
+    TYPE(FileIO_TYP) :: this  !< \param [in,out] this fileio type
+    REAL             :: time  !< \param [in] time timestamp
     !------------------------------------------------------------------------!
     INTEGER          :: varid
     INTEGER          :: start(1), outnum(1)
@@ -566,12 +583,13 @@ CONTAINS
          TRIM(nf90_strerror(this%error)))
   END SUBROUTINE WriteTimestamp_netcdf
 
-
+  !> \public Reads timestamp to file
+  !!
   SUBROUTINE ReadTimestamp_netcdf(this,time)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    TYPE(FileIO_TYP) :: this
-    REAL             :: time
+    TYPE(FileIO_TYP) :: this  !< \param [in,out] this fileio type
+    REAL             :: time  !< \param [out] time timestamp
     !------------------------------------------------------------------------!
     INTEGER          :: varid,ndims,len
     INTEGER, DIMENSION(1) :: dimids,start,num
@@ -608,14 +626,15 @@ CONTAINS
          time=-1.0
   END SUBROUTINE ReadTimestamp_netcdf
 
-
+  !> \public Writes all primitive data arrays to a file 
+  !!
   SUBROUTINE WriteDataset_netcdf(this,Mesh,Physics,Timedisc)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    TYPE(FileIO_TYP)  :: this
-    TYPE(Mesh_TYP)    :: Mesh
-    TYPE(Physics_TYP) :: Physics
-    TYPE(Timedisc_TYP):: Timedisc
+    TYPE(FileIO_TYP)  :: this      !< \param [in,out] this fileio type
+    TYPE(Mesh_TYP)    :: Mesh      !< \param [in] mesh mesh type
+    TYPE(Physics_TYP) :: Physics   !< \param [in] physics physics type
+    TYPE(Timedisc_TYP):: Timedisc  !< \param [in] timedisc timedisc type
     !------------------------------------------------------------------------!
     INTEGER           :: k
     INTEGER           :: varid
@@ -624,6 +643,14 @@ CONTAINS
     INTENT(IN)        :: Mesh,Physics,Timedisc
     INTENT(INOUT)     :: this
     !------------------------------------------------------------------------!
+!#ifdef HAVE_HDF5
+!    DO k=1, Physics%VNUM
+!        CALL SetAttr(this%config, TRIM("timedisc/"//Physics%pvarname(k)), &
+!                     Timedisc%pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN:Mesh%JMAX,k))
+!    END DO
+!    IF (this%error.EQ.NF90_NOERR) &
+!        this%error = SaveDict(this%config, this%ncid)
+!#else
     IF (Mesh%JNUM.EQ.1) THEN
        start(1) = Mesh%IMIN
        num(1)   = Mesh%IMAX-Mesh%IMIN+1
@@ -652,22 +679,22 @@ CONTAINS
                          Timedisc%pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN:Mesh%JMAX,k), &
                          start=start,count=num)
     END DO
-    IF (this%error.NE.NF90_NOERR) CALL Error(this,"WriteDataset_netcdf",&
-         TRIM(nf90_strerror(this%error)))
+!#endif
   END SUBROUTINE WriteDataset_netcdf
 
-
+  !> \public Reads the data arrays from file (not yet implemented)
+  !!
   SUBROUTINE ReadDataset_netcdf(this,Mesh,Physics,Timedisc)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    TYPE(FileIO_TYP)  :: this
-    TYPE(Mesh_TYP)    :: Mesh
-    TYPE(Physics_TYP) :: Physics
-    TYPE(Timedisc_TYP):: Timedisc
+    TYPE(FileIO_TYP)  :: this      !< \param [in,out] this fileio type
+    TYPE(Mesh_TYP)    :: Mesh      !< \param [in] mesh mesh type
+    TYPE(Physics_TYP) :: Physics   !< \param [in] physics physics type
+    TYPE(Timedisc_TYP):: Timedisc  !< \param [in,out] timedisc timedisc type
     !------------------------------------------------------------------------!
     INTEGER           :: k
     INTEGER           :: varid,ndims,len
-    INTEGER, DIMENSION(this%rank+1)   :: dimids,start,num
+    INTEGER, DIMENSION(this%rank+1)   :: dimids,start,num,map
     !------------------------------------------------------------------------!
     INTENT(IN)        :: Mesh,Physics
     INTENT(INOUT)     :: this,Timedisc
@@ -675,54 +702,97 @@ CONTAINS
     ! IMPORTANT: check header before reading the data to be sure that
     !            the dimensions are correct
     ! set the extent of the data fields
+    
+    !Exactly the same as WriteDataset, but nf90_get_var. Not honoring time
+    !series yet.
     IF (Mesh%JNUM.EQ.1) THEN
        start(1) = Mesh%IMIN
-       num(1) = Mesh%IMAX-Mesh%IMIN+1
+       num(1)   = Mesh%IMAX-Mesh%IMIN+1
+       map(1)   = 1
     ELSE IF (Mesh%INUM.EQ.1) THEN
        start(1) = Mesh%JMIN
-       num(1) = Mesh%JMAX-Mesh%JMIN+1
+       num(1)   = Mesh%JMAX-Mesh%JMIN+1
+       map(1)   = 1
     ELSE
-       start(1) = Mesh%IMIN
+       num(1)   = Mesh%JMAX-Mesh%JMIN+1
+       num(2)   = Mesh%IMAX-Mesh%IMIN+1
        start(2) = Mesh%JMIN
-       num(1) = Mesh%IMAX-Mesh%IMIN+1
-       num(2) = Mesh%JMAX-Mesh%JMIN+1
+       start(1) = Mesh%IMIN
+       map(1)   = Mesh%INUM
+       map(2)   = 1
     END IF
-    num(this%rank+1) = 1   ! read one time step
-    ! loop over all primitive variables
-    DO k=1,Physics%VNUM
-       ! get the id
-       this%error = nf90_inq_varid(this%ncid,TRIM(Physics%pvarname(k)),varid)
-       ! check for time series
-       IF (this%error.EQ.NF90_NOERR) &
-            this%error = nf90_inquire_variable(this%ncid,varid,ndims=ndims)
-       IF (ndims.EQ.this%rank+1) THEN
-          ! yes we have a time series
-          IF (this%error.EQ.NF90_NOERR) &
-               this%error = nf90_inquire_variable(this%ncid,varid,dimids=dimids)
-          ! get the length of the time series
-          IF (this%error.EQ.NF90_NOERR) &
-               this%error = nf90_inquire_dimension(this%ncid,dimids(this%rank+1),len=len)
-       ELSE
-          len = 1
-       END IF
-       ! read the data of the (last) time step
-       ! set the time step we want to read (last, i.e. most recent)
-       start(this%rank+1) = len-1
-       ! read the data
-       IF (this%error.EQ.NF90_NOERR) &
-            this%error = nf90_get_var(this%ncid,varid,&
-                         Timedisc%pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN:Mesh%JMAX,k), &
-                         start=start,count=num)
-    END DO
-    IF (this%error.NE.NF90_NOERR) CALL Error(this,"ReadDataset_netcdf",&
-         TRIM(nf90_strerror(this%error)))
+    ! time step to write
+    IF (this%cycles.GT.0) THEN
+       start(this%rank+1) = 1
+    ELSE
+       start(this%rank+1) = this%step + 1
+    END IF
+    num(this%rank+1) = 1   ! one time step
+    map(3) = 1
+    map(2) = map(2) * map(3)
+    map(1) = map(1) * map(3)
+    ! write the data
+!    DO k=1,Physics%VNUM
+!       IF (this%error.EQ.NF90_NOERR) &
+!            this%error = nf90_inq_varid(this%ncid,TRIM(Physics%pvarname(k)),varid)
+!       IF (this%error.EQ.NF90_NOERR) &
+!            this%error = nf90_get_var(this%ncid,varid,&
+!                         Timedisc%pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN:Mesh%JMAX,k), &
+!                         start=start,count=num,map=map)
+!    END DO
+!    IF (this%error.NE.NF90_NOERR) CALL Error(this,"ReadDataset_netcdf",&
+!         TRIM(nf90_strerror(this%error)))
+
+!    IF (Mesh%JNUM.EQ.1) THEN
+!       start(1) = Mesh%IMIN
+!       num(1) = Mesh%IMAX-Mesh%IMIN+1
+!    ELSE IF (Mesh%INUM.EQ.1) THEN
+!       start(1) = Mesh%JMIN
+!       num(1) = Mesh%JMAX-Mesh%JMIN+1
+!    ELSE
+!       num(:)    = (/ Physics%VNUM, Mesh%JNUM, Mesh%INUM /)
+!       start(:)  = (/ 1, Mesh%JMIN, Mesh%IMIN /)
+!       map(:)   = (/ Mesh%JNUM*Mesh%INUM, Mesh%INUM, 1/)
+!    END IF
+!    num(this%rank+1) = 1   ! read one time step
+!    ! loop over all primitive variables
+!    DO k=1,Physics%VNUM
+!       ! get the id
+!       this%error = nf90_inq_varid(this%ncid,TRIM(Physics%pvarname(k)),varid)
+!       ! check for time series
+!       IF (this%error.EQ.NF90_NOERR) &
+!            this%error = nf90_inquire_variable(this%ncid,varid,ndims=ndims)
+!       IF (ndims.EQ.this%rank+1) THEN
+!          ! yes we have a time series
+!          IF (this%error.EQ.NF90_NOERR) &
+!               this%error = nf90_inquire_variable(this%ncid,varid,dimids=dimids)
+!          ! get the length of the time series
+!          IF (this%error.EQ.NF90_NOERR) &
+!               this%error = nf90_inquire_dimension(this%ncid,dimids(this%rank+1),len=len)
+!       ELSE
+!          len = 1
+!       END IF
+!       ! read the data of the (last) time step
+!       ! set the time step we want to read (last, i.e. most recent)
+!       start(this%rank+1) = len-1
+!       ! read the data
+!       IF (this%error.EQ.NF90_NOERR) &
+!            this%error = nf90_get_var(this%ncid,varid,&
+!                         Timedisc%pvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN:Mesh%JMAX,k), &
+!                         start=start,count=num,map=map)
+!       print *,"this error(noerr:",NF90_NOERR,"): ",this%error
+!    END DO
+!    IF (this%error.NE.NF90_NOERR) CALL Error(this,"ReadDataset_netcdf",&
+!         TRIM(nf90_strerror(this%error)))
   END SUBROUTINE ReadDataset_netcdf
 #endif
 
+  !> \public Closes the file I/O
+  !!
   SUBROUTINE CloseFileIO_netcdf(this)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    TYPE(FileIO_TYP) :: this
+    TYPE(FileIO_TYP) :: this   !< \param [in,out] this fileio type
     !------------------------------------------------------------------------!
     INTENT(INOUT)    :: this
     !------------------------------------------------------------------------!

@@ -24,7 +24,12 @@
 !#############################################################################
 
 !----------------------------------------------------------------------------!
-! module for SI units and physical constants
+!> \author Tobias Illenseer
+!!
+!! \brief module for SI units and physical constants
+!!
+!! \extends constants_common
+!! \ingroup constants
 !----------------------------------------------------------------------------!
 MODULE constants_SI
   USE constants_common
@@ -50,6 +55,7 @@ MODULE constants_SI
 
 CONTAINS
 
+  !> \public Constructor of physical constants module using SI units
   SUBROUTINE InitConstants_SI(this,units)
     IMPLICIT NONE
     !------------------------------------------------------------------------!

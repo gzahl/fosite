@@ -23,13 +23,19 @@
 !#                                                                           #
 !#############################################################################
 !----------------------------------------------------------------------------!
-! source terms module for simple optically thin cooling
+!> \author Tobias Illenseer
+!!
+!! \brief source terms module for simple optically thin cooling
+!!
+!! \extends sources_c_accel
+!! \ingroup sources
 !----------------------------------------------------------------------------!
 MODULE sources_cooling
-  USE sources_pointmass
+  USE sources_c_accel
   USE fluxes_common, ONLY : Fluxes_TYP
   USE physics_generic
   USE mesh_generic
+  USE common_dict
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   PRIVATE
@@ -47,28 +53,25 @@ MODULE sources_cooling
 
 CONTAINS
 
-  SUBROUTINE InitSources_cooling(this,Mesh,Physics,stype,cvis)
+  SUBROUTINE InitSources_cooling(this,Mesh,Physics,config)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Sources_TYP), POINTER :: this
     TYPE(Mesh_TYP)    :: Mesh
     TYPE(Fluxes_TYP)  :: Fluxes
     TYPE(Physics_TYP) :: Physics
+    TYPE(Dict_TYP),POINTER :: config
     INTEGER           :: stype
-    REAL,OPTIONAL     :: cvis
     !------------------------------------------------------------------------!
     INTEGER           :: err
     !------------------------------------------------------------------------!
-    INTENT(IN)        :: Mesh,Physics,stype,cvis
+    INTENT(IN)        :: Mesh,Physics
     !------------------------------------------------------------------------!
+    CALL GetAttr(config, "stype", stype)
     CALL InitSources(this,stype,source_name)
     ! Courant number, i.e. safety factor for numerical stability
-    IF (PRESENT(cvis)) THEN
-       this%cvis = cvis
-    ELSE
-       ! default value
-       this%cvis = 0.9
-    END IF
+    CALL RequireKey(config, "cvis", 0.9)
+    CALL GetAttr(config, "cvis", this%cvis)
     ALLOCATE(this%Qcool(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX), &
          STAT=err)
     IF (err.NE.0) CALL Error(this,"InitSources_cooling","memory allocation failed")
@@ -150,7 +153,7 @@ CONTAINS
     INTENT(INOUT)     :: this
     !------------------------------------------------------------------------!
     ! update the cooling function if time has changed
-    IF (time.NE.this%time) THEN
+    IF ((time.NE.this%time) .OR. (time .EQ. 0.)) THEN
 !CDIR COLLAPSE
        DO j=Mesh%JMIN,Mesh%JMAX
 !CDIR NODEP

@@ -24,7 +24,12 @@
 !#############################################################################
 
 !----------------------------------------------------------------------------!
-! module for geometrical units and physical constants
+!> \author Tobias Illenseer
+!!
+!! \brief module for geometrical units and physical constants
+!!
+!! \extends constants_common
+!! \ingroup constants
 !----------------------------------------------------------------------------!
 MODULE constants_geometrical
   USE constants_common
@@ -42,6 +47,7 @@ MODULE constants_geometrical
 
 CONTAINS
 
+  !> \public Constructor of physical constants module using geometrical units
   SUBROUTINE InitConstants_geometrical(this,units)
     IMPLICIT NONE
     !------------------------------------------------------------------------!

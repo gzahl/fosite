@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: physics_euler3Drotsym.f90                                         #
 !#                                                                           #
-!# Copyright (C) 2007-2012                                                   #
+!# Copyright (C) 2007-2013                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !# Björn Sperling   <sperling@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
@@ -25,18 +25,26 @@
 !#############################################################################
 
 !----------------------------------------------------------------------------!
-! basic module for 3D Euler equations with rotational symmetry
+!> \author Tobias Illenseer
+!! \author Björn Sperling
+!!
+!! \brief basic module for 3D Euler equations with rotational symmetry
+!!
+!! \extends physics_common
+!! \ingroup physics
 !----------------------------------------------------------------------------!
 MODULE physics_euler3Drotsym
   USE physics_common
   USE mesh_common, ONLY : Mesh_TYP
   USE sources_common, ONLY : Sources_TYP
   USE physics_euler2D, &
-       CheckData_euler3Drs => CheckData_euler2D, &
-       CalculateWaveSpeeds_euler3Drs => CalculateWaveSpeeds_euler2D
+       CalcWaveSpeeds_euler3Drs => CalcWaveSpeeds_euler2D, &
+       CalcSoundSpeeds_euler3Drs => CalcSoundSpeeds_euler2D
   USE mesh_generic
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
+  ! exclude interface block from doxygen processing
+  !> \cond InterfaceBlock
   INTERFACE GeometricalSources_euler3Drs
      MODULE PROCEDURE GeometricalSources_center
      MODULE PROCEDURE GeometricalSources_faces
@@ -49,6 +57,7 @@ MODULE physics_euler3Drotsym
      MODULE PROCEDURE Convert2Conservative_center
      MODULE PROCEDURE Convert2Conservative_faces
   END INTERFACE
+  !> \endcond
   !--------------------------------------------------------------------------!
   PRIVATE
   INTEGER, PARAMETER :: num_var = 5              ! number of variables       !
@@ -56,11 +65,19 @@ MODULE physics_euler3Drotsym
   !--------------------------------------------------------------------------!
   PUBLIC :: &
        InitPhysics_euler3Drs, &
-       CheckData_euler3Drs, &
-       CalculateWaveSpeeds_euler3Drs, &
-       CalculateFluxesX_euler3Drs, &
-       CalculateFluxesY_euler3Drs, &
-       CalculateStresses_euler3drs, &
+       CalcWaveSpeeds_euler3Drs, &
+       CalcSoundSpeeds_euler3Drs, &
+       CalcFluxesX_euler3Drs, &
+       CalcFluxesY_euler3Drs, &
+       CalcCharSystemX_euler3Drs, &
+       CalcCharSystemY_euler3Drs, &
+       CalcBoundaryDataX_euler3Drs, &
+       CalcBoundaryDataY_euler3Drs, &
+       CalcPrim2RiemannX_euler3Drs, &
+       CalcPrim2RiemannY_euler3Drs, &
+       CalcRiemann2PrimX_euler3Drs, &
+       CalcRiemann2PrimY_euler3Drs, &
+       CalcStresses_euler3drs, &
        GeometricalSources_euler3Drs, &
        ExternalSources_euler3Drs, &
        ViscositySources_euler3Drs, &
@@ -68,10 +85,11 @@ MODULE physics_euler3Drotsym
        Convert2Conservative_euler3Drs, &
        ReflectionMasks_euler3Drs, &
        AxisMasks_euler3Drs, &
+       SetEigenValues_euler3Drs, &
        ClosePhysics_euler3Drs
   !--------------------------------------------------------------------------!
 
-  CONTAINS
+CONTAINS
 
   SUBROUTINE InitPhysics_euler3Drs(this,Mesh,problem)
     IMPLICIT NONE
@@ -98,51 +116,27 @@ MODULE physics_euler3Drotsym
     this%ZMOMENTUM = 4                                 ! rotational momentum !
     ! set names for primitive and conservative variables
     this%pvarname(this%DENSITY)   = "density"
-    this%pvarname(this%XVELOCITY) = "x-velocity"
-    this%pvarname(this%YVELOCITY) = "y-velocity"
-    this%pvarname(this%ZVELOCITY) = "z-velocity"
+    this%pvarname(this%XVELOCITY) = "xvelocity"
+    this%pvarname(this%YVELOCITY) = "yvelocity"
+    this%pvarname(this%ZVELOCITY) = "zvelocity"
     this%pvarname(this%PRESSURE)  = "pressure"
     this%cvarname(this%DENSITY)   = "density"
-    this%cvarname(this%XMOMENTUM) = "x-momentum"
-    this%cvarname(this%YMOMENTUM) = "y-momentum"
-    this%cvarname(this%ZMOMENTUM) = "z-momentum"
+    this%cvarname(this%XMOMENTUM) = "xmomentum"
+    this%cvarname(this%YMOMENTUM) = "ymomentum"
+    this%cvarname(this%ZMOMENTUM) = "zmomentum"
     this%cvarname(this%ENERGY)    = "energy"
+    this%DIM = 3
 
-    ! allocate memory for arrays used in Euler3Drotsym
-    ALLOCATE(this%csound(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,4), &
-         this%fcent(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,4,2), &
-         this%structure(4),this%errormap(0:3),STAT = err)
+    ALLOCATE(this%fcent(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,4,2), &
+         STAT = err)
     ! abort if allocation fails
     IF (err.NE.0) &
-         CALL Error(this, "InitPhysics_euler3Drs", "Unable to allocate memory.")
+         CALL Error(this, "InitPhysics_euler3Drssgs", "Unable to allocate memory.")
 
-    this%nstruc = 4
-    this%structure(1)%name = "coordinates"
-    this%structure(1)%pos = -1
-    this%structure(1)%rank = 1
-    this%structure(1)%dim  = 2
-    this%structure(2)%name = "density"
-    this%structure(2)%pos  = this%DENSITY
-    this%structure(2)%rank = 0
-    this%structure(2)%dim  = 1
-    this%structure(3)%name = "velocity"
-    this%structure(3)%pos  = this%XVELOCITY
-    this%structure(3)%rank = 1
-    this%structure(3)%dim  = 3
-    this%structure(4)%name = "pressure"
-    this%structure(4)%pos  = this%PRESSURE
-    this%structure(4)%rank = 0
-    this%structure(4)%dim  = 1
-                                                                              
-    !set errormapping (CheckData Symbols)                                     
-    this%errormap(0) = 'X'
-    this%errormap(1) = 'D'
-    this%errormap(2) = 'P'
-    this%errormap(3) = 'B'
   END SUBROUTINE InitPhysics_euler3Drs
 
 
-  PURE SUBROUTINE CalculateFluxesX_euler3Drs(this,Mesh,nmin,nmax,prim,cons,xfluxes)
+  PURE SUBROUTINE CalcFluxesX_euler3Drs(this,Mesh,nmin,nmax,prim,cons,xfluxes)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Physics_TYP) :: this
@@ -154,17 +148,17 @@ MODULE physics_euler3Drotsym
     INTENT(IN)        :: this,Mesh,nmin,nmax,prim,cons
     INTENT(OUT)       :: xfluxes
     !------------------------------------------------------------------------!
-    CALL CalculateFlux_euler3Drs(prim(:,:,nmin:nmax,this%DENSITY), &
+    CALL CalcFlux_euler3Drs(prim(:,:,nmin:nmax,this%DENSITY), &
          prim(:,:,nmin:nmax,this%XVELOCITY),prim(:,:,nmin:nmax,this%PRESSURE),&
          cons(:,:,nmin:nmax,this%XMOMENTUM),cons(:,:,nmin:nmax,this%YMOMENTUM), &
          cons(:,:,nmin:nmax,this%ZMOMENTUM),cons(:,:,nmin:nmax,this%ENERGY), &
          xfluxes(:,:,nmin:nmax,this%DENSITY),xfluxes(:,:,nmin:nmax,this%XMOMENTUM), &
          xfluxes(:,:,nmin:nmax,this%YMOMENTUM),xfluxes(:,:,nmin:nmax,this%ZMOMENTUM), &
          xfluxes(:,:,nmin:nmax,this%ENERGY))
-  END SUBROUTINE CalculateFluxesX_euler3Drs
+   END SUBROUTINE CalcFluxesX_euler3Drs
 
 
-  PURE SUBROUTINE CalculateFluxesY_euler3Drs(this,Mesh,nmin,nmax,prim,cons,yfluxes)
+  PURE SUBROUTINE CalcFluxesY_euler3Drs(this,Mesh,nmin,nmax,prim,cons,yfluxes)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Physics_TYP) :: this
@@ -176,17 +170,230 @@ MODULE physics_euler3Drotsym
     INTENT(IN)        :: this,Mesh,nmin,nmax,prim,cons
     INTENT(OUT)       :: yfluxes
     !------------------------------------------------------------------------!
-    CALL CalculateFlux_euler3Drs(prim(:,:,nmin:nmax,this%DENSITY), &
+    CALL CalcFlux_euler3Drs(prim(:,:,nmin:nmax,this%DENSITY), &
          prim(:,:,nmin:nmax,this%YVELOCITY),prim(:,:,nmin:nmax,this%PRESSURE),&
          cons(:,:,nmin:nmax,this%YMOMENTUM),cons(:,:,nmin:nmax,this%XMOMENTUM), &
          cons(:,:,nmin:nmax,this%ZMOMENTUM),cons(:,:,nmin:nmax,this%ENERGY), &
          yfluxes(:,:,nmin:nmax,this%DENSITY),yfluxes(:,:,nmin:nmax,this%YMOMENTUM), &
          yfluxes(:,:,nmin:nmax,this%XMOMENTUM),yfluxes(:,:,nmin:nmax,this%ZMOMENTUM), &
          yfluxes(:,:,nmin:nmax,this%ENERGY))
-  END SUBROUTINE CalculateFluxesY_euler3Drs
+  END SUBROUTINE CalcFluxesY_euler3Drs
 
 
-  PURE SUBROUTINE CalculateStresses_euler3Drs(this,Mesh,pvar,dynvis,bulkvis, &
+  PURE SUBROUTINE CalcCharSystemX_euler3Drs(this,Mesh,i,dir,pvar,lambda,xvar)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Physics_TYP) :: this
+    TYPE(Mesh_TYP)    :: Mesh
+    INTEGER           :: i,dir
+    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,this%VNUM) :: pvar
+    REAL, DIMENSION(Mesh%JGMIN:Mesh%JGMAX,this%VNUM) :: lambda,xvar
+    !------------------------------------------------------------------------!
+    INTEGER           :: i1,i2
+    !------------------------------------------------------------------------!
+    INTENT(IN)        :: this,Mesh,i,dir,pvar
+    INTENT(INOUT)     :: lambda
+    INTENT(OUT)       :: xvar
+    !------------------------------------------------------------------------!
+    ! compute eigenvalues at i
+!CDIR IEXPAND
+    CALL SetEigenValues_euler3Drs(this%gamma,pvar(i,:,this%DENSITY), &
+         pvar(i,:,this%XVELOCITY),pvar(i,:,this%PRESSURE), &
+         lambda(:,1),lambda(:,2),lambda(:,3),lambda(:,4),lambda(:,5))
+    ! compute characteristic variables
+    i1 = i + SIGN(1,dir) ! left handed if dir<0 and right handed otherwise
+    i2 = MAX(i,i1)
+    i1 = MIN(i,i1)
+!CDIR IEXPAND
+    CALL SetCharVars_euler3Drs(this%gamma,pvar(i1,:,this%DENSITY), &
+         pvar(i2,:,this%DENSITY),pvar(i1,:,this%XVELOCITY), &
+         pvar(i2,:,this%XVELOCITY),pvar(i1,:,this%YVELOCITY), &
+         pvar(i2,:,this%YVELOCITY),pvar(i1,:,this%ZVELOCITY), &
+         pvar(i2,:,this%ZVELOCITY),pvar(i1,:,this%PRESSURE), &
+         pvar(i2,:,this%PRESSURE),lambda(:,1),lambda(:,2), &
+         lambda(:,3),lambda(:,4),lambda(:,5),xvar(:,1),xvar(:,2), &
+         xvar(:,3),xvar(:,4),xvar(:,5))
+  END SUBROUTINE CalcCharSystemX_euler3Drs
+  
+
+  PURE SUBROUTINE CalcCharSystemY_euler3Drs(this,Mesh,j,dir,pvar,lambda,xvar)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Physics_TYP) :: this
+    TYPE(Mesh_TYP)    :: Mesh
+    INTEGER           :: j,dir
+    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,this%VNUM) :: pvar
+    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,this%VNUM) :: lambda,xvar
+    !------------------------------------------------------------------------!
+    INTEGER           :: j1,j2
+    !------------------------------------------------------------------------!
+    INTENT(IN)        :: this,Mesh,j,dir,pvar
+    INTENT(INOUT)     :: lambda
+    INTENT(OUT)       :: xvar
+    !------------------------------------------------------------------------!
+    ! compute eigenvalues at j
+!CDIR IEXPAND
+    CALL SetEigenValues_euler3Drs(this%gamma,pvar(:,j,this%DENSITY), &
+         pvar(:,j,this%YVELOCITY),pvar(:,j,this%PRESSURE), &
+         lambda(:,1),lambda(:,2),lambda(:,3),lambda(:,4),lambda(:,5))
+    ! compute characteristic variables
+    j1 = j + SIGN(1,dir) ! left handed if dir<0 and right handed otherwise
+    j2 = MAX(j,j1)
+    j1 = MIN(j,j1)
+!CDIR IEXPAND
+    CALL SetCharVars_euler3Drs(this%gamma,pvar(:,j1,this%DENSITY), &
+         pvar(:,j2,this%DENSITY),pvar(:,j1,this%YVELOCITY), &
+         pvar(:,j2,this%YVELOCITY),pvar(:,j1,this%XVELOCITY), &
+         pvar(:,j2,this%XVELOCITY),pvar(:,j1,this%ZVELOCITY), &
+         pvar(:,j2,this%ZVELOCITY),pvar(:,j1,this%PRESSURE), &
+         pvar(:,j2,this%PRESSURE),lambda(:,1),lambda(:,2), &
+         lambda(:,3),lambda(:,4),lambda(:,5),xvar(:,1),xvar(:,2), &
+         xvar(:,3),xvar(:,4),xvar(:,5))
+  END SUBROUTINE CalcCharSystemY_euler3Drs
+
+
+  PURE SUBROUTINE CalcBoundaryDataX_euler3Drs(this,Mesh,i1,dir,xvar,pvar)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Physics_TYP) :: this
+    TYPE(Mesh_TYP)    :: Mesh
+    INTEGER           :: i1,dir
+    REAL, DIMENSION(Mesh%JGMIN:Mesh%JGMAX,this%VNUM) :: xvar
+    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,this%VNUM) :: pvar
+    !------------------------------------------------------------------------!
+    INTEGER           :: i2
+    !------------------------------------------------------------------------!
+    INTENT(IN)        :: this,Mesh,i1,dir,xvar
+    INTENT(INOUT)     :: pvar
+    !------------------------------------------------------------------------!
+    i2 = i1 + SIGN(1,dir)  ! i +/- 1 depending on the sign of dir
+!CDIR IEXPAND
+    CALL SetBoundaryData_euler3Drs(this%gamma,1.0*SIGN(1,dir),pvar(i1,:,this%DENSITY), &
+         pvar(i1,:,this%XVELOCITY),pvar(i1,:,this%YVELOCITY),pvar(i1,:,this%ZVELOCITY), &
+         pvar(i1,:,this%PRESSURE),xvar(:,1),xvar(:,2),xvar(:,3),xvar(:,4),xvar(:,5), &
+         pvar(i2,:,this%DENSITY),pvar(i2,:,this%XVELOCITY),pvar(i2,:,this%YVELOCITY), &
+         pvar(i2,:,this%ZVELOCITY),pvar(i2,:,this%PRESSURE))
+  END SUBROUTINE CalcBoundaryDataX_euler3Drs
+
+
+  PURE SUBROUTINE CalcBoundaryDataY_euler3Drs(this,Mesh,j1,dir,xvar,pvar)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Physics_TYP) :: this
+    TYPE(Mesh_TYP)    :: Mesh
+    INTEGER           :: j1,dir
+    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,this%VNUM) :: xvar
+    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,this%VNUM) :: pvar
+    !------------------------------------------------------------------------!
+    INTEGER           :: j2
+    !------------------------------------------------------------------------!
+    INTENT(IN)        :: this,Mesh,j1,dir,xvar
+    INTENT(INOUT)     :: pvar
+    !------------------------------------------------------------------------!
+    j2 = j1 + SIGN(1,dir)  ! j +/- 1 depending on the sign of dir
+!CDIR IEXPAND
+    CALL SetBoundaryData_euler3Drs(this%gamma,1.0*SIGN(1,dir),pvar(:,j1,this%DENSITY), &
+         pvar(:,j1,this%YVELOCITY),pvar(:,j1,this%XVELOCITY),pvar(:,j1,this%ZVELOCITY), &
+         pvar(:,j1,this%PRESSURE),xvar(:,1),xvar(:,2),xvar(:,3),xvar(:,4),xvar(:,5), &
+         pvar(:,j2,this%DENSITY),pvar(:,j2,this%YVELOCITY),pvar(:,j2,this%XVELOCITY), &
+         pvar(:,j2,this%ZVELOCITY),pvar(:,j2,this%PRESSURE))
+  END SUBROUTINE CalcBoundaryDataY_euler3Drs
+
+ PURE SUBROUTINE CalcPrim2RiemannX_euler3Drs(this,Mesh,i,pvar,lambda,Rinv)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Physics_TYP) :: this
+    TYPE(Mesh_TYP)    :: Mesh
+    INTEGER           :: i
+    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,this%VNUM) :: pvar
+    REAL, DIMENSION(Mesh%JGMIN:Mesh%JGMAX,this%VNUM) :: lambda,Rinv
+    !------------------------------------------------------------------------!
+    INTENT(IN)        :: this,Mesh,i,pvar
+    INTENT(INOUT)     :: lambda
+    INTENT(OUT)       :: Rinv
+    !------------------------------------------------------------------------!
+    ! compute eigenvalues at i
+!CDIR IEXPAND
+    CALL SetEigenValues_euler3Drs(this%gamma,pvar(i,:,this%DENSITY), &
+         pvar(i,:,this%XVELOCITY),pvar(i,:,this%PRESSURE),&
+         lambda(:,1),lambda(:,2),lambda(:,3),lambda(:,4),lambda(:,5))
+    ! compute Riemann invariants
+!CDIR IEXPAND
+    CALL Prim2Riemann_euler3Drs(this%gamma,pvar(i,:,this%DENSITY), &
+         pvar(i,:,this%XVELOCITY),pvar(i,:,this%YVELOCITY), &
+         pvar(i,:,this%ZVELOCITY),pvar(i,:,this%PRESSURE), &
+         lambda(:,1),lambda(:,2),lambda(:,3),lambda(:,4),lambda(:,5), &
+         Rinv(:,1),Rinv(:,2),Rinv(:,3),Rinv(:,4),Rinv(:,5))
+  END SUBROUTINE CalcPrim2RiemannX_euler3Drs
+
+
+  PURE SUBROUTINE CalcPrim2RiemannY_euler3Drs(this,Mesh,j,pvar,lambda,Rinv)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Physics_TYP) :: this
+    TYPE(Mesh_TYP)    :: Mesh
+    INTEGER           :: j
+    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,this%VNUM) :: pvar
+    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,this%VNUM) :: lambda,Rinv
+    !------------------------------------------------------------------------!
+    INTENT(IN)        :: this,Mesh,j,pvar
+    INTENT(INOUT)     :: lambda
+    INTENT(OUT)       :: Rinv
+    !------------------------------------------------------------------------!
+    ! compute eigenvalues at j
+!CDIR IEXPAND
+    CALL SetEigenValues_euler3Drs(this%gamma,pvar(:,j,this%DENSITY), &
+         pvar(:,j,this%YVELOCITY),pvar(:,j,this%PRESSURE),&
+         lambda(:,1),lambda(:,2),lambda(:,3),lambda(:,4),lambda(:,5))
+    ! compute Riemann invariants
+!CDIR IEXPAND
+    CALL Prim2Riemann_euler3Drs(this%gamma,pvar(:,j,this%DENSITY), &
+         pvar(:,j,this%YVELOCITY),pvar(:,j,this%XVELOCITY), &
+         pvar(:,j,this%ZVELOCITY),pvar(:,j,this%PRESSURE), &
+         lambda(:,1),lambda(:,2),lambda(:,3),lambda(:,4),lambda(:,5), &
+         Rinv(:,1),Rinv(:,2),Rinv(:,3),Rinv(:,4),Rinv(:,5))
+  END SUBROUTINE CalcPrim2RiemannY_euler3Drs
+
+  PURE SUBROUTINE CalcRiemann2PrimX_euler3Drs(this,Mesh,i,Rinv,pvar)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Physics_TYP) :: this
+    TYPE(Mesh_TYP)    :: Mesh
+    INTEGER           :: i
+    REAL, DIMENSION(Mesh%JGMIN:Mesh%JGMAX,this%VNUM) :: Rinv
+    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,this%VNUM) :: pvar
+    !------------------------------------------------------------------------!
+
+    !------------------------------------------------------------------------!
+    INTENT(IN)        :: this,Mesh,i,Rinv
+    INTENT(INOUT)     :: pvar
+    !------------------------------------------------------------------------!
+!CDIR IEXPAND
+    CALL Riemann2Prim_euler3Drs(this%gamma,Rinv(:,1),Rinv(:,2),&
+       Rinv(:,3),Rinv(:,4),Rinv(:,5),pvar(i,:,this%Density), pvar(i,:,this%XVELOCITY), &
+       pvar(i,:,this%YVELOCITY),pvar(i,:,this%ZVELOCITY),pvar(i,:,this%PRESSURE))
+  END SUBROUTINE CalcRiemann2PrimX_euler3Drs
+
+  PURE SUBROUTINE CalcRiemann2PrimY_euler3Drs(this,Mesh,j,Rinv,pvar)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    TYPE(Physics_TYP) :: this
+    TYPE(Mesh_TYP)    :: Mesh
+    INTEGER           :: j
+    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,this%VNUM) :: Rinv
+    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,this%VNUM) :: pvar
+    !------------------------------------------------------------------------!
+    INTENT(IN)        :: this,Mesh,j,Rinv
+    INTENT(INOUT)     :: pvar
+    !------------------------------------------------------------------------!
+!CDIR IEXPAND
+    CALL Riemann2Prim_euler3Drs(this%gamma,Rinv(:,1),Rinv(:,2),&
+       Rinv(:,3),Rinv(:,4),Rinv(:,5),pvar(:,j,this%Density),pvar(:,j,this%YVELOCITY), &
+       pvar(:,j,this%XVELOCITY),pvar(:,j,this%ZVELOCITY),pvar(:,j,this%PRESSURE))
+  END SUBROUTINE CalcRiemann2PrimY_euler3Drs
+
+
+  PURE SUBROUTINE CalcStresses_euler3Drs(this,Mesh,pvar,dynvis,bulkvis, &
        btxx,btxy,btxz,btyy,btyz,btzz)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
@@ -205,10 +412,10 @@ MODULE physics_euler3Drotsym
     ! compute components of the stress tensor at cell bary centers
     ! inside the computational domain including one slice of ghost cells
 
-    ! compute bulk viscosity first and store the result in this%amin
+    ! compute bulk viscosity first and store the result in this%tmp
 !CDIR IEXPAND
-    CALL Divergence(Mesh,pvar(:,:,this%XVELOCITY),pvar(:,:,this%YVELOCITY),this%amin(:,:))
-    this%amin(:,:) = bulkvis(:,:)*this%amin(:,:)
+    CALL Divergence(Mesh,pvar(:,:,this%XVELOCITY),pvar(:,:,this%YVELOCITY),this%tmp(:,:))
+    this%tmp(:,:) = bulkvis(:,:)*this%tmp(:,:)
 
 !CDIR OUTERUNROLL=8
     DO j=Mesh%JMIN-1,Mesh%JMAX+1
@@ -218,17 +425,17 @@ MODULE physics_euler3Drotsym
           btxx(i,j) = dynvis(i,j) * &
                ( (pvar(i+1,j,this%XVELOCITY) - pvar(i-1,j,this%XVELOCITY)) / Mesh%dlx(i,j) &
                + 2.0 * Mesh%cxyx(i,j,1) * pvar(i,j,this%YVELOCITY) ) &
-               + this%amin(i,j) ! bulk viscosity contribution
+               + this%tmp(i,j) ! bulk viscosity contribution
                
           btyy(i,j) = dynvis(i,j) * &
                ( (pvar(i,j+1,this%YVELOCITY) - pvar(i,j-1,this%YVELOCITY)) / Mesh%dly(i,j) &
                + 2.0 * Mesh%cyxy(i,j,1) * pvar(i,j,this%XVELOCITY) ) &
-               + this%amin(i,j) ! bulk viscosity contribution
+               + this%tmp(i,j) ! bulk viscosity contribution
 
           btzz(i,j) = dynvis(i,j) * &
                ( 2.0 * ( Mesh%czxz(i,j,1) * pvar(i,j,this%XVELOCITY) ) &
                + Mesh%czyz(i,j,1) * pvar(i,j,this%YVELOCITY) ) &
-               + this%amin(i,j) ! bulk viscosity contribution
+               + this%tmp(i,j) ! bulk viscosity contribution
 
           ! compute the off-diagonal elements (no bulk viscosity)
           btxy(i,j) = dynvis(i,j) * ( 0.5 * &
@@ -246,7 +453,7 @@ MODULE physics_euler3Drotsym
                - Mesh%czyz(i,j,1) * pvar(i,j,this%ZVELOCITY) )
        END DO
     END DO
-  END SUBROUTINE CalculateStresses_euler3Drs
+  END SUBROUTINE CalcStresses_euler3Drs
 
 
   PURE SUBROUTINE GeometricalSources_center(this,Mesh,pvar,cvar,sterm)
@@ -360,7 +567,7 @@ MODULE physics_euler3Drotsym
     !------------------------------------------------------------------------!
     TYPE(Physics_TYP) :: this
     TYPE(Mesh_TYP)    :: Mesh
-    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,2) &
+    REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,3) &
          :: accel
     REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,this%VNUM) &
          :: pvar,cvar,sterm
@@ -371,9 +578,10 @@ MODULE physics_euler3Drotsym
     sterm(:,:,this%DENSITY)   = 0.
     sterm(:,:,this%XMOMENTUM) = pvar(:,:,this%DENSITY) * accel(:,:,1)
     sterm(:,:,this%YMOMENTUM) = pvar(:,:,this%DENSITY) * accel(:,:,2)
-    sterm(:,:,this%ZMOMENTUM) = 0.
-    sterm(:,:,this%ENERGY)    = cvar(:,:,this%XMOMENTUM) * accel(:,:,1) + &
-         cvar(:,:,this%YMOMENTUM) * accel(:,:,2)
+    sterm(:,:,this%ZMOMENTUM) = pvar(:,:,this%DENSITY) * accel(:,:,3)
+    sterm(:,:,this%ENERGY)    = cvar(:,:,this%XMOMENTUM) * accel(:,:,1) &
+         +cvar(:,:,this%YMOMENTUM) * accel(:,:,2) &
+         +cvar(:,:,this%ZMOMENTUM) * accel(:,:,3)
   END SUBROUTINE ExternalSources_euler3Drs
 
 
@@ -387,6 +595,8 @@ MODULE physics_euler3Drotsym
          pvar,sterm
     REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX) :: &
          btxx,btxy,btxz,btyy,btyz,btzz
+    !------------------------------------------------------------------------!
+    INTEGER           :: i,j
     !------------------------------------------------------------------------!
     INTENT(IN)        :: Mesh,pvar, btxx,btxy,btxz,btyy,btyz,btzz
     INTENT(INOUT)     :: this
@@ -402,22 +612,22 @@ MODULE physics_euler3Drotsym
                     sterm(:,:,this%ZMOMENTUM))
  
     ! compute scalar product of v and btx (x-component)
-    ! use amin for temporary storage
+    ! use this%tmin for temporary storage
 !CDIR NODEP
-    this%amin(:,:)  = pvar(:,:,this%XVELOCITY)*btxx(:,:) &
-                    + pvar(:,:,this%YVELOCITY)*btxy(:,:) &
-                    + pvar(:,:,this%ZVELOCITY)*btxz(:,:)
+    this%tmin(:,:,1)  = pvar(:,:,this%XVELOCITY)*btxx(:,:) &
+                      + pvar(:,:,this%YVELOCITY)*btxy(:,:) &
+                      + pvar(:,:,this%ZVELOCITY)*btxz(:,:)
 
    ! compute scalar product of v and bty (y-component)
    ! use amax for temporary storage
 !CDIR NODEP 
-    this%amax(:,:) = pvar(:,:,this%XVELOCITY)*btxy(:,:) &
-                   + pvar(:,:,this%YVELOCITY)*btyy(:,:) &
-                   + pvar(:,:,this%ZVELOCITY)*btyz(:,:) 
+    this%tmin(:,:,2) = pvar(:,:,this%XVELOCITY)*btxy(:,:) &
+                     + pvar(:,:,this%YVELOCITY)*btyy(:,:) &
+                     + pvar(:,:,this%ZVELOCITY)*btyz(:,:) 
  
     ! compute vector divergence of scalar product v_i * bt_ij
 !CDIR IEXPAND
-    CALL Divergence(Mesh,this%amin,this%amax,sterm(:,:,this%ENERGY))
+    CALL Divergence(Mesh,this%tmin(:,:,1),this%tmin(:,:,2),sterm(:,:,this%ENERGY))
   END SUBROUTINE ViscositySources_euler3Drs
 
 
@@ -553,7 +763,104 @@ MODULE physics_euler3Drotsym
   END SUBROUTINE AxisMasks_euler3Drs
 
 
-  ELEMENTAL SUBROUTINE CalculateFlux_euler3Drs(rho,v,P,m1,m2,m3,E,f1,f2,f3,f4,f5)
+  ELEMENTAL SUBROUTINE SetEigenValues_euler3Drs(gamma,rho,v,P,l1,l2,l3,l4,l5)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    REAL, INTENT(IN)  :: gamma,rho,v,P
+    REAL, INTENT(OUT) :: l1,l2,l3,l4,l5
+    !------------------------------------------------------------------------!
+!CDIR IEXPAND
+    CALL SetEigenValues_euler2D(gamma,rho,v,P,l1,l2,l3,l5)
+    ! set the missing eigenvalue l4
+    l4 = v
+  END SUBROUTINE SetEigenValues_euler3Drs
+
+
+  ELEMENTAL SUBROUTINE SetCharVars_euler3Drs(gamma,rho1,rho2,u1,u2,v1,v2,w1,w2, &
+       P1,P2,l1,l2,l3,l4,l5,xvar1,xvar2,xvar3,xvar4,xvar5)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    REAL, INTENT(IN)  :: gamma,rho1,rho2,u1,u2,v1,v2,w1,w2,P1,P2,l1,l2,l3,l4,l5
+    REAL, INTENT(OUT) :: xvar1,xvar2,xvar3,xvar4,xvar5
+    !------------------------------------------------------------------------!
+    REAL :: gamcs,dlnP,du
+    !------------------------------------------------------------------------!
+    gamcs= 2.*gamma / (l5-l1) ! = gamma/cs
+    dlnP = LOG(P2/P1)         ! = LOG(P2)-LOG(P1)
+    du   = u2-u1
+    ! characteristic variables
+    xvar1 = dlnP - gamcs * du
+    xvar2 = -dlnP + gamma * LOG(rho2/rho1)
+    xvar3 = gamcs * (v2-v1)
+    xvar4 = gamcs * (w2-w1)
+    xvar5 = dlnP + gamcs * du 
+  END SUBROUTINE SetCharVars_euler3Drs
+
+  ELEMENTAL SUBROUTINE SetBoundaryData_euler3Drs(gamma,dir,rho1,u1,v1,w1,P1, &
+       xvar1,xvar2,xvar3,xvar4,xvar5,rho2,u2,v2,w2,P2)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    REAL, INTENT(IN)  :: gamma,dir,rho1,u1,v1,w1,P1,xvar1,xvar2,xvar3,xvar4,xvar5
+    REAL, INTENT(OUT) :: rho2,u2,v2,w2,P2
+    !------------------------------------------------------------------------!
+    REAL :: dlnP,csgam
+    !------------------------------------------------------------------------!
+    dlnP = 0.5 * (xvar5+xvar1)
+    ! extrapolate boundary values using characteristic variables
+    rho2 = rho1 * EXP(dir*(xvar2+dlnP)/gamma)
+    P2   = P1 * EXP(dir*dlnP)
+!CDIR IEXPAND
+    csgam= GetSoundSpeed_euler2D(gamma,rho1+rho2,P1+P2) / gamma
+    u2   = u1 + dir*csgam * 0.5*(xvar5-xvar1)
+    v2   = v1 + dir*csgam * xvar3
+    w2   = w1 + dir*csgam * xvar4
+  END SUBROUTINE SetBoundaryData_euler3Drs
+
+ ELEMENTAL SUBROUTINE Prim2Riemann_euler3Drs(gamma,rho,vx,vy,vz,p,&
+                                       l1,l2,l3,l4,l5,Rminus,Rs,Rvt,Rvt2,Rplus)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    REAL, INTENT(IN)  :: gamma,rho,vx,vy,vz,p,l1,l2,l3,l4,l5
+    REAL, INTENT(OUT) :: Rminus,Rs,Rvt,Rvt2,Rplus
+    !------------------------------------------------------------------------!
+    REAL :: cs
+    !------------------------------------------------------------------------!
+    cs = l5-l2 ! l2 = v, l6 = v+cs
+    ! compute 1st Riemann invariant (R+)
+    Rplus = vx + 2./(gamma-1.0) * cs     
+    ! compute 2st Riemann invariant (R-) 
+    Rminus = vx - 2./(gamma-1.0) * cs
+    ! compute entropy
+    Rs = p/rho**gamma
+    ! tangential velocities
+    Rvt = vy   
+    Rvt2 = vz     
+  END SUBROUTINE Prim2Riemann_euler3Drs
+
+  ELEMENTAL SUBROUTINE Riemann2Prim_euler3Drs(gamma,Rminus,Rs,Rvt,Rvt2,Rplus,&
+       rho,vx,vy,vz,p)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    REAL, INTENT(IN)  :: gamma,Rminus,Rs,Rvt,Rvt2,Rplus
+    REAL, INTENT(OUT) :: rho,vx,vy,vz,p
+    !------------------------------------------------------------------------!
+    REAL :: cs2gam
+    !------------------------------------------------------------------------!
+    ! tangential velocity    
+    vy = Rvt  
+    vz = Rvt2
+    ! normal velocity
+    vx = 0.5*(Rplus+Rminus)
+    ! cs**2 / gamma
+    cs2gam = (0.25*(gamma-1.0)*(Rplus-Rminus))**2 / gamma
+    ! density
+    rho = (cs2gam/Rs)**(1./(gamma-1.0))
+    ! pressure
+    p = cs2gam * rho
+  END SUBROUTINE Riemann2Prim_euler3Drs
+
+
+  ELEMENTAL SUBROUTINE CalcFlux_euler3Drs(rho,v,P,m1,m2,m3,E,f1,f2,f3,f4,f5)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     REAL, INTENT(IN)  :: rho,v,P,m1,m2,m3,E
@@ -564,7 +871,7 @@ MODULE physics_euler3Drotsym
     f3 = m2*v
     f4 = m3*v
     f5 = (E+P)*v
-  END SUBROUTINE CalculateFlux_euler3Drs
+  END SUBROUTINE CalcFlux_euler3Drs
 
 
   ELEMENTAL SUBROUTINE CentrifugalForces_euler3Drs(rho,vz,czxz,czyz,fcx,fcy)

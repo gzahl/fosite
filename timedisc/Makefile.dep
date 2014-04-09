@@ -1,8 +1,0 @@
-timedisc_cashkarp.o : \
-	timedisc_rkfehlberg.o
-
-timedisc_generic.o : \
-	timedisc_modeuler.o \
-	timedisc_rkfehlberg.o \
-	timedisc_cashkarp.o
-

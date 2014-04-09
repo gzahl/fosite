@@ -24,17 +24,23 @@
 !#############################################################################
 
 !----------------------------------------------------------------------------!
-! mesh module for trapezoidal quadrature rule
+!> \author Tobias Illenseer
+!!
+!! \brief mesh module for trapezoidal quadrature rule
+!!
+!! \extends mesh_common
+!! \ingroup mesh
 !----------------------------------------------------------------------------!
 MODULE mesh_trapezoidal
   USE mesh_midpoint
   USE geometry_generic
+  USE common_dict
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   PRIVATE
   CHARACTER(LEN=32), PARAMETER :: mesh_name = "trapezoidal"
   ! precision for Newton-Raphson (see CalculateWeights)
-  REAL, PARAMETER :: EPS  = 1.0D-04
+  REAL, PARAMETER :: EPS  = 1.0D-08
   !--------------------------------------------------------------------------!
   PUBLIC :: &
        InitMesh_trapezoidal, &
@@ -44,28 +50,21 @@ MODULE mesh_trapezoidal
 CONTAINS
 
 
-  SUBROUTINE InitMesh_trapezoidal(this,meshtype,geometry,inum,jnum,xmin,xmax, &
-                                  ymin,ymax,gparam)
+  SUBROUTINE InitMesh_trapezoidal(this,config)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    TYPE(Mesh_TYP)    :: this
-    INTEGER           :: meshtype
-    INTEGER           :: geometry
-    INTEGER           :: inum,jnum
-    REAL              :: xmin,xmax,ymin,ymax    
-    REAL, OPTIONAL    :: gparam
+    TYPE(Mesh_TYP)          :: this
+    TYPE(Dict_TYP),POINTER  :: config
     !------------------------------------------------------------------------!
-    INTEGER           :: err
-    INTEGER           :: i,j
+    INTEGER                 :: err
+    INTEGER                 :: i,j
     !------------------------------------------------------------------------!
-    INTENT(IN)        :: meshtype,geometry,inum,jnum,xmin,xmax,ymin,ymax, &
-                         gparam
-    INTENT(INOUT)     :: this
+    INTENT(INOUT)           :: this
     !------------------------------------------------------------------------!
 
     ! basic mesh and geometry initialization
-    CALL InitMesh(this,meshtype,mesh_name,geometry,inum,jnum,xmin,xmax,ymin, &
-                  ymax,gparam)
+    CALL InitMesh(this,config,mesh_name)
+    CALL GetAttr(config, "dz", this%dz)
 
     CALL Warning(this,"InitMesh_trapezoidal", &
          "this module is experimental and may produce false results")
@@ -83,6 +82,7 @@ CONTAINS
          this%chy(this%IGMIN:this%IGMAX,this%JGMIN:this%JGMAX,4), &
          this%chz(this%IGMIN:this%IGMAX,this%JGMIN:this%JGMAX,4), &
          this%sqrtg(this%IGMIN:this%IGMAX,this%JGMIN:this%JGMAX), &
+         this%invsqrtg(this%IGMIN:this%IGMAX,this%JGMIN:this%JGMAX), &
          this%weights(this%IGMIN:this%IGMAX,this%JGMIN:this%JGMAX,2,2), &
          STAT=err)
     IF (err.NE.0) &
@@ -99,84 +99,83 @@ CONTAINS
     DO j=this%JGMIN,this%JGMAX
 !CDIR NODEP
        DO i=this%IGMIN,this%IGMAX
-          ! surface elements
-          ! perpendicular to x-direction
-          this%dAx(i,j,1) = this%chz(i,j,1)*this%chy(i,j,1)*this%dy   ! south-west
-          this%dAx(i,j,2) = this%chz(i,j,3)*this%chy(i,j,3)*this%dy   ! north-west
-          ! perpendicular to y-direction
-          this%dAy(i,j,1) = this%chz(i,j,1)*this%chx(i,j,1)*this%dx   ! south-west
-          this%dAy(i,j,2) = this%chz(i,j,2)*this%chx(i,j,2)*this%dx   ! south-east
-
           ! surface elements devided by dx or dy
           ! perpendicular to x-direction
-          this%dAxdy(i,j,1) = this%chz(i,j,1)*this%chy(i,j,1)         ! south-west
-          this%dAxdy(i,j,2) = this%chz(i,j,3)*this%chy(i,j,3)         ! north-west
+          this%dAxdy(i,j,1) = this%chz(i,j,1)*this%chy(i,j,1)*this%dz ! south-west
+          this%dAxdy(i,j,2) = this%chz(i,j,3)*this%chy(i,j,3)*this%dz ! north-west
           ! perpendicular to y-direction
-          this%dAydx(i,j,1) = this%chz(i,j,1)*this%chx(i,j,1)         ! south-west
-          this%dAydx(i,j,2) = this%chz(i,j,2)*this%chx(i,j,2)         ! south-east
+          this%dAydx(i,j,1) = this%chz(i,j,1)*this%chx(i,j,1)*this%dz ! south-west
+          this%dAydx(i,j,2) = this%chz(i,j,2)*this%chx(i,j,2)*this%dz ! south-east
+
+          ! surface elements
+          ! perpendicular to x-direction
+          this%dAx(i,j,1) = this%dAxdy(i,j,1)*this%dy                 ! south-west
+          this%dAx(i,j,2) = this%dAxdy(i,j,2)*this%dy                 ! north-west
+          ! perpendicular to y-direction
+          this%dAy(i,j,1) = this%dAydx(i,j,1)*this%dx                 ! south-west
+          this%dAy(i,j,2) = this%dAydx(i,j,2)*this%dx                 ! south-east
+
+          ! square root of determinant of metric and its inverse
+          this%sqrtg(i,j) =  0.25*SUM(this%chx(i,j,:)*this%chy(i,j,:)*this%chz(i,j,:))
+          this%invsqrtg(i,j) = 1.0/(this%sqrtg(i,j)+TINY(1.0))
 
           ! volume elements
-          this%volume(i,j) = 0.25*this%dx*this%dy*SUM(this%chx(i,j,:) &
-               *this%chy(i,j,:)*this%chz(i,j,:))
+          this%volume(i,j) = this%sqrtg(i,j)*this%dx*this%dy*this%dz
+
           ! inverse volume elements multiplied by dx or dy
-          this%dxdV(i,j) = 1./(0.25*this%dy*SUM(this%chx(i,j,:) &
-               *this%chy(i,j,:)*this%chz(i,j,:)) + TINY(1.0))
-          this%dydV(i,j) = 1./(0.25*this%dx*SUM(this%chx(i,j,:) &
-               *this%chy(i,j,:)*this%chz(i,j,:)) + TINY(1.0))
+          this%dxdV(i,j) = this%invsqrtg(i,j) / (this%dy*this%dz)     ! = dx / dV
+          this%dydV(i,j) = this%invsqrtg(i,j) / (this%dx*this%dz)     ! = dy / dV
 
           ! cell bary centers
-          this%bcenter(i,j,1)  = 0.25*this%dx * this%dydV(i,j) * (&
-               this%cpos(i,j,1,1) * (this%chx(i,j,1)*this%chy(i,j,1)*this%chz(i,j,1) &
+          this%bcenter(i,j,1)  = 0.25*this%invsqrtg(i,j) * (&
+               this%fpos(i,j,1,1) * (this%chx(i,j,1)*this%chy(i,j,1)*this%chz(i,j,1) &
                + this%chx(i,j,3)*this%chy(i,j,3)*this%chz(i,j,3)) + &
-               this%cpos(i,j,2,1) * (this%chx(i,j,2)*this%chy(i,j,2)*this%chz(i,j,2) &
+               this%fpos(i,j,2,1) * (this%chx(i,j,2)*this%chy(i,j,2)*this%chz(i,j,2) &
                + this%chx(i,j,4)*this%chy(i,j,4)*this%chz(i,j,4)))
           
-          this%bcenter(i,j,2)  = 0.25*this%dx * this%dydV(i,j) * (&
-               this%cpos(i,j,2,2) * (this%chx(i,j,1)*this%chy(i,j,1)*this%chz(i,j,1) &
+          this%bcenter(i,j,2)  = 0.25*this%invsqrtg(i,j) * (&
+               this%fpos(i,j,3,2) * (this%chx(i,j,1)*this%chy(i,j,1)*this%chz(i,j,1) &
                + this%chx(i,j,2)*this%chy(i,j,2)*this%chz(i,j,2)) + &
-               this%cpos(i,j,3,2) * (this%chx(i,j,3)*this%chy(i,j,3)*this%chz(i,j,3) &
+               this%fpos(i,j,4,2) * (this%chx(i,j,3)*this%chy(i,j,3)*this%chz(i,j,3) &
                + this%chx(i,j,4)*this%chy(i,j,4)*this%chz(i,j,4)))
 
           ! commutator coefficients
           ! south-west
-          this%cyxy(i,j,1) = 0.25 * this%dydV(i,j) * &
+          this%cyxy(i,j,1) = 0.25 * this%dydV(i,j) * this%dz * &
                this%chz(i,j,1)*(this%chy(i,j,2)-this%chy(i,j,1))
-          this%cxyx(i,j,1) = 0.25 * this%dxdV(i,j) * &
+          this%cxyx(i,j,1) = 0.25 * this%dxdV(i,j) * this%dz * &
                this%chz(i,j,1)*(this%chx(i,j,3)-this%chx(i,j,1))
-          this%czxz(i,j,1) = 0.25 * this%dydV(i,j) * &
+          this%czxz(i,j,1) = 0.25 * this%dydV(i,j) * this%dz * &
                this%chy(i,j,1)*(this%chz(i,j,2)-this%chz(i,j,1))
-          this%czyz(i,j,1) = 0.25 * this%dxdV(i,j) * &
+          this%czyz(i,j,1) = 0.25 * this%dxdV(i,j) * this%dz * &
                this%chx(i,j,1)*(this%chz(i,j,3)-this%chz(i,j,1))
           ! south-east
-          this%cyxy(i,j,2) = 0.25 * this%dydV(i,j) * & 
+          this%cyxy(i,j,2) = 0.25 * this%dydV(i,j) * this%dz * & 
                this%chz(i,j,2)*(this%chy(i,j,2)-this%chy(i,j,1))
-          this%cxyx(i,j,2) = 0.25 * this%dxdV(i,j) * &
+          this%cxyx(i,j,2) = 0.25 * this%dxdV(i,j) * this%dz * &
                this%chz(i,j,2)*(this%chx(i,j,4)-this%chx(i,j,2))
-          this%czxz(i,j,2) = 0.25 * this%dydV(i,j) * &
+          this%czxz(i,j,2) = 0.25 * this%dydV(i,j) * this%dz * &
                this%chy(i,j,2)*(this%chz(i,j,2)-this%chz(i,j,1))
-          this%czyz(i,j,2) = 0.25 * this%dxdV(i,j) * &
+          this%czyz(i,j,2) = 0.25 * this%dxdV(i,j) * this%dz * &
                this%chx(i,j,2)*(this%chz(i,j,4)-this%chz(i,j,2))
           ! north-west
-          this%cyxy(i,j,3) = 0.25 * this%dydV(i,j) * &
+          this%cyxy(i,j,3) = 0.25 * this%dydV(i,j) * this%dz * &
                this%chz(i,j,3)*(this%chy(i,j,4)-this%chy(i,j,3))
-          this%cxyx(i,j,3) = 0.25 * this%dxdV(i,j) * &
+          this%cxyx(i,j,3) = 0.25 * this%dxdV(i,j) * this%dz * &
                this%chz(i,j,3)*(this%chx(i,j,3)-this%chx(i,j,1))
-          this%czxz(i,j,3) = 0.25 * this%dydV(i,j) * &
+          this%czxz(i,j,3) = 0.25 * this%dydV(i,j) * this%dz * &
                this%chy(i,j,3)*(this%chz(i,j,4)-this%chz(i,j,3))
-          this%czyz(i,j,3) = 0.25 * this%dxdV(i,j) * &
+          this%czyz(i,j,3) = 0.25 * this%dxdV(i,j) * this%dz * &
                this%chx(i,j,3)*(this%chz(i,j,3)-this%chz(i,j,1))
           ! north-east
-          this%cyxy(i,j,4) = 0.25 * this%dydV(i,j) * &
+          this%cyxy(i,j,4) = 0.25 * this%dydV(i,j) * this%dz * &
                this%chz(i,j,4)*(this%chy(i,j,4)-this%chy(i,j,3))
-          this%cxyx(i,j,4) = 0.25 * this%dxdV(i,j) * &
+          this%cxyx(i,j,4) = 0.25 * this%dxdV(i,j) * this%dz * &
                this%chz(i,j,4)*(this%chx(i,j,4)-this%chx(i,j,2))
-          this%czxz(i,j,4) = 0.25 * this%dydV(i,j) * &
+          this%czxz(i,j,4) = 0.25 * this%dydV(i,j) * this%dz * &
                this%chy(i,j,4)*(this%chz(i,j,4)-this%chz(i,j,3))
-          this%czyz(i,j,4) = 0.25 * this%dxdV(i,j) * &
+          this%czyz(i,j,4) = 0.25 * this%dxdV(i,j) * this%dz * &
                this%chx(i,j,4)*(this%chz(i,j,4)-this%chz(i,j,2))
-          
-          ! square root of determinant of metric (upper left corner)
-          this%sqrtg(i,j) = this%chx(i,j,4)*this%chy(i,j,4)*this%chz(i,j,4)
           
           ! line elements at cell bary centers
           this%dlx(i,j) = 0.5 * this%dx * (this%fhx(i,j,1)+this%fhx(i,j,2)) 
@@ -251,7 +250,7 @@ CONTAINS
              IF (norm_dz.LE.EPS) EXIT
           END DO
 
-          IF (n.GE.10) THEN
+          IF (n.GE.100) THEN
              CALL Error(this,"CalculateWeights", "Newton-Raphson not convergent")
           END IF
 
@@ -277,7 +276,6 @@ CONTAINS
          this%chx,this%chy,this%chz,this%weights)
     ! call basic mesh deconstructor
     CALL CloseMesh(this)
-!    CALL CloseMesh_midpoint(this)
   END SUBROUTINE CloseMesh_trapezoidal
 
 

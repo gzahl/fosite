@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: integration.f90                                                   #
 !#                                                                           #
-!# Copyright (C) 2006-2008                                                   #
+!# Copyright (C) 2006-2014                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -24,21 +24,28 @@
 !#############################################################################
 
 !----------------------------------------------------------------------------!
-! Gauss and Romberg integration subroutines
+!> \author Tobias Illenseer
+!!
+!! \brief Numerical integration 
+!!
+!! The module implements the Gauss and Romberg quadrature schemes.
 !----------------------------------------------------------------------------!
 MODULE Integration
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   PRIVATE
 #ifndef GAUSSN
-! number of abscissas and weights !
 #define GAUSSN (15)
+  !< \def GAUSSN
+  !! number of abscissas and weights
 #endif
 #define GAUSSN2 (GAUSSN / 2)
-  INTEGER, PARAMETER        :: MAXREC = 100       ! max. depth for recursion !
-  REAL, DIMENSION(3,MAXREC) :: stack              ! stack for iterative alg. !
-
-! abscissas and weights    !
+  !< \def GAUSSN2
+  !! half of GAUSSN (integer division)
+  INTEGER, PARAMETER        :: MAXREC = 100  !< maximal depth for recursion
+  ! exclude definition of abscissas and weights from documentation
+  ! because it confuses doxygen
+  !> \cond AbscissasWeights
 #if GAUSSN == 2
   REAL, DIMENSION(GAUSSN), PARAMETER :: &
        GaussXk = (/ -0.577350269189626, 0.577350269189626 /)
@@ -101,12 +108,19 @@ MODULE Integration
 #else 
 # error Wrong GAUSSN number in numtools/integration.f90
 #endif
+  !> \endcond
+  REAL, DIMENSION(3,MAXREC) :: stack         !< stack for iterative algorithm
   !--------------------------------------------------------------------------!
   PUBLIC integrate
   !--------------------------------------------------------------------------!
 
 CONTAINS
 
+  !> \brief Numerical integration function
+  !!
+  !! It computes an approximation for the definite integral of some function.
+  !! 
+  !! \return approximation for integral
   FUNCTION integrate(fkt,xl,xr,eps,plist,method) RESULT(integral)
     IMPLICIT NONE
     !----------------------------------------------------------------------!
@@ -118,17 +132,20 @@ CONTAINS
          REAL :: fx
        END FUNCTION fkt
     END INTERFACE
+    !> \param [in] fkt function for integration
     !----------------------------------------------------------------------!
-    INTEGER, OPTIONAL :: method                      ! Romberg or Gauss    !
-    REAL :: xl, xr                                   ! integration limits  !
-    REAL :: eps                                      ! precision           !
-    REAL, DIMENSION(:), OPTIONAL :: plist            ! optional parameters !
+    REAL :: xl    !< \param [in] xl lower limit
+    REAL :: xr    !< \param [in] xr upper limit
+    REAL :: eps   !< \param [in] eps numerical precision
+    REAL, DIMENSION(:), OPTIONAL :: &
+            plist !< \param [in] plist parameter list for function evaluation
+    INTEGER, OPTIONAL :: method !< \param [in] method quadrature scheme
     REAL :: integral
     !----------------------------------------------------------------------!
     INTEGER          :: meth
     REAL             :: tmpS,err
     !----------------------------------------------------------------------!
-    INTENT(IN)       :: plist, xl, xr
+    INTENT(IN)       :: xl,xr,eps,plist,method
     !----------------------------------------------------------------------!
       
     IF (xl.EQ.xr) THEN
@@ -136,10 +153,10 @@ CONTAINS
        RETURN
     END IF
 
-    ! select the method
-    ! 1: adapt. Gauss recursive
-    ! 2: adapt. Gauss iterative
-    ! 3: Romberg
+    !> The quadrature scheme could be one of
+    !!    1. adaptive Gauss with recursion
+    !!    2. adaptive Gauss with iteration
+    !!    3. Romberg
     IF (PRESENT(method).AND.((method.GT.0).AND.method.LE.3)) THEN
        meth = method
     ELSE

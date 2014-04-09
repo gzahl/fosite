@@ -3,7 +3,8 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: geometry_oblatespheroidal.f90                                     #
 !#                                                                           #
-!# Copyright (C) 2007 Tobias Illenseer <tillense@astrophysik.uni-kiel.de>    #
+!# Copyright (C) 2007,2014                                                   #
+!# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
 !# it under the terms of the GNU General Public License as published by      #
@@ -23,24 +24,34 @@
 !#############################################################################
 
 !----------------------------------------------------------------------------!
-! define properties of a 2.5D oblate spheroidal mesh
+!> \author Tobias Illenseer
+!!
+!! \brief define properties of a 2.5D oblate spheroidal mesh
+!!
+!! \extends geometry_cartesian
+!! \ingroup geometry
 !----------------------------------------------------------------------------!
 MODULE geometry_oblatespheroidal
   USE geometry_cartesian
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
+  ! exclude interface block from doxygen processing
+  !> \cond InterfaceBlock
   INTERFACE Convert2Cartesian_oblatespher
      MODULE PROCEDURE Oblatespher2Cartesian_coords, Oblatespher2Cartesian_vectors
   END INTERFACE
   INTERFACE Convert2Curvilinear_oblatespher
      MODULE PROCEDURE Cartesian2Oblatespher_coords, Cartesian2Oblatespher_vectors
   END INTERFACE
+  !> \endcond
   PRIVATE
   CHARACTER(LEN=32), PARAMETER :: geometry_name = "oblate spheroidal"
   !--------------------------------------------------------------------------!
   PUBLIC :: &
        InitGeometry_oblatespher, &
        ScaleFactors_oblatespher, &
+       Radius_oblatespher, &
+       PositionVector_oblatespher, &
        Convert2Cartesian_oblatespher, &
        Convert2Curvilinear_oblatespher, & 
        Oblatespher2Cartesian_coords, &
@@ -59,7 +70,7 @@ CONTAINS
     REAL, INTENT(IN) :: gp
     !------------------------------------------------------------------------!
     CALL InitGeometry(this,gt,geometry_name)
-    this%geoparam = gp
+    CALL SetScale(this,gp)
   END SUBROUTINE InitGeometry_oblatespher
     
 
@@ -67,12 +78,37 @@ CONTAINS
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     REAL, INTENT(IN)  :: gp,xi,eta
-    REAL, INTENT(OUT) :: hxi,heta,hphi
+    REAL, INTENT(OUT) :: hxi
+    REAL, INTENT(OUT), OPTIONAL :: heta,hphi
     !------------------------------------------------------------------------!
     hxi  = gp*SQRT(SINH(xi)**2+SIN(eta)**2)
-    heta = hxi
-    hphi = gp*COSH(xi)*COS(eta)
+    IF (PRESENT(heta)) &
+       heta = hxi
+    IF (PRESENT(hphi)) &
+       hphi = gp*COSH(xi)*ABS(COS(eta))
   END SUBROUTINE ScaleFactors_oblatespher
+
+  ELEMENTAL FUNCTION Radius_oblatespher(gp,xi,eta) RESULT(radius)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    REAL, INTENT(IN)  :: gp,xi,eta
+    REAL :: radius
+    !------------------------------------------------------------------------!
+    radius = gp*SQRT(SINH(xi)**2+COS(eta)**2)
+  END FUNCTION Radius_oblatespher
+
+  ELEMENTAL SUBROUTINE PositionVector_oblatespher(gp,xi,eta,rxi,reta)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    REAL, INTENT(IN)  :: gp,xi,eta
+    REAL, INTENT(OUT) :: rxi,reta
+    REAL              :: hxi,tmp
+    !------------------------------------------------------------------------!
+    CALL ScaleFactors_oblatespher(gp,xi,eta,hxi)
+    tmp = gp / hxi
+    rxi  = gp * COSH(xi)*SINH(xi) * tmp
+    reta = -gp * COS(eta)*SIN(eta) * tmp
+  END SUBROUTINE PositionVector_oblatespher
 
   
   ! coordinate transformations

@@ -24,7 +24,7 @@
 !#############################################################################
 
 !----------------------------------------------------------------------------!
-! basic module for multipole expansion
+!> basic module for multipole expansion
 !----------------------------------------------------------------------------!
 MODULE multipole_common
   USE common_types, &
@@ -36,6 +36,8 @@ MODULE multipole_common
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   PRIVATE
+  ! exclude interface block from doxygen processing
+  !> \cond InterfaceBlock
   INTERFACE GetType
      MODULE PROCEDURE GetMultipoleType, GetType_common
   END INTERFACE
@@ -60,6 +62,7 @@ MODULE multipole_common
   INTERFACE Error
      MODULE PROCEDURE MultipoleError, Error_common
   END INTERFACE
+  !> \endcond
   !--------------------------------------------------------------------------!
   TYPE GFactors_TYP                             ! storage type for geometrical
      TYPE(Selection_TYP) :: range(2)            !   factors used in mult. exp.

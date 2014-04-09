@@ -23,18 +23,26 @@
 !#############################################################################
 
 !----------------------------------------------------------------------------!
-! define properties of a 2.5D spherical mesh
+!> \author Tobias Illenseer
+!!
+!! \brief define properties of a 2.5D spherical mesh
+!!
+!! \extends geometry_cartesian
+!! \ingroup geometry
 !----------------------------------------------------------------------------!
 MODULE geometry_spherical
   USE geometry_cartesian
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
+  ! exclude interface block from doxygen processing
+  !> \cond InterfaceBlock
   INTERFACE Convert2Cartesian_spherical
      MODULE PROCEDURE Spherical2Cartesian_coords, Spherical2Cartesian_vectors
   END INTERFACE
   INTERFACE Convert2Curvilinear_spherical
      MODULE PROCEDURE Cartesian2Spherical_coords, Cartesian2Spherical_vectors
   END INTERFACE
+  !> \endcond
   PRIVATE
   CHARACTER(LEN=32), PARAMETER :: geometry_name = "spherical"
   !--------------------------------------------------------------------------!
@@ -42,6 +50,8 @@ MODULE geometry_spherical
        ! methods
        InitGeometry_spherical, &
        ScaleFactors_spherical, &
+       Radius_spherical, &
+       PositionVector_spherical, &
        Convert2Cartesian_spherical, &
        Convert2Curvilinear_spherical, &
        Spherical2Cartesian_coords, &
@@ -69,9 +79,28 @@ CONTAINS
     REAL, INTENT(OUT) :: hr,htheta,hphi
     !------------------------------------------------------------------------!
     hr     = 1.
-    htheta = r
-    hphi   = r*SIN(theta)
+    htheta = Radius_spherical(r)
+    hphi   = Radius_spherical(r)*SIN(theta)
   END SUBROUTINE ScaleFactors_spherical
+
+  ELEMENTAL FUNCTION Radius_spherical(r) RESULT(radius)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    REAL, INTENT(IN)  :: r
+    REAL :: radius
+    !------------------------------------------------------------------------!
+    radius = r
+  END FUNCTION Radius_spherical
+
+  ELEMENTAL SUBROUTINE PositionVector_spherical(r,rx,ry)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    REAL, INTENT(IN)  :: r
+    REAL, INTENT(OUT) :: rx,ry
+    !------------------------------------------------------------------------!
+    rx = Radius_spherical(r)
+    ry = 0.0
+  END SUBROUTINE PositionVector_spherical
 
   
   ! coordinate transformations

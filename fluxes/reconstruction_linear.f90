@@ -25,7 +25,13 @@
 !#############################################################################
 
 !----------------------------------------------------------------------------!
-! module for linear (first order) reconstruction
+!> \author Tobias Illenseer
+!! \author Björn Sperling
+!!
+!! \brief module for linear (first order) reconstruction
+!!
+!! \extends reconstruction_common
+!! \ingroup reconstruction
 !----------------------------------------------------------------------------!
 MODULE reconstruction_linear
   USE reconstruction_constant
@@ -41,13 +47,16 @@ MODULE reconstruction_linear
   INTEGER, PARAMETER :: SUPERBEE = 4
   INTEGER, PARAMETER :: OSPRE    = 5
   INTEGER, PARAMETER :: PP       = 6
+  INTEGER, PARAMETER :: VANLEER  = 7
+  INTEGER, PARAMETER :: NOLIMIT  = 8
   CHARACTER(LEN=32), PARAMETER  :: recontype_name = "linear"  
-  CHARACTER(LEN=32), DIMENSION(6), PARAMETER :: limitertype_name = (/ &
-         "minmod  ", "mc      ", "sweby   ", "superbee", "ospre   ","pp      " /)
+  CHARACTER(LEN=32), DIMENSION(8), PARAMETER :: limitertype_name = (/ &
+         "minmod    ", "mc        ", "sweby     ", "superbee  ", "ospre     ", &
+         "pp        ", "van leer  ", "no limit  "/)
   !--------------------------------------------------------------------------!
   PUBLIC :: &
        ! constants
-       MINMOD, MONOCENT, SWEBY, SUPERBEE, OSPRE, PP, &
+       MINMOD, MONOCENT, SWEBY, SUPERBEE, OSPRE, PP, VANLEER, NOLIMIT, &
        ! methods
        InitReconstruction_linear, &
        GetLimiterName, &
@@ -67,7 +76,7 @@ CONTAINS
     TYPE(Physics_TYP)        :: Physics
     INTEGER                  :: rtype,ltype
     REAL                     :: lparam
-    LOGICAL                  :: pc
+    INTEGER                  :: pc
     !------------------------------------------------------------------------!
     INTEGER                  :: err
     !------------------------------------------------------------------------!
@@ -77,7 +86,7 @@ CONTAINS
     CALL InitReconstruction(this,rtype,recontype_name,pc)
     ! limiter settings
     SELECT CASE(ltype)
-    CASE(MINMOD,MONOCENT,SWEBY,SUPERBEE,OSPRE,PP)
+    CASE(MINMOD,MONOCENT,SWEBY,SUPERBEE,OSPRE,PP,VANLEER,NOLIMIT)
        CALL InitCommon(this%limiter,ltype,limitertype_name(ltype))
        this%limiter_param= lparam
     CASE DEFAULT
@@ -293,6 +302,58 @@ CONTAINS
                 END DO
              END DO
           END DO
+    CASE(VANLEER)
+       ! calculate slopes in x-direction
+       IF (Mesh%INUM.GT.1) THEN
+          DO k=1,Physics%VNUM
+!CDIR UNROLL=8
+             DO j=Mesh%JGMIN,Mesh%JGMAX
+!CDIR COLLAPSE
+                DO i=Mesh%IGMIN+1,Mesh%IGMAX-1
+                   this%xslopes(i,j,k) = Mesh%invdx * vanleer_limiter(&
+                      rvar(i,j,k) - rvar(i-1,j,k), rvar(i+1,j,k) - rvar(i,j,k))
+                END DO
+             END DO
+          END DO
+       END IF
+       ! calculate slopes in y-direction
+       IF (Mesh%JNUM.GT.1) THEN
+          DO k=1,Physics%VNUM
+!CDIR COLLAPSE
+             DO j=Mesh%JGMIN+1,Mesh%JGMAX-1
+                DO i=Mesh%IGMIN,Mesh%IGMAX
+                   this%yslopes(i,j,k) = Mesh%invdy * vanleer_limiter(&
+                      rvar(i,j,k) - rvar(i,j-1,k), rvar(i,j+1,k) - rvar(i,j,k))
+                END DO
+             END DO
+          END DO
+       END IF
+    CASE(NOLIMIT)
+       ! calculate slopes in x-direction
+       IF (Mesh%INUM.GT.1) THEN
+          DO k=1,Physics%VNUM
+!CDIR UNROLL=8
+             DO j=Mesh%JGMIN,Mesh%JGMAX
+!CDIR NODEP
+                DO i=Mesh%IGMIN+1,Mesh%IGMAX-1
+                   this%xslopes(i,j,k) = Mesh%invdx * nolimit_limiter(&
+                      rvar(i,j,k) - rvar(i-1,j,k), rvar(i+1,j,k) - rvar(i,j,k))
+                END DO
+             END DO
+          END DO
+       END IF
+       ! calculate slopes in y-direction
+       IF (Mesh%JNUM.GT.1) THEN
+          DO k=1,Physics%VNUM
+!CDIR COLLAPSE
+             DO j=Mesh%JGMIN+1,Mesh%JGMAX-1
+                DO i=Mesh%IGMIN,Mesh%IGMAX
+                   this%yslopes(i,j,k) = Mesh%invdy * nolimit_limiter(&
+                      rvar(i,j,k) - rvar(i,j-1,k), rvar(i,j+1,k) - rvar(i,j,k))
+                END DO
+             END DO
+          END DO
+       END IF
     END SELECT
 
     CONTAINS
@@ -303,8 +364,8 @@ CONTAINS
         REAL             :: limarg
         REAL, INTENT(IN) :: arg1, arg2
         !--------------------------------------------------------------------!
-        IF (arg1*arg2.GT.0) THEN
-           limarg = SIGN(1.0,arg1) * MIN(ABS(arg1),ABS(arg2))
+        IF (SIGN(1.0,arg1)*SIGN(1.0,arg2).GT.0) THEN
+           limarg = SIGN(MIN(ABS(arg1),ABS(arg2)),arg1)
         ELSE
            limarg = 0.
         END IF
@@ -316,8 +377,9 @@ CONTAINS
         REAL             :: limarg
         REAL, INTENT(IN) :: arg1, arg2, arg3
         !--------------------------------------------------------------------!
-        IF (((arg1*arg2).GT.0).AND.((arg2*arg3).GT.0)) THEN
-           limarg = SIGN(1.0,arg1) * MIN(ABS(arg1),ABS(arg2),ABS(arg3))
+        IF (((SIGN(1.0,arg1)*SIGN(1.0,arg2)).GT.0).AND.&
+            ((SIGN(1.0,arg2)*SIGN(1.0,arg3)).GT.0)) THEN
+           limarg = SIGN(MIN(ABS(arg1),ABS(arg2),ABS(arg3)),arg1)
         ELSE
            limarg = 0.
         END IF
@@ -329,9 +391,9 @@ CONTAINS
         REAL             :: limarg
         REAL, INTENT(IN) :: arg1, arg2, param
         !--------------------------------------------------------------------!
-        IF (arg1*arg2.GT.0) THEN
-           limarg = SIGN(1.0,arg1) * MAX(MIN(param*ABS(arg1),ABS(arg2)), &
-                MIN(ABS(arg1),param*ABS(arg2)))
+        IF (SIGN(1.0,arg1)*SIGN(1.0,arg2).GT.0) THEN
+           limarg = SIGN(MAX(MIN(param*ABS(arg1),ABS(arg2)), &
+                MIN(ABS(arg1),param*ABS(arg2))),arg1)
         ELSE
            limarg = 0.
         END IF
@@ -365,6 +427,28 @@ CONTAINS
         yslope = V*yslope*Mesh%invdy
       END SUBROUTINE pp_limiter
       
+      ELEMENTAL FUNCTION vanleer_limiter(arg1,arg2) RESULT(limarg)
+        IMPLICIT NONE
+        !--------------------------------------------------------------------!
+        REAL             :: limarg
+        REAL, INTENT(IN) :: arg1, arg2
+        !--------------------------------------------------------------------!
+        REAL             :: a1,a2
+        !--------------------------------------------------------------------!
+        a1 = ABS(arg1)
+        a2 = ABS(arg2)
+        limarg = (arg1 * a2 + arg2 * a1)/(a1 + a2 + TINY(a1))
+      END FUNCTION vanleer_limiter
+
+      ELEMENTAL FUNCTION nolimit_limiter(arg1,arg2) RESULT(limarg)
+        IMPLICIT NONE
+        !--------------------------------------------------------------------!
+        REAL             :: limarg
+        REAL, INTENT(IN) :: arg1, arg2
+        !--------------------------------------------------------------------!
+        limarg = 0.5*(arg1+arg2)
+      END FUNCTION nolimit_limiter
+
   END SUBROUTINE CalculateSlopes_linear
   
 

@@ -23,21 +23,31 @@
 !#############################################################################
 
 !----------------------------------------------------------------------------!
-! define properties of a 2.5D tancylindrical mesh with the dimensionless
-! vertical coordinate zeta (with -pi/2 < zeta < +pi/2) according to:
-!   x = r 
-!   z = z0 * tan(zeta)
+!> \author Tobias Illenseer
+!!
+!! \brief define properties of a 2.5D tancylindrical mesh
+!!
+!! dimensionless vertical coordinate zeta (with -pi/2 < zeta < +pi/2)
+!! according to:
+!!   x = r
+!!   z = z0 * tan(zeta)
+!!
+!! \extends geometry_cartesian
+!! \ingroup geometry
 !----------------------------------------------------------------------------!
 MODULE geometry_tancylindrical
   USE geometry_cartesian
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
+  ! exclude interface block from doxygen processing
+  !> \cond InterfaceBlock
   INTERFACE Convert2Cartesian_tancyl
      MODULE PROCEDURE Tancyl2Cartesian_coords, Tancyl2Cartesian_vectors
   END INTERFACE
   INTERFACE Convert2Curvilinear_tancyl
      MODULE PROCEDURE Cartesian2Tancyl_coords, Cartesian2Tancyl_vectors
   END INTERFACE
+  !> \endcond
   PRIVATE
   CHARACTER(LEN=32), PARAMETER :: geometry_name = "tancylindrical"
   !--------------------------------------------------------------------------!
@@ -45,6 +55,8 @@ MODULE geometry_tancylindrical
       InitGeometry_tancyl, &
       GetScale, &
       ScaleFactors_tancyl, &
+      Radius_tancyl, &
+      PositionVector_tancyl, &
       Convert2Cartesian_tancyl, &
       Convert2Curvilinear_tancyl, &
       Tancyl2Cartesian_coords, &
@@ -63,7 +75,7 @@ CONTAINS
     REAL, INTENT(IN) :: gp
     !------------------------------------------------------------------------!
     CALL InitGeometry(this,gt,geometry_name)
-    this%geoparam = gp
+    CALL SetScale(this,gp)
   END SUBROUTINE InitGeometry_tancyl
     
 
@@ -77,6 +89,27 @@ CONTAINS
     hr = 1.
     hphi = r
   END SUBROUTINE ScaleFactors_tancyl
+
+
+  ELEMENTAL FUNCTION Radius_tancyl(gp,zeta,r) RESULT(radius)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    REAL, INTENT(IN)  :: gp,zeta,r
+    REAL              :: radius
+    !------------------------------------------------------------------------!
+    radius = SQRT((gp*TAN(zeta))**2+r**2)
+  END FUNCTION Radius_tancyl
+
+
+  ELEMENTAL SUBROUTINE PositionVector_tancyl(gp,zeta,r,rx,ry)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    REAL, INTENT(IN)  :: gp,zeta,r
+    REAL, INTENT(OUT) :: rx,ry
+    !------------------------------------------------------------------------!
+    rx = gp*TAN(zeta)
+    ry = r
+  END SUBROUTINE PositionVector_tancyl
 
 
   ! coordinate transformations

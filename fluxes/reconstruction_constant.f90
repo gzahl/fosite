@@ -24,7 +24,12 @@
 !#############################################################################
 
 !----------------------------------------------------------------------------!
-! basic module for constant (zero order) reconstruction
+!> \author Tobias Illenseer
+!!
+!! \brief basic module for constant (zero order) reconstruction
+!!
+!! \extends reconstruction_common
+!! \ingroup reconstruction
 !----------------------------------------------------------------------------!
 MODULE reconstruction_constant
   USE reconstruction_common
@@ -63,7 +68,7 @@ CONTAINS
     !------------------------------------------------------------------------!
     TYPE(Reconstruction_TYP) :: this
     INTEGER                  :: rtype
-    LOGICAL                  :: pc
+    INTEGER                  :: pc
     !------------------------------------------------------------------------!
     INTENT(IN)               :: rtype,pc
     INTENT(INOUT)            :: this

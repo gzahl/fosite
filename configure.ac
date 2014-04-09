@@ -28,7 +28,13 @@
 #############################################################################
 
 AC_PREREQ(2.62)
-AC_INIT(fosite, 0.5.1, tillense@astrophysik.uni-kiel.de)
+AC_INIT(fosite, 0.6.0, tillense@astrophysik.uni-kiel.de)
+AC_CONFIG_AUX_DIR([./])
+AC_REQUIRE_AUX_FILE([tap-driver.sh])
+AM_INIT_AUTOMAKE([1.13.1 foreign parallel-tests color-tests])
+AM_MAINTAINER_MODE
+AM_EXTRA_RECURSIVE_TARGETS([debug parallel prof parprof baldr])
+#AC_PROG_RANLIB
 
 # ===========================================================================
 # define command line arguments 
@@ -121,6 +127,8 @@ AC_ARG_WITH([hdf5],
       # check if the given directory exists
       AS_IF([test -d "$HDF5DIR"],[dnl
          hdf5_libdirs="m4_combine([ ], [$HDF5DIR], [/], [lib], [lib64])"
+         hdf5_moddirs="m4_combine([ ], [$HDF5DIR], [/], [include],
+                                       [mod], [modules], [lib], [lib64])"
       ],[dnl
          AC_MSG_WARN([HDF5 installation directory $HDF5DIR doesn't exist])
       ])
@@ -128,6 +136,27 @@ AC_ARG_WITH([hdf5],
 ],[dnl
   with_hdf5=no
 ]) # with_hdf5
+
+AC_ARG_WITH([fftw],
+	AS_HELP_STRING([--with-fftw=[DIR]],[
+		Check fo fftw (>=3.3) installation in directory [DIR];
+		required for selfgravitation in polar-like coordinates @<:@DEFAULT=no@:>@]),[dnl
+	AS_CASE([$withval],[yes],[dnl
+		linkClibs=yes],[no],[],[dnl
+		linkClibs=yes
+		FFTWDIR=$withval
+		with_fftw=yes
+		# check if the given directory exists
+		AS_IF([test -d "$FFTWDIR"],[dnl
+			   fftw_libdirs="m4_combine([ ], [$FFTWDIR], [/], [lib], [lib64])"
+			   fftw_moddirs="m4_combine([ ], [$FFTWDIR], [/], [include])"
+		],[dnl
+		   AC_MSG_WARN([FFTW installation directory $FFTWDIR doesn't exist])
+		])
+	])
+],[dnl
+   with_fftw=no
+]) # with_fftw
 
 AC_ARG_WITH([npy],
 	AS_HELP_STRING([--with-npy=[DIR]],[
@@ -196,9 +225,21 @@ AC_ARG_ENABLE([mpi-module],
    arg_mpi_module=no
 ])
 
+AC_ARG_ENABLE([examples],
+   AC_HELP_STRING([--enable-examples=dir],
+      [turn on user example directory;
+      e.g. for ~/fosite/user --enable-examples=user
+      @<:@DEFAULT=no@:>@ ]),[dnl
+   arg_examples=$enableval],[dnl
+   arg_examples=no
+])
+
 AC_ARG_VAR([PREP],[preprocessor command for parallel profiling])
 
 AC_ARG_VAR([MPIFC],[MPI fortran compiler command])
+
+AC_ARG_VAR([BINDIRS],[Directories which hold files for f90->binary conversion])
+BINDIRS="${BINDIRS-examples tests}"
 
 
 # ===========================================================================
@@ -408,6 +449,10 @@ AC_PROG_SED
 # the parallel version
 AC_CHECK_PROG([PREP],[scalasca],[scalasca -instrument])
 
+AC_CHECK_PROGS([DOXYGEN], [doxygen])
+if test -u "$DOXYGEN";
+  then AC_MSG_WARN([Doxygen not found - continuing without Doxygen support])
+fi
 
 # ===========================================================================
 # MPI library and module/header tests
@@ -653,6 +698,14 @@ AS_VAR_IF([with_hdf5],[no],[],[dnl
       AC_SEARCH_LIBS(H5DSattach_scale,hdf5_hl,[dnl
          ac_hdf5_LIBS="$LIBS $ac_hdf5_LIBS"],[],
          [$ac_hdf5_LIBS_save $ac_mpi_LIBS $ac_hdf5_LIBS])
+      LIBS=""
+      AC_SEARCH_LIBS(H5Aclose,hdf5_fortran,[dnl
+         ac_hdf5_LIBS="$LIBS $ac_hdf5_LIBS"],[],
+         [$ac_hdf5_LIBS_save $ac_mpi_LIBS $ac_hdf5_LIBS])
+      LIBS=""
+      AC_SEARCH_LIBS(H5Aopen,hdf5hl_fortran,[dnl
+         ac_hdf5_LIBS="$LIBS $ac_hdf5_LIBS"],[],
+         [$ac_hdf5_LIBS_save $ac_mpi_LIBS $ac_hdf5_LIBS])
       AC_LANG_POP(C)
    ],[dnl
       LDFLAGS="$ac_cv_fc_linkClibs $LDFLAGS"
@@ -664,8 +717,31 @@ AS_VAR_IF([with_hdf5],[no],[],[dnl
       AC_SEARCH_LIBS(H5DSattach_scale,hdf5_hl,[dnl
          ac_hdf5_LIBS="$LIBS $ac_hdf5_LIBS"],[],
          [$ac_hdf5_LIBS_save $ac_mpi_LIBS $ac_hdf5_LIBS])
+      LIBS=""
+      AC_SEARCH_LIBS(H5Aclose,hdf5_fortran,[dnl
+         ac_hdf5_LIBS="$LIBS $ac_hdf5_LIBS"],[],
+         [$ac_hdf5_LIBS_save $ac_mpi_LIBS $ac_hdf5_LIBS])
+      LIBS=""
+      AC_SEARCH_LIBS(H5Aopen,hdf5hl_fortran,[dnl
+         ac_hdf5_LIBS="$LIBS $ac_hdf5_LIBS"],[],
+         [$ac_hdf5_LIBS_save $ac_mpi_LIBS $ac_hdf5_LIBS])
    ])
-
+   
+   AC_FC_MODULE([hdf5],[
+use hdf5
+implicit none
+integer	:: error
+CALL h5open_f(error)
+CALL h5close_f(error)
+],[$hdf5_moddirs],[dnl
+      AS_VAR_IF([ac_cv_module_hdf5_moddir],[""],[],[dnl
+         ac_hdf5_FCFLAGS="$ac_hdf5_FCFLAGS -I$ac_cv_module_hdf5_moddir"
+	  ])
+	  ac_hdf5_DEFS="$ac_hdf5_DEFS -DHAVE_HDF5_MOD"
+	  ac_hdf5_LIBS="$ac_hdf5_LIBS -lhdf5_fortran"
+   ],[dnl
+   AC_MSG_WARN([cannot compile programs using Fortran 90 module hdf5])
+   ])
    FCFLAGS="$ac_hdf5_FCFLAGS_save"
    LDFLAGS="$ac_hdf5_LDFLAGS_save"
    LIBS="$ac_hdf5_LIBS_save"
@@ -780,6 +856,56 @@ integer, parameter :: comm = NF90_COLLECTIVE
    DEFS="$ac_netcdf_DEFS_save"
 ]) # end NetCDF checks
 
+# ==========================================================================
+# FFTW library tests
+# ===========================================================================
+ac_fftw_FCFLAGS=""
+ac_fftw_LDFLAGS=""
+ac_fftw_LIBS=""
+ac_fftw_DEFS=""
+AS_VAR_IF([with_fftw],[no],[],[dnl
+   ac_fftw_FCFLAGS_save="$FCFLAGS"
+   ac_fftw_LDFLAGS_save="$LDFLAGS"
+   ac_fftw_LIBS_save="$LIBS"
+   ac_fftw_DEFS_save="$DEFS"
+
+   # check if iso_c_bindings are available otherwise break
+   AS_IF([test "x$arg_cbind" = "xno" \
+            -o "x$ac_cv_fc_cbind" = "xunknown"],[dnl
+      AC_MSG_ERROR([ISO C bindings are required for fftw, try --enable-cbind])
+   ])
+
+   for dir in $fftw_libdirs; do
+      AS_IF([test -d "$dir"],[ac_fftw_LDFLAGS="$ac_fftw_LDFLAGS -L$dir"])
+   done
+
+   # set special Fortran compiler flags for linking against C libraries
+   # if possible, otherwise use C compiler to check the linking
+   LDFLAGS="$ac_fftw_LDFLAGS_save $ac_fftw_LDFLAGS"
+   LIBS=""
+#   AS_VAR_IF([ac_cv_fc_preservecase],[unknown],[dnl
+#      AC_LANG_PUSH(C)
+#      AC_SEARCH_LIBS(fftw_version,fftw3,[dnl
+#         ac_fftw_LIBS="$LIBS $ac_fftw_LIBS"
+#		 ac_fftw_FCFLAGS="$ac_fftw_FCFLAGS -I$fftw_moddirs"
+#         ac_fftw_DEFS="$ac_fftw_DEFS -DHAVE_FFTW"],[],
+#         [$ac_fftw_LIBS_save $ac_fftw_LIBS])
+#      AC_LANG_POP(C)
+#   ],[dnl
+      LDFLAGS="$ac_cv_fc_linkClibs $LDFLAGS"
+      AC_SEARCH_LIBS(fftw_version,fftw3,[dnl
+         ac_fftw_LIBS="$LIBS $ac_fftw_LIBS"
+		 ac_fftw_FCFLAGS="$ac_fftw_FCFLAGS -I$fftw_moddirs"
+         ac_fftw_DEFS="$ac_fftw_DEFS -DHAVE_FFTW"],[],
+         [$ac_fftw_LIBS_save $ac_fftw_LIBS])
+#   ])
+
+   FCFLAGS="$ac_fftw_FCFLAGS_save"
+   LDFLAGS="$ac_fftw_LDFLAGS_save"
+   LIBS="$ac_fftw_LIBS_save"
+   DEFS="$ac_fftw_DEFS_save"
+]) # end FFTW checks
+
 
 # ==========================================================================
 # NPY library tests
@@ -824,20 +950,37 @@ AS_VAR_IF([with_npy],[no],[],[dnl
    DEFS="$ac_npy_DEFS_save"
 ]) # end NPY checks
 
+# ==========================================================================
+# Check for GIT repository version
+# ===========================================================================
+
+# fosite version
+HASGIT=`cd $srcdir; git rev-parse --is-inside-work-tree`
+AS_VAR_IF(HASGIT,[true],[VERSION=`cd $srcdir; git describe --always`],[VERSION="$PACKAGE_VERSION"])
+
+# ==========================================================================
+# Check for Doxygen support
+# ===========================================================================
+
+AM_CONDITIONAL([HAVE_DOXYGEN],
+  [test -n "$DOXYGEN"])
+AM_COND_IF([HAVE_DOXYGEN],
+  [AC_CONFIG_FILES([doc/Doxyfile])])
 
 # ===========================================================================
 # set Makefile variables
 # ===========================================================================
-AC_SUBST(FCFLAGS_ALL,[m4_normalize("$FCFLAGS $ac_hdf5_FCFLAGS \
-                                   $ac_netcdf_FCFLAGS $ac_npy_FCFLAGS")])
-AC_SUBST(DEFS_ALL,[m4_normalize("$DEFS $ac_hdf5_DEFS $ac_netcdf_DEFS $ac_npy_DEFS")])
+AC_SUBST(FCFLAGS_ALL,[m4_normalize("$FCFLAGS $ac_hdf5_FCFLAGS $ac_netcdf_FCFLAGS \
+					  				$ac_fftw_FCFLAGS $ac_npy_FCFLAGS")])
+AC_SUBST(DEFS_ALL,[m4_normalize("$DEFS $ac_hdf5_DEFS $ac_netcdf_DEFS $ac_fftw_DEFS \
+				   				 $ac_npy_DEFS")])
 AC_SUBST(FCFLAGS_OPT,[m4_normalize("$FCFLAGS_OPT $ac_cv_fc_inline")])
 AC_SUBST(FCFLAGS_DBG,[m4_normalize("$FCFLAGS_DBG -DDEBUG $ac_cv_fc_advanced_debug")])
 AC_SUBST(FCFLAGS_PROF,[m4_normalize("$ac_cv_fc_profiling")])
 AC_SUBST(LDFLAGS_ALL,[m4_normalize("$LDFLAGS $ac_hdf5_LDFLAGS $ac_netcdf_LDFLAGS \
-                                    $ac_npy_LDFLAGS \
-                                    $LIBS $ac_netcdf_LIBS $ac_hdf5_LIBS \
-		 		    $ac_npy_LIBS")])
+					  						 $ac_fftw_LDFLAGS $ac_npy_LDFLAGS \
+                                    $LIBS $ac_netcdf_LIBS $ac_hdf5_LIBS $ac_fftw_LIBS \
+									      $ac_npy_LIBS")])
 AC_SUBST(LDFLAGS_OPT)
 AC_SUBST(LDFLAGS_PROF,[m4_normalize("$ac_cv_fc_profiling")])
 AC_SUBST(LDFLAGS_DBG,[m4_normalize("$LDFLAGS_DBG $ac_cv_fc_advanced_debug")])
@@ -846,11 +989,26 @@ AC_SUBST(FCFLAGS_MPI,[m4_normalize("$ac_mpi_FCFLAGS")])
 AC_SUBST(DEFS_PARALLEL,[m4_normalize("$ac_mpi_DEFS")])
 AC_SUBST(LDFLAGS_MPI,[m4_normalize("$ac_mpi_LDFLAGS")])
 AC_SUBST(MPILIBS,[m4_normalize("$ac_mpi_LIBS")])
+AC_SUBST(EXAMPLES,[m4_normalize("$arg_examples")])
 AC_SUBST(PREP)
 AC_SUBST(AR)
 AC_SUBST(AWK)
 AC_SUBST(SED)
 
 # generate Makefile
-AC_CONFIG_FILES([Makefile])
+AC_CONFIG_FILES([
+	Makefile
+	numtools/Makefile
+	common/Makefile
+   	mesh/Makefile
+   	physics/Makefile
+   	boundary/Makefile
+   	fluxes/Makefile
+   	sources/Makefile
+   	io/Makefile
+   	timedisc/Makefile
+	tests/Makefile
+  doc/Makefile
+	])
+#	examples/Makefile
 AC_OUTPUT

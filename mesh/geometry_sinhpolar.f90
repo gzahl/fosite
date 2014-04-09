@@ -23,27 +23,38 @@
 !#############################################################################
 
 !----------------------------------------------------------------------------!
-! define properties of a hyperbolic 2D polar mesh with dimensionless radial
-! coordinate rho (with 0 < rho < +inf) according to:
-!    x = r0 * sinh(rho) * cos(phi)  
-!    y = r0 * sinh(rho) * sin(phi)
+!> \author Tobias Illenseer
+!!
+!! \brief define properties of a hyperbolic 2D polar mesh
+!!
+!! dimensionless radial coordinate rho (with 0 < rho < +inf) according to:
+!!    x = (gp * sinh(rho-gp3) + gp2) * cos(phi)
+!!    y = (gp * sinh(rho-gp3) + gp2) * sin(phi)
+!!
+!! \extends geometry_cartesian
+!! \ingroup geometry
 !----------------------------------------------------------------------------!
 MODULE geometry_sinhpolar
   USE geometry_cartesian
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
+  ! exclude interface block from doxygen processing
+  !> \cond InterfaceBlock
   INTERFACE Convert2Cartesian_sinhpolar
      MODULE PROCEDURE Sinhpolar2Cartesian_coords, Sinhpolar2Cartesian_vectors
   END INTERFACE
   INTERFACE Convert2Curvilinear_sinhpolar
      MODULE PROCEDURE Cartesian2Sinhpolar_coords, Cartesian2Sinhpolar_vectors
   END INTERFACE
+  !> \endcond
   PRIVATE
   CHARACTER(LEN=32), PARAMETER :: geometry_name = "sinhpolar"
   !--------------------------------------------------------------------------!
   PUBLIC :: &
        InitGeometry_sinhpolar, &
        ScaleFactors_sinhpolar, &
+       Radius_sinhpolar, &
+       PositionVector_sinhpolar, &
        Convert2Cartesian_sinhpolar, &
        Convert2Curvilinear_sinhpolar, &
        Sinhpolar2Cartesian_coords, &
@@ -54,56 +65,76 @@ MODULE geometry_sinhpolar
 
 CONTAINS
 
-  SUBROUTINE InitGeometry_sinhpolar(this,gt,gp)
+  SUBROUTINE InitGeometry_sinhpolar(this,gt,gp,gp2,gp3)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Geometry_TYP), INTENT(INOUT) :: this
     INTEGER, INTENT(IN) :: gt
-    REAL, INTENT(IN) :: gp
+    REAL, INTENT(IN) :: gp,gp2,gp3
     !------------------------------------------------------------------------!
     CALL InitGeometry(this,gt,geometry_name)
-    this%geoparam = gp
+    CALL SetScale(this,gp,gp2,gp3)
   END SUBROUTINE InitGeometry_sinhpolar
     
 
-  ELEMENTAL SUBROUTINE ScaleFactors_sinhpolar(gp,rho,hrho,hphi,hz)
+  ELEMENTAL SUBROUTINE ScaleFactors_sinhpolar(gp,gp2,gp3,rho,hrho,hphi,hz)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    REAL, INTENT(IN)  :: gp,rho
+    REAL, INTENT(IN)  :: gp,gp2,gp3,rho
     REAL, INTENT(OUT) :: hrho,hphi,hz
     !------------------------------------------------------------------------!
-    hrho = gp*COSH(rho)
-    hphi = gp*SINH(rho)
+    hrho = ABS(gp*COSH(rho-gp3))
+    hphi = Radius_sinhpolar(gp,gp2,gp3,rho)
     hz   = 1.
   END SUBROUTINE ScaleFactors_sinhpolar
 
 
-  ! coordinate transformations
-  ELEMENTAL SUBROUTINE Sinhpolar2Cartesian_coords(gp,rho,phi,x,y)
+  ELEMENTAL FUNCTION Radius_sinhpolar(gp,gp2,gp3,rho) RESULT(radius)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    REAL, INTENT(IN)  :: gp,rho,phi
+    REAL, INTENT(IN)  :: gp,gp2,gp3,rho
+    REAL :: radius
+    !------------------------------------------------------------------------!
+    radius = ABS(gp*SINH(rho-gp3)+gp2)
+  END FUNCTION Radius_sinhpolar
+
+  ELEMENTAL SUBROUTINE PositionVector_sinhpolar(gp,gp2,gp3,rho,rx,ry)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    REAL, INTENT(IN)  :: gp,gp2,gp3,rho
+    REAL, INTENT(OUT) :: rx,ry
+    !------------------------------------------------------------------------!
+    rx = Radius_sinhpolar(gp,gp2,gp3,rho)
+    ry = 0.0
+  END SUBROUTINE PositionVector_sinhpolar
+
+  ! coordinate transformations
+  ELEMENTAL SUBROUTINE Sinhpolar2Cartesian_coords(gp,gp2,gp3,rho,phi,x,y)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    REAL, INTENT(IN)  :: gp,gp2,gp3,rho,phi
     REAL, INTENT(OUT) :: x,y
     !------------------------------------------------------------------------!
     REAL :: r
     !------------------------------------------------------------------------!
-    r = gp*SINH(rho)
+    r = gp*SINH(rho-gp3)+gp2
     x = r*COS(phi)
     y = r*SIN(phi)
   END SUBROUTINE Sinhpolar2Cartesian_coords
 
-  ELEMENTAL SUBROUTINE Cartesian2Sinhpolar_coords(gp,x,y,rho,phi)
+  ELEMENTAL SUBROUTINE Cartesian2Sinhpolar_coords(gp,gp2,gp3,x,y,rho,phi)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    REAL, INTENT(IN)  :: gp,x,y
+    REAL, INTENT(IN)  :: gp,gp2,gp3,x,y
     REAL, INTENT(OUT) :: rho,phi
     !------------------------------------------------------------------------!
     REAL :: x1,y1,r1
     !------------------------------------------------------------------------!
-    x1 = x/gp
-    y1 = y/gp
-    r1 = SQRT(x1*x1+y1*y1)
-    rho = LOG(r1+SQRT(1.+r1*r1))  ! = ASINH(r1))
+    x1 = x
+    y1 = y
+    r1 = (SQRT(x1*x1+y1*y1)-gp2)/gp
+    rho = LOG(r1+SQRT(1.+r1*r1)) & ! = ASINH(r1))
+          + gp3
     phi = ATAN2(y,x)
     IF(phi.LT.0.0) THEN
         phi = phi + 2.0*PI
@@ -112,20 +143,20 @@ CONTAINS
 
 
   ! vector transformations
-  ELEMENTAL SUBROUTINE Sinhpolar2Cartesian_vectors(gp,phi,vrho,vphi,vx,vy)
+  ELEMENTAL SUBROUTINE Sinhpolar2Cartesian_vectors(phi,vrho,vphi,vx,vy)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    REAL, INTENT(IN)  :: gp,phi,vrho,vphi
+    REAL, INTENT(IN)  :: phi,vrho,vphi
     REAL, INTENT(OUT) :: vx,vy
     !------------------------------------------------------------------------!
     vx = vrho * COS(phi) - vphi * SIN(phi)
     vy = vrho * SIN(phi) + vphi * COS(phi)
   END SUBROUTINE Sinhpolar2Cartesian_vectors
   
-  ELEMENTAL SUBROUTINE Cartesian2Sinhpolar_vectors(gp,phi,vx,vy,vrho,vphi)
+  ELEMENTAL SUBROUTINE Cartesian2Sinhpolar_vectors(phi,vx,vy,vrho,vphi)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
-    REAL, INTENT(IN)  :: gp,phi,vx,vy
+    REAL, INTENT(IN)  :: phi,vx,vy
     REAL, INTENT(OUT) :: vrho,vphi
     !------------------------------------------------------------------------!
     vrho = vx * COS(phi) + vy * SIN(phi)

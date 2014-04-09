@@ -24,7 +24,11 @@
 !#############################################################################
 
 !----------------------------------------------------------------------------!
-! generic module for reconstruction process
+!> \author Tobias Illenseer
+!!
+!! \brief generic module for reconstruction process
+!!
+!! \ingroup reconstruction
 !----------------------------------------------------------------------------!
 MODULE reconstruction_generic
   USE reconstruction_constant, InitReconstruction_common => InitReconstruction, &
@@ -32,6 +36,8 @@ MODULE reconstruction_generic
   USE reconstruction_linear
   USE mesh_common, ONLY : Mesh_TYP, Initialized
   USE physics_common, ONLY : Physics_TYP, Initialized
+  USE common_dict
+  USE mesh_generic, ONLY : remap_bounds
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   PRIVATE
@@ -44,7 +50,7 @@ MODULE reconstruction_generic
        ! constants
        CONSTANT, LINEAR, &
        PRIMITIVE, CONSERVATIVE, &
-       MINMOD, MONOCENT, SWEBY, SUPERBEE, OSPRE, PP, &
+       MINMOD, MONOCENT, SWEBY, SUPERBEE, OSPRE, PP, VANLEER, NOLIMIT, &
        ! methods
        InitReconstruction, &
        CloseReconstruction, &
@@ -63,59 +69,49 @@ MODULE reconstruction_generic
 
 CONTAINS
 
-  SUBROUTINE InitReconstruction(this,Mesh,Physics,order,variables,limiter,theta)
+  SUBROUTINE InitReconstruction(this,Mesh,Physics,config,IO)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Reconstruction_TYP) :: this
     TYPE(Mesh_TYP)           :: Mesh
     TYPE(Physics_TYP)        :: Physics
-    INTEGER, OPTIONAL        :: order
-    LOGICAL, OPTIONAL        :: variables
-    INTEGER, OPTIONAL        :: limiter
-    REAL, OPTIONAL           :: theta
+    TYPE(Dict_TYP),POINTER   :: config,IO
+    INTEGER                  :: order
+    INTEGER                  :: variables
+    INTEGER                  :: limiter
+    REAL                     :: theta
     !------------------------------------------------------------------------!
     CHARACTER(LEN=32)        :: infostr
-    INTEGER                  :: order_default,limiter_default
-    LOGICAL                  :: variables_default
-    REAL                     :: theta_default
+    CHARACTER(LEN=60)        :: key
+    INTEGER                  :: valwrite,i
     !------------------------------------------------------------------------!
-    INTENT(IN)               :: Mesh,Physics,order,limiter,variables,theta
     INTENT(INOUT)            :: this
+    INTENT(IN)               :: Mesh, Physics
     !------------------------------------------------------------------------!
     ! check initialization of Mesh and Physics
     IF (.NOT.Initialized(Mesh).OR..NOT.Initialized(Physics)) &
          CALL Error(this,"InitFluxes","mesh and/or physics module uninitialized")
 
     ! set general reconstruction defaults
-    IF (PRESENT(order)) THEN
-       order_default = order
-    ELSE
-       order_default = 2
-    END IF
-    IF (PRESENT(variables)) THEN
-       variables_default = variables
-    ELSE
-       variables_default = CONSERVATIVE
-    END IF
-   
-    ! set defaults for the limiter
-    IF (PRESENT(limiter)) THEN
-       limiter_default = limiter
-    ELSE
-       limiter_default = MINMOD
-    END IF
-    IF (PRESENT(theta)) THEN
-       theta_default = theta
-    ELSE
-       theta_default = 1.0
-    END IF
+    CALL RequireKey(config, "order", 2)
+    CALL GetAttr(config, "order", order)
 
-    SELECT CASE(order_default)
+    CALL RequireKey(config, "variables", CONSERVATIVE)
+    CALL GetAttr(config, "variables", variables)
+
+    ! set defaults for the limiter
+    CALL RequireKey(config, "limiter", MINMOD)
+    CALL RequireKey(config, "theta", 1.0)
+
+    CALL GetAttr(config, "limiter", limiter)
+    CALL GetAttr(config, "theta", theta)
+
+    SELECT CASE(order)
     CASE(CONSTANT)
-       CALL InitReconstruction_constant(this,order_default,variables_default)
+       CALL InitReconstruction_constant(this,order,variables)
     CASE(LINEAR)
-       CALL InitReconstruction_linear(this,Mesh,Physics,order_default, &
-                                      variables_default,limiter_default,theta_default)
+       CALL InitReconstruction_linear(this,Mesh,Physics,order,variables,&
+                                      limiter,theta)
     CASE DEFAULT
        CALL Error(this,"InitReconstruction",  "unsupported reconstruction order")
     END SELECT
@@ -130,6 +126,24 @@ CONTAINS
     CALL Info(this, "            variables:         " // TRIM(infostr))
     IF (order.EQ.LINEAR) THEN
        CALL Info(this, "            limiter:           " // TRIM(GetLimiterName(this)))
+    END IF
+
+    valwrite = 0
+    CALL RequireKey(config, "output/slopes", 0)
+    CALL GetAttr(config, "output/slopes", valwrite)
+    IF(valwrite.EQ.1) THEN
+      DO i=1, Physics%VNUM
+        key = TRIM(Physics%pvarname(i)) // "_xslope"
+        CALL AddField(IO, &
+                      TRIM(key), &
+                      remap_bounds(Mesh,this%xslopes(:,:,i)), &
+                      Dict("name" / TRIM(key)))
+        key = TRIM(Physics%pvarname(i)) // "_yslope"
+        CALL AddField(IO, &
+                      TRIM(key), &
+                      remap_bounds(Mesh,this%yslopes(:,:,i)), &
+                      Dict("name" / TRIM(key)))
+      END DO
     END IF
   END SUBROUTINE InitReconstruction
 

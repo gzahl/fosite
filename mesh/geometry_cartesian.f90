@@ -24,7 +24,12 @@
 !#############################################################################
 
 !----------------------------------------------------------------------------!
-! define properties of a 2D cartesian mesh
+!> \author Tobias Illenseer
+!!
+!! \brief define properties of a 2D cartesian mesh
+!!
+!! \extends geometry_common
+!! \ingroup geometry
 !----------------------------------------------------------------------------!
 MODULE geometry_cartesian
   USE geometry_common
@@ -43,7 +48,9 @@ MODULE geometry_cartesian
        CloseGeometry, &
        InitGeometry_cartesian, &
        ScaleFactors_cartesian, &
+       Radius_cartesian, &
        GetScale, &
+       SetScale, &
        GetType, &
        GetName, &
        GetRank, &
@@ -76,5 +83,14 @@ CONTAINS
     hy = 1.
     hz = 1.
   END SUBROUTINE ScaleFactors_cartesian
+
+  ELEMENTAL FUNCTION Radius_cartesian(x,y) RESULT(radius)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    REAL, INTENT(IN)  :: x, y
+    REAL :: radius
+    !------------------------------------------------------------------------!
+    radius = SQRT(x*x+y*y)
+  END FUNCTION Radius_cartesian
 
 END MODULE geometry_cartesian

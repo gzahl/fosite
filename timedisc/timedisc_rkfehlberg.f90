@@ -25,18 +25,29 @@
 !#############################################################################
 
 !----------------------------------------------------------------------------!
-! subroutines for Runge-Kutta Fehlberg method
-! Reference: G.Engeln-Müllges & F.Reutter; .....
+!> \author Björn Sperling
+!! \author Tobias Illenseer
+!!
+!! \brief subroutines for Runge-Kutta Fehlberg method
+!!
+!! Reference: G.Engeln-Müllges & F.Reutter; .....
+!!
+!! \extends timedisc_common
+!! \ingroup timedisc
 !----------------------------------------------------------------------------!
 MODULE timedisc_rkfehlberg
-  
-USE timedisc_common
+  USE timedisc_common
   USE mesh_generic
   USE fluxes_generic
   USE boundary_generic
   USE physics_generic, GeometricalSources_Physics => GeometricalSources, &
        ExternalSources_Physics => ExternalSources
+  USE timedisc_modeuler, &
+    ONLY: CalcTimestep_rkfehlberg => CalcTimestep_modeuler, &
+          ComputeError_rkfehlberg => ComputeError_modeuler, &
+          ComputeSources_rkfehlberg => ComputeSources_modeuler
   USE sources_generic
+  USE common_dict
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   PRIVATE
@@ -50,7 +61,11 @@ USE timedisc_common
        InitTimedisc_rkfehlberg, &
        CloseTimedisc_rkfehlberg, &
        SolveODE_rkfehlberg, &
+       CalcTimestep_rkfehlberg, &
        ComputeCVar_rkfehlberg, &
+       ComputeRHS_rkfehlberg, &
+       ComputeError_rkfehlberg, &
+       ComputeSources_rkfehlberg, &
        GetOrder, &
        GetCFL, &
        GetType, &
@@ -65,28 +80,26 @@ USE timedisc_common
 
 CONTAINS
 
-  SUBROUTINE InitTimedisc_rkfehlberg(this,Mesh,Physics,os,order,stoptime,cfl,dtlimit,maxiter, &
-       tol_rel,tol_abs)
+  SUBROUTINE InitTimedisc_rkfehlberg(this,Mesh,Physics,config)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Timedisc_TYP) :: this
     TYPE(Mesh_TYP)     :: Mesh
     TYPE(Physics_TYP)  :: Physics
-    INTEGER            :: os, order,maxiter
-    REAL               :: stoptime,cfl,dtlimit
-    REAL               :: tol_rel
-    REAL,DIMENSION(:)  :: tol_abs
+    TYPE(Dict_TYP), POINTER &
+                       :: config
     !------------------------------------------------------------------------!
-    INTEGER            :: err
+    INTEGER            :: err,method
     !------------------------------------------------------------------------!
-    INTENT(IN)         :: os,order,stoptime,cfl,dtlimit,maxiter,tol_rel,tol_abs
+    INTENT(IN)         :: Mesh,Physics
     INTENT(INOUT)      :: this
     !------------------------------------------------------------------------!
-    CALL InitTimedisc(this,os,ODEsolver_name,order,stoptime,cfl,dtlimit,maxiter)
+    ! set default order 
+    CALL RequireKey(config, "order", 5)
+    CALL GetAttr(config, "order", this%order)
 
-    ! relative and absolute tolerance for adaptive step size control
-    this%tol_rel    = tol_rel
-    this%tol_abs(:) = tol_abs(:)
+    CALL GetAttr(config, "method", method)
+    CALL InitTimedisc(this,method,ODEsolver_name)
   
 !CDIR IEXPAND
     SELECT CASE(GetOrder(this))    
@@ -126,20 +139,17 @@ CONTAINS
                             3.0/32.0, 9.0/32.0, 0.0, 0.0, 0.0, 0.0, &
                             1932.0/2197.0, -7200.0/2179.0, 7296.0/2197.0, 0.0, 0.0, 0.0, &
                             489.0/216.0, -8.0, 3680.0/513.0, -845.0/4104.0, 0.0, 0.0, &
-                            -8.0/28.0, 2.0, -3544.0/2565.0, 1859.0/4104.0, -11.0/40.0, 0.0/),(/this%m,this%m/))
-!*****************************************************
-!IMPORTANT: CHECK b(1,6) = -8/28 OR -8/27 ???????????
-!*****************************************************
+                            -8.0/27.0, 2.0, -3544.0/2565.0, 1859.0/4104.0, -11.0/40.0, 0.0/),(/this%m,this%m/))
     CASE DEFAULT
        CALL Error(this,"timedisc_rkfehlberg","time order must be 3 or 5")
     END SELECT
     IF ((this%tol_rel.LT.0.0).OR.MINVAL(this%tol_abs(:)).LT.0.0) &
          CALL Error(this,"timedisc_rkfehlberg", &
          "error tolerance levels must be greater than 0")
-    IF (tol_rel.GT.1.0) THEN
+    IF (this%tol_rel.GT.1.0) THEN
          CALL Warning(this,"timedisc_rkfehlberg", &
             "adaptive step size control disabled (tol_rel>1)")
-    ELSE IF(tol_rel.GE.0.01 .AND. this%order .GE. 5) THEN
+    ELSE IF(this%tol_rel.GE.0.01 .AND. this%order .GE. 5) THEN
          CALL Warning(this,"timedisc_rkfehlberg", &
              "You chose a relatively high tol_rel (in comparison to order)")
     END IF
@@ -147,7 +157,7 @@ CONTAINS
 
 
   SUBROUTINE SolveODE_rkfehlberg(this,Mesh,Physics,Fluxes,time,dt,maxerr)
-    IMPLICIT NONE
+  IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Timedisc_TYP) :: this
     TYPE(Mesh_TYP)     :: Mesh
@@ -156,22 +166,21 @@ CONTAINS
     REAL               :: time,dt,maxerr
     !------------------------------------------------------------------------!
     INTEGER            :: n,i,j,k,m
-    REAL               :: t,dtnew,dtold
-    REAL               :: rel_err(Physics%VNUM)
+    REAL               :: t,dtold
     !------------------------------------------------------------------------!    
     INTENT(IN)         :: Mesh,time
     INTENT(INOUT)      :: this,Physics,Fluxes,dt,maxerr
     !------------------------------------------------------------------------!
     t = time
     ! compute right-hand-side
-    CALL ComputeRHS_rkfehlberg (this,Mesh,Physics,Fluxes,t,this%pvar,this%cvar,this%coeff(:,:,:,1))
+    CALL ComputeRHS_rkfehlberg (this,Mesh,Physics,Fluxes,t,dt,this%pvar,this%cvar,this%coeff(:,:,:,1))
     DO m=2,this%m
        ! time step update of cell mean values
 !CDIR IEXPAND
        CALL ComputeCVar_rkfehlberg(this,Mesh,Physics,dt,m,this%coeff,this%cvar,this%ctmp)
        ! set boundary values and convert2primitive ctmp => ptmp
        CALL CenterBoundary(this%boundary,Mesh,Fluxes,Physics,t+this%a(m)*dt,this%ptmp,this%ctmp)
-       CALL ComputeRHS_rkfehlberg(this,Mesh,Physics,Fluxes,t+this%a(m)*dt,this%ptmp,this%ctmp,this%coeff(:,:,:,m))
+       CALL ComputeRHS_rkfehlberg(this,Mesh,Physics,Fluxes,t+this%a(m)*dt,dt,this%ptmp,this%ctmp,this%coeff(:,:,:,m))
     END DO
    
     !reset ctmp
@@ -211,31 +220,8 @@ CONTAINS
         END DO
       END DO
     END DO
-
-    IF (this%tol_rel.LT.1.0) THEN
-      ! maximum of truncation error
-      DO k=1,Physics%VNUM
-          rel_err(k) = MAXVAL(ABS(this%cvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN:Mesh%JMAX,k) &
-                                 -this%ctmp(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN:Mesh%JMAX,k)) &
-               / (this%tol_rel*ABS(this%cvar(Mesh%IMIN:Mesh%IMAX,Mesh%JMIN:Mesh%JMAX,k)) + this%tol_abs(k)))
-       END DO
-      maxerr = MAXVAL(rel_err(:))
-
-      !compute new time step
-!      dtnew = 0.9*dt*(1./maxerr)**(1./(GetOrder(this)))
-!CDIR IEXPAND
-      dtnew = 0.9*dt*exp(-log(maxerr)/GetOrder(this))
-      IF (maxerr.LT.1.0) THEN
-         dt = MIN(dtnew,4.*dt)   ! not too large
-      ELSE
-         dt = MAX(dtnew,0.25*dt) ! not too small
-      END IF
-!         PRINT '(7(ES14.6))',time,dt,maxerr,rel_err(:)
-    ELSE
-      ! no adaptive step size control
-      maxerr = 0.0
-      dt = HUGE(dt)
-    END IF
+    ! maxerr and dt are global values (MPI)
+    CALL ComputeError_rkfehlberg(this,Mesh,Physics,dt,maxerr)
   END SUBROUTINE SolveODE_rkfehlberg
 
   
@@ -274,36 +260,35 @@ CONTAINS
   END SUBROUTINE ComputeCVar_rkfehlberg
 
 
-  SUBROUTINE ComputeRHS_rkfehlberg(this,Mesh,Physics,Fluxes,time,pvar,cvar,rhs)
+
+
+  ! This function is not only used for rkfehlberg methods to calculate the 
+  ! right hand side, but also for cashkarp and dumka methods. Keep that in 
+  ! mind when making changes.
+  SUBROUTINE ComputeRHS_rkfehlberg(this,Mesh,Physics,Fluxes,time,dt,pvar,cvar,rhs)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Timedisc_TYP) :: this
     TYPE(Mesh_TYP)     :: Mesh
     TYPE(Physics_TYP)  :: Physics
     TYPE(Fluxes_TYP)   :: Fluxes
-    REAL               :: time
+    REAL               :: time, dt
     REAL,DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%VNUM) &
                        :: pvar,cvar,rhs
     !------------------------------------------------------------------------!
     INTEGER            :: i,j,k
     REAL               :: dyflux
     !------------------------------------------------------------------------!
-    INTENT(IN)         :: Mesh,time,pvar,cvar
+    INTENT(IN)         :: Mesh,time,pvar,cvar,dt
     INTENT(INOUT)      :: this,Physics,Fluxes
     INTENT(OUT)        :: rhs
     !------------------------------------------------------------------------!
     ! get the numerical fluxes
-    CALL CalculateFluxes(Fluxes,Mesh,Physics,pvar,cvar,this%xflux,this%yflux)
+    CALL CalculateFluxes(Fluxes,Mesh,Physics,pvar,cvar,this%xfluxdy,this%yfluxdx)
 
-    ! get geometrical sources for non-cartesian mesh
-!CDIR IEXPAND
-    IF (GetType(Mesh%geometry).NE.CARTESIAN) &
-       CALL GeometricalSources(Physics,Mesh,Fluxes,pvar,cvar,this%geo_src)
-
-    ! get source terms due to external forces if present
-    IF (ASSOCIATED(Physics%sources)) &
-       CALL ExternalSources(Physics%sources,Mesh,Fluxes,Physics, &
-            time,pvar,cvar,this%src)
+    ! get sources
+    CALL ComputeSources_rkfehlberg(this,Mesh,Physics,Fluxes,time,dt,pvar,cvar,&
+      this%geo_src,this%src)
 
     DO k=1,Physics%VNUM
        ! compute flux differences
@@ -314,7 +299,7 @@ CONTAINS
           DO i=Mesh%IMIN,Mesh%IMAX
              ! temporary use rhs for flux difference in x-direction
              rhs(i,j,k) = Mesh%dydV(i,j)*( &
-                  this%xflux(i,j,k) - this%xflux(i-1,j,k))
+                  this%xfluxdy(i,j,k) - this%xfluxdy(i-1,j,k))
           END DO
        END DO
 
@@ -324,7 +309,7 @@ CONTAINS
           DO i=Mesh%IGMIN,Mesh%IGMAX
              ! one may exclude computation of dyflux for 1D computations
              ! but this prevents vectorization; thus we allways compute dyflux
-             dyflux = Mesh%dxdV(i,j)*(this%yflux(i,j,k) - this%yflux(i,j-1,k))
+             dyflux = Mesh%dxdV(i,j)*(this%yfluxdx(i,j,k) - this%yfluxdx(i,j-1,k))
              rhs(i,j,k) = rhs(i,j,k) & ! = dxflux (see above)
                   + dyflux - this%geo_src(i,j,k) - this%src(i,j,k)
           END DO
@@ -333,14 +318,14 @@ CONTAINS
        ! western and eastern
 !CDIR NODEP
        DO j=Mesh%JMIN,Mesh%JMAX
-          rhs(Mesh%IMIN-1,j,k) = Mesh%dy * this%xflux(Mesh%IMIN-1,j,k)
-          rhs(Mesh%IMAX+1,j,k) = -Mesh%dy * this%xflux(Mesh%IMAX,j,k)
+          rhs(Mesh%IMIN-1,j,k) = Mesh%dy * this%xfluxdy(Mesh%IMIN-1,j,k)
+          rhs(Mesh%IMAX+1,j,k) = -Mesh%dy * this%xfluxdy(Mesh%IMAX,j,k)
        END DO
        ! southern and northern
 !CDIR NODEP
        DO i=Mesh%IMIN,Mesh%IMAX
-          rhs(i,Mesh%JMIN-1,k) = Mesh%dx * this%yflux(i,Mesh%JMIN-1,k)
-          rhs(i,Mesh%JMAX+1,k) = -Mesh%dx * this%yflux(i,Mesh%JMAX,k)
+          rhs(i,Mesh%JMIN-1,k) = Mesh%dx * this%yfluxdx(i,Mesh%JMIN-1,k)
+          rhs(i,Mesh%JMAX+1,k) = -Mesh%dx * this%yfluxdx(i,Mesh%JMAX,k)
        END DO
     END DO
   END SUBROUTINE ComputeRHS_rkfehlberg

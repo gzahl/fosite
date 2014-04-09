@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: boundary_extrapolation.f90                                        #
 !#                                                                           #
-!# Copyright (C) 2006-2012                                                   #
+!# Copyright (C) 2006-2014                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -24,7 +24,12 @@
 !#############################################################################
 
 !----------------------------------------------------------------------------!
-! boundary module for vanishing gradients (zero order extrapolation)
+!> \author Tobias Illenseer
+!!
+!! \brief Boundary module for first order extrapolation
+!!
+!! \extends boundary_nogradients
+!! \ingroup boundary
 !----------------------------------------------------------------------------!
 MODULE boundary_extrapolation
   USE mesh_common, ONLY : Mesh_TYP
@@ -47,6 +52,7 @@ MODULE boundary_extrapolation
 
 CONTAINS
 
+  !> \public Constructor for extrapolation boundary conditions
   SUBROUTINE InitBoundary_extrapolation(this,Physics,btype,dir)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
@@ -61,6 +67,7 @@ CONTAINS
   END SUBROUTINE InitBoundary_extrapolation
 
 
+  !> \public Applies the extrapolation boundary condition
   PURE SUBROUTINE CenterBoundary_extrapolation(this,Mesh,Physics,pvar)
     IMPLICIT NONE
     !------------------------------------------------------------------------!

@@ -24,7 +24,12 @@
 !#############################################################################
 
 !----------------------------------------------------------------------------!
-! numerical fluxes module for trapezoidal quadrature rule
+!> \author Tobias Illenseer
+!!
+!! \brief numerical fluxes module for trapezoidal quadrature rule
+!!
+!! \extends fluxes_common
+!! \ingroup fluxes
 !----------------------------------------------------------------------------!
 MODULE fluxes_trapezoidal
   USE mesh_common, ONLY : Mesh_TYP
@@ -71,7 +76,12 @@ CONTAINS
     END DO
   END SUBROUTINE InitFluxes_trapezoidal
 
-  PURE SUBROUTINE CalculateFluxes_trapezoidal(this,Mesh,Physics,pvar,cvar,xflux,yflux)
+
+  ! ATTENTION: The return values xfluxdy and yfluxdx are the numerical fluxes
+  !            devided by dy or dx respectively. This reduces numerical errors
+  !            because otherwise we would multiply the fluxes by dy (or dx) here and
+  !            devide by dy (or dx) later when computing flux differences.
+  PURE SUBROUTINE CalculateFluxes_trapezoidal(this,Mesh,Physics,pvar,cvar,xfluxdy,yfluxdx)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Fluxes_TYP)  :: this
@@ -80,61 +90,70 @@ CONTAINS
     REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum) &
                       :: pvar,cvar
     REAL, DIMENSION(Mesh%IGMIN:Mesh%IGMAX,Mesh%JGMIN:Mesh%JGMAX,Physics%vnum) &
-                      :: xflux,yflux
+                      :: xfluxdy,yfluxdx
     !------------------------------------------------------------------------!
     INTEGER           :: i,j,k
     !------------------------------------------------------------------------!
     INTENT(IN)        :: Mesh,pvar,cvar
     INTENT(INOUT)     :: this,Physics
-    INTENT(OUT)       :: xflux,yflux
+    INTENT(OUT)       :: xfluxdy,yfluxdx
     !------------------------------------------------------------------------!
     ! get slopes and wave speeds
     CALL CalculateFaceData(this,Mesh,Physics,pvar,cvar) 
 
-    ! west and east
+    ! compute numerical fluxes along x-direction (west and east) devided by dy
     IF (Mesh%INUM.GT.1) THEN
        ! physical fluxes
        CALL CalculateFluxesX(Physics,Mesh,1,4,this%prim,this%cons,this%pfluxes)
-       ! numerical fluxes
-       FORALL (i=Mesh%IMIN-1:Mesh%IMAX,j=Mesh%JGMIN:Mesh%JGMAX,k=1:Physics%vnum)
-          ! x-direction
-          xflux(i,j,k) = 0.5/(Physics%amax(i,j) - Physics%amin(i,j)) * ( &
-               Mesh%dAxdy(i+1,j,1) * ( &
-                 Physics%amax(i,j)*this%pfluxes(i,j,2,k) - &
-                 Physics%amin(i,j)*this%pfluxes(i+1,j,1,k) + &
-                 Physics%amin(i,j)*Physics%amax(i,j)* &
-               (this%cons(i+1,j,1,k) - this%cons(i,j,2,k))) + &
-               Mesh%dAxdy(i+1,j,2) * ( &
-                 Physics%amax(i,j)*this%pfluxes(i,j,4,k) - &
-                 Physics%amin(i,j)*this%pfluxes(i+1,j,3,k) + &
-                 Physics%amin(i,j)*Physics%amax(i,j)* &
-               (this%cons(i+1,j,3,k) - this%cons(i,j,4,k))))
-       END FORALL
+!CDIR UNROLL=8
+       DO k=1,Physics%VNUM
+!CDIR UNROLL=8
+          DO j=Mesh%JGMIN,Mesh%JGMAX
+!CDIR NODEP
+             DO i=Mesh%IMIN-1,Mesh%IMAX
+                xfluxdy(i,j,k) = 0.5/(Physics%amax(i,j) - Physics%amin(i,j)) * ( &
+                   Mesh%dAxdy(i+1,j,1) * ( &
+                      Physics%amax(i,j)*this%pfluxes(i,j,2,k) - &
+                      Physics%amin(i,j)*this%pfluxes(i+1,j,1,k) + &
+                      Physics%amin(i,j)*Physics%amax(i,j)* &
+                      (this%cons(i+1,j,1,k) - this%cons(i,j,2,k))) + &
+                   Mesh%dAxdy(i+1,j,2) * ( &
+                      Physics%amax(i,j)*this%pfluxes(i,j,4,k) - &
+                      Physics%amin(i,j)*this%pfluxes(i+1,j,3,k) + &
+                      Physics%amin(i,j)*Physics%amax(i,j)* &
+                      (this%cons(i+1,j,3,k) - this%cons(i,j,4,k))))
+             END DO
+          END DO
+       END DO
     ELSE
-       xflux(:,:,:) = 0.0
+       xfluxdy(:,:,:) = 0.0
     END IF
 
-    ! south and north
+    ! compute numerical fluxes along y-direction (south and north) devided by dx
     IF (Mesh%JNUM.GT.1) THEN
        ! physical fluxes
-       CALL CalculateFluxesY(Physics,Mesh,1,4,this%prim,this%cons,this%qfluxes)
-       ! numerical fluxes
-       FORALL (i=Mesh%IGMIN:Mesh%IGMAX,j=Mesh%JMIN-1:Mesh%JMAX,k=1:Physics%vnum)
-          ! y-direction
-          yflux(i,j,k) = 0.5 / (Physics%bmax(i,j) - Physics%bmin(i,j)) * ( &
-             Mesh%dAydx(i,j+1,1) * ( &
-               Physics%bmax(i,j)*this%qfluxes(i,j,3,k) - &
-               Physics%bmin(i,j)*this%qfluxes(i,j+1,1,k) + &
-               Physics%bmin(i,j)*Physics%bmax(i,j)* &
-             (this%cons(i,j+1,1,k)-this%cons(i,j,3,k))) + &
-             Mesh%dAydx(i,j+1,2) * ( &
-               Physics%bmax(i,j)*this%qfluxes(i,j,4,k) - &
-               Physics%bmin(i,j)*this%qfluxes(i,j+1,2,k) + &
-               Physics%bmin(i,j)*Physics%bmax(i,j)* &
-             (this%cons(i,j+1,2,k)-this%cons(i,j,4,k))))
-       END FORALL
+       CALL CalculateFluxesY(Physics,Mesh,1,4,this%prim,this%cons,this%pfluxes)
+!CDIR UNROLL=8
+       DO k=1,Physics%VNUM
+!CDIR COLLAPSE
+          DO j=Mesh%JMIN-1,Mesh%JMAX
+             DO i=Mesh%IGMIN,Mesh%IGMAX
+                yfluxdx(i,j,k) = 0.5 / (Physics%bmax(i,j) - Physics%bmin(i,j)) * ( &
+                   Mesh%dAydx(i,j+1,1) * ( &
+                      Physics%bmax(i,j)*this%pfluxes(i,j,3,k) - &
+                      Physics%bmin(i,j)*this%pfluxes(i,j+1,1,k) + &
+                      Physics%bmin(i,j)*Physics%bmax(i,j)* &
+                      (this%cons(i,j+1,1,k)-this%cons(i,j,3,k))) + &
+                   Mesh%dAydx(i,j+1,2) * ( &
+                      Physics%bmax(i,j)*this%pfluxes(i,j,4,k) - &
+                      Physics%bmin(i,j)*this%pfluxes(i,j+1,2,k) + &
+                      Physics%bmin(i,j)*Physics%bmax(i,j)* &
+                      (this%cons(i,j+1,2,k)-this%cons(i,j,4,k))))
+             END DO
+          END DO
+       END DO
     ELSE
-       yflux(:,:,:) = 0.0
+       yfluxdx(:,:,:) = 0.0
     END IF
   END SUBROUTINE CalculateFluxes_trapezoidal
 

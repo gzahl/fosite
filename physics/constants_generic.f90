@@ -22,9 +22,15 @@
 !# Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.                 #
 !#                                                                           #
 !#############################################################################
+!> \addtogroup constants
+!! \key{units,INTEGER,physical unit system}
 
 !----------------------------------------------------------------------------!
-! generic module for units and physical constants
+!> \author Tobias Illenseer
+!!
+!! \brief generic module for units and physical constants
+!!
+!! \ingroup constants
 !----------------------------------------------------------------------------!
 MODULE constants_generic
   USE constants_SI
@@ -33,7 +39,7 @@ MODULE constants_generic
   !--------------------------------------------------------------------------!
   PRIVATE
   INTEGER, PARAMETER :: SI          = 1
-  INTEGER, PARAMETER :: CGS         = 2
+  INTEGER, PARAMETER :: CGS         = 2 !< \warning CGS units currently not implemented
   INTEGER, PARAMETER :: GEOMETRICAL = 3
   !--------------------------------------------------------------------------!
   ! basic numerical constants

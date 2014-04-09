@@ -1,0 +1,107 @@
+#                                               -*- Automake -*-
+# Process this file with automake --add-missing to produce a Makefile.
+#############################################################################
+#                                                                           #
+# fosite - 2D hydrodynamical simulation program                             #
+# configuration file: common.am                                             #
+#                                                                           #
+# Copyright (C) 2012-2013                                                   #
+# Manuel Jung <mjung@astrophysik.uni-kiel.de>                               #
+#                                                                           #
+# This program is free software; you can redistribute it and/or modify      #
+# it under the terms of the GNU General Public License as published by      #
+# the Free Software Foundation; either version 2 of the License, or (at     #
+# your option) any later version.                                           #
+#                                                                           #
+# This program is distributed in the hope that it will be useful, but       #
+# WITHOUT ANY WARRANTY; without even the implied warranty of                #
+# MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE, GOOD TITLE or        #
+# NON INFRINGEMENT.  See the GNU General Public License for more            #
+# details.                                                                  #
+#                                                                           #
+# You should have received a copy of the GNU General Public License         #
+# along with this program; if not, write to the Free Software               #
+# Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.                 #
+#                                                                           #
+#############################################################################
+
+# some directories
+#BASEDIR=$(shell pwd)
+DEPFILE=Makefile.dep
+SRCDIRS=numtools common mesh physics boundary fluxes sources io timedisc
+INCDIRS=$(foreach dir,$(SRCDIRS),-I$(top_builddir)/$(dir)) -I$(top_builddir)/ -I$(top_srcdir)/common
+LIBDIRS=$(foreach dir,$(SRCDIRS),-L$(top_builddir)/$(dir)) -L$(top_builddir)/
+
+# command for preprocessing (should be empty);
+# used for parallel profiling with scalasca (see below)
+PREP=
+
+# compiler dependent variables
+FCFLAGS_ALL=@FCFLAGS_ALL@
+CPPFLAGS_ALL=@DEFS_ALL@ -DVERSION='"$(VERSION)"'
+FCFLAGS_OPT=@FCFLAGS_OPT@
+CPPFLAGS_OPT=
+FCFLAGS_DBG=@FCFLAGS_DBG@
+FCFLAGS_PROF=@FCFLAGS_PROF@
+FCFLAGS_MPI=@FCFLAGS_MPI@
+CPPFLAGS_MPI=@DEFS_PARALLEL@
+LDFLAGS_ALL=@LDFLAGS_ALL@
+LDFLAGS_OPT=@LDFLAGS_OPT@
+LDFLAGS_DBG=@LDFLAGS_DBG@
+LDFLAGS_PROF=@LDFLAGS_PROF@
+LDFLAGS_MPI=@LDFLAGS_MPI@ @MPILIBS@
+
+AM_DEFAULT_SOURCE_EXT=.f90
+LDADD = $(top_builddir)/libfosite.a
+
+clean-local: clean-modules
+clean-modules:
+	$(RM) *.mod
+
+distclean-local: distclean-modules
+distclean-modules:
+	$(RM) *.bak *.dat *.pvd *.vts *.bin *.nc *.log *~ *.h5 *.tar.gz
+
+MOSTLYCLEANFILES=*.o examples/*.o
+CLEANFILES=*.dep
+
+#disable ranlib
+RANLIB=echo
+
+MAKEDEPS=$(top_srcdir)/depcomp
+
+common : numtools
+mesh : common
+physics : common mesh
+boundary : common physics
+fluxes : common physics mesh
+sources : common physics boundary fluxes mesh
+timedisc : common physics boundary fluxes mesh sources io
+io: common physics fluxes mesh sources
+
+# default compiler flags for target "all"
+AM_FCFLAGS=$(FCFLAGS_ALL) $(FCFLAGS_OPT)
+AM_CPPFLAGS=$(CPPFLAGS_ALL) $(CPPFLAGS_OPT)
+AM_LDFLAGS=$(LDFLAGS_ALL) $(LDFLAGS_OPT)
+
+# target dependent compiler flags 
+debug-local : AM_FCFLAGS=$(FCFLAGS_ALL) $(FCFLAGS_DBG)
+debug-local : AM_LDFLAGS=$(LDFLAGS_ALL) $(LDFLAGS_DBG)
+parallel-local : AM_FCFLAGS=$(FCFLAGS_ALL) $(FCFLAGS_OPT) $(FCFLAGS_MPI)
+parallel-local : AM_CPPFLAGS=$(CPPFLAGS_ALL) $(CPPFLAGS_OPT) $(CPPFLAGS_MPI)
+parallel-local : AM_LDFLAGS=$(LDFLAGS_ALL) $(LDFLAGS_OPT) $(LDFLAGS_MPI)
+prof-local : AM_FCFLAGS=$(FCFLAGS_ALL) $(FCFLAGS_OPT) $(FCFLAGS_PROF)
+prof-local : AM_LDFLAGS=$(LDFLAGS_ALL) $(LDFLAGS_OPT) $(LDFLAGS_PROF)
+parprof-local : AM_FCFLAGS=$(FCFLAGS_ALL) $(FCFLAGS_OPT) $(FCFLAGS_MPI)
+parprof-local : AM_CPPFLAGS=$(CPPFLAGS_ALL) $(CPPFLAGS_OPT) $(CPPFLAGS_MPI)
+parprof-local : AM_LDFLAGS=$(LDFLAGS_ALL) $(LDFLAGS_OPT) $(LDFLAGS_MPI)
+parprof-local : PREP=@PREP@
+baldr-local : AM_FCFLAGS=$(FCFLAGS_ALL) $(FCFLAGS_OPT) -fPIC
+baldr-local : AM_LDFLAGS=$(LDFLAGS_ALL) $(LDFLAGS_OPT)
+
+# customize the calling of the compiler and linker - the standard definitions dont include CPPFLAGS
+FCCOMPILE=$(PREP) $(FC) $(AM_CPPFLAGS) $(CPPFLAGS) $(INCDIRS) $(AM_FCFLAGS) $(FCFLAGS) $(FCFLAGS_f90)
+FCLINK=$(PREP) $(FC) $< $(AM_LDFLAGS) $(LDFLAGS) $(LIBDIRS) $(LDFLAGS_f90) -o $@
+
+# variable definitions end here
+debug-local parallel-local prof-local parprof-local baldr-local : all-am

@@ -24,11 +24,11 @@
 !#############################################################################
 
 !----------------------------------------------------------------------------!
-! root finding subroutines:
-! 1. Newton's method combined with bisection, for ill-posed problems
-! 2. Regula falsi (default)
+!> root finding subroutines:
+!! 1. Newton's method combined with bisection, for ill-posed problems
+!! 2. Regula falsi (default)
 !----------------------------------------------------------------------------!
-MODULE Roots
+MODULE roots
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   PRIVATE
@@ -36,9 +36,12 @@ MODULE Roots
   INTEGER, PARAMETER :: MAX_ITERATIONS = 1000
   REAL, PARAMETER ::    EPS = 4*EPSILON(EPS)
   !--------------------------------------------------------------------------!
+  ! exclude interface block from doxygen processing
+  !> \cond InterfaceBlock
   INTERFACE GetRoot
      MODULE PROCEDURE  GetRoot_regfalsi
   END INTERFACE
+  !> \endcond
   !--------------------------------------------------------------------------!
   PUBLIC :: &
        GetRoot, &
@@ -48,16 +51,18 @@ MODULE Roots
 
 CONTAINS
 
-  FUNCTION GetRoot_newton(funcd,x1,x2) RESULT(root)
+  FUNCTION GetRoot_newton(funcd,x1,x2,plist) RESULT(root)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     REAL, INTENT(IN) :: x1,x2
+    REAL, DIMENSION(:), OPTIONAL :: plist
     REAL :: root
     !------------------------------------------------------------------------!
     INTERFACE
-       SUBROUTINE funcd(x,fx,dfx)
+       SUBROUTINE funcd(x,fx,dfx,plist)
          IMPLICIT NONE
          REAL, INTENT(IN)  :: x
+         REAL, INTENT(IN), DIMENSION(:), OPTIONAL :: plist
          REAL, INTENT(OUT) :: fx,dfx
        END SUBROUTINE funcd
     END INTERFACE
@@ -69,8 +74,8 @@ CONTAINS
     ! compute left and right function values
     xl = MIN(x1,x2)
     xr = MAX(x1,x2)
-    CALL funcd(xl,fl,dfl)
-    CALL funcd(xr,fr,dfr)
+    CALL funcd(xl,fl,dfl,plist)
+    CALL funcd(xr,fr,dfr,plist)
     ! check if root is within the interval [x1,x2]
     IF (fl*fr.GT.0.0) THEN
        WRITE (0,'(A,2(ES13.6,A4),2(ES13.6,A3))') &
@@ -83,7 +88,7 @@ CONTAINS
     ! main loop
     DO i=1,MAX_ITERATIONS
        ! Newton iteration step
-       CALL funcd(xm,fm,dfm)
+       CALL funcd(xm,fm,dfm,plist)
        dx = fm / (dfm+TINY(dx))  ! avoid division by 0
        root = xm - dx
        IF (ABS(fm).LE.EPS) EXIT
@@ -115,16 +120,18 @@ CONTAINS
   END FUNCTION GetRoot_newton
 
 
-  FUNCTION GetRoot_regfalsi(func,x1,x2) RESULT(root)
+  FUNCTION GetRoot_regfalsi(func,x1,x2,plist) RESULT(root)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     REAL, INTENT(IN) :: x1,x2
+    REAL, INTENT(IN), DIMENSION(:), OPTIONAL :: plist
     REAL :: root
     !------------------------------------------------------------------------!
     INTERFACE
-       SUBROUTINE func(x,fx)
+       SUBROUTINE func(x,fx,plist)
          IMPLICIT NONE
          REAL, INTENT(IN)  :: x
+         REAL, INTENT(IN), DIMENSION(:), OPTIONAL :: plist
          REAL, INTENT(OUT) :: fx
        END SUBROUTINE func
     END INTERFACE
@@ -136,8 +143,8 @@ CONTAINS
     ! compute left and right function values
     xl = MIN(x1,x2)
     xr = MAX(x1,x2)
-    CALL func(xl,fl)
-    CALL func(xr,fr)
+    CALL func(xl,fl,plist)
+    CALL func(xr,fr,plist)
     ! check if root is within the interval [x1,x2]
     IF (fl*fr.GT.0.0) THEN
        WRITE (0,'(A,2(ES13.6,A4),2(ES13.6,A3))') &
@@ -151,7 +158,7 @@ CONTAINS
        dx = (xl-xr)*fl/(fl - fr + TINY(fl))  ! avoid division by 0
        xm = xl - dx
        root = xm
-       CALL func(xm,fm)
+       CALL func(xm,fm,plist)
        ! check abort criteron
        IF (ABS(fm).LE.EPS) EXIT
        IF (fm*fl.GT.0.0) THEN

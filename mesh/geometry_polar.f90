@@ -23,24 +23,34 @@
 !#############################################################################
 
 !----------------------------------------------------------------------------!
-! define properties of a 2D polar mesh
+!> \author Tobias Illenseer
+!!
+!! \brief define properties of a 2D polar mesh
+!!
+!! \extends geometry_cartesian
+!! \ingroup geometry
 !----------------------------------------------------------------------------!
 MODULE geometry_polar
   USE geometry_cartesian
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
+  ! exclude interface block from doxygen processing
+  !> \cond InterfaceBlock
   INTERFACE Convert2Cartesian_polar
      MODULE PROCEDURE Polar2Cartesian_coords, Polar2Cartesian_vectors
   END INTERFACE
   INTERFACE Convert2Curvilinear_polar
      MODULE PROCEDURE Cartesian2Polar_coords, Cartesian2Polar_vectors
   END INTERFACE
+  !> \endcond
   PRIVATE
   CHARACTER(LEN=32), PARAMETER :: geometry_name = "polar"
   !--------------------------------------------------------------------------!
   PUBLIC :: &
        InitGeometry_polar, &
        ScaleFactors_polar, &
+       Radius_polar, &
+       PositionVector_polar, &
        Convert2Cartesian_polar, &
        Convert2Curvilinear_polar, &
        Polar2Cartesian_coords, &
@@ -72,6 +82,24 @@ CONTAINS
     hz   = 1.
   END SUBROUTINE ScaleFactors_polar
 
+  ELEMENTAL FUNCTION Radius_polar(r) RESULT(radius)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    REAL, INTENT(IN)  :: r
+    REAL :: radius
+    !------------------------------------------------------------------------!
+    radius = r
+  END FUNCTION Radius_polar
+
+  ELEMENTAL SUBROUTINE PositionVector_polar(r,rx,ry)
+    IMPLICIT NONE
+    !------------------------------------------------------------------------!
+    REAL, INTENT(IN)  :: r
+    REAL, INTENT(OUT) :: rx,ry
+    !------------------------------------------------------------------------!
+    rx = Radius_polar(r)
+    ry = 0.0
+  END SUBROUTINE PositionVector_polar
 
   ! coordinate transformations
   ELEMENTAL SUBROUTINE Polar2Cartesian_coords(r,phi,x,y)

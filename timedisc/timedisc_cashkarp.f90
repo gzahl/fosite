@@ -1,9 +1,9 @@
 !#############################################################################
 !#                                                                           #
 !# fosite - 2D hydrodynamical simulation program                             #
-!# module: timedisc_modeuler.f90                                             #
+!# module: timedisc_cashkarp.f90                                             #
 !#                                                                           #
-!# Copyright (C) 2011                                                        #
+!# Copyright (C) 2011,2013                                                   #
 !# Björn Sperling   <sperling@astrophysik.uni-kiel.de>                       #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
@@ -25,8 +25,15 @@
 !#############################################################################
 
 !----------------------------------------------------------------------------!
-! subroutines for embedded Runge-Kutta method
-! Reference: G.Engeln-Müllges & F.Reutter; .....
+!> \author Björn Sperling
+!! \author Tobias Illenseer
+!!
+!! \brief subroutines for embedded Runge-Kutta method
+!!
+!! Reference: G.Engeln-Müllges & F.Reutter; .....
+!!
+!! \extends timedisc_common
+!! \ingroup timedisc
 !----------------------------------------------------------------------------!
 MODULE timedisc_cashkarp
   
@@ -38,7 +45,9 @@ USE timedisc_common
        ExternalSources_Physics => ExternalSources
   USE sources_generic
   USE timedisc_rkfehlberg, SolveODE_cashkarp => SolveODE_rkfehlberg, &
-       CloseTimedisc_cashkarp => CloseTimedisc_rkfehlberg
+       CloseTimedisc_cashkarp => CloseTimedisc_rkfehlberg, &
+       CalcTimestep_cashkarp => CalcTimestep_rkfehlberg
+  USE common_dict
   IMPLICIT NONE
   !--------------------------------------------------------------------------!
   PRIVATE
@@ -52,6 +61,7 @@ USE timedisc_common
        InitTimedisc_cashkarp, &
        CloseTimedisc_cashkarp, &
        SolveODE_cashkarp, &
+       CalcTimestep_cashkarp, &
        GetOrder, &
        GetCFL, &
        GetType, &
@@ -66,29 +76,27 @@ USE timedisc_common
 
 CONTAINS
 
-  SUBROUTINE InitTimedisc_cashkarp(this,Mesh,Physics,os,order,stoptime,cfl,dtlimit,maxiter, &
-       tol_rel,tol_abs)
+  SUBROUTINE InitTimedisc_cashkarp(this,Mesh,Physics,config)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     TYPE(Timedisc_TYP) :: this
     TYPE(Mesh_TYP)     :: Mesh
     TYPE(Physics_TYP)  :: Physics
-    INTEGER            :: os, order,maxiter
-    REAL               :: stoptime,cfl,dtlimit
-    REAL               :: tol_rel
-    REAL,DIMENSION(:)  :: tol_abs
+    TYPE(Dict_TYP), POINTER &
+                       :: config
     !------------------------------------------------------------------------!
-    INTEGER            :: err
+    INTEGER            :: err,method
     !------------------------------------------------------------------------!
-    INTENT(IN)         :: os,order,stoptime,cfl,dtlimit,maxiter,tol_rel,tol_abs
+    INTENT(IN)         :: Mesh,Physics
     INTENT(INOUT)      :: this
     !------------------------------------------------------------------------!
-    CALL InitTimedisc(this,os,ODEsolver_name,order,stoptime,cfl,dtlimit,maxiter)
+    ! set default order 
+    CALL RequireKey(config, "order", 5)
+    CALL GetAttr(config, "order", this%order)
 
-    ! relative and absolute tolerance for adaptive step size control
-    this%tol_rel    = tol_rel
-    this%tol_abs(:) = tol_abs(:)
-   
+    CALL GetAttr(config, "method", method)
+    CALL InitTimedisc(this,method,ODEsolver_name)
+
 !CDIR IEXPAND
     SELECT CASE(GetOrder(this))    
     CASE(5)
@@ -101,7 +109,7 @@ CONTAINS
        IF (err.NE.0) THEN
           CALL Error(this,"timedisc_cashkarp", "Unable to allocate memory.")
        END IF
-       !set coefficient scheme of RK-Fehlberg rkf45
+       !set coefficient scheme of Cash-Karp
        this%A1 = (/ 37.0/378.0, 0.0, 250.0/621.0, 125.0/594.0, 0.0, 512.0/1771.0 /)
        this%A2 = (/ 2825.0/27648.0, 0.0, 18575.0/48384.0, 13525.0/55296.0, 277.0/14336.0, 0.25 /)
        this%a  = (/ 0.0, 0.2, 0.3, 0.6, 1.0, 7.0/8.0  /)
@@ -117,10 +125,10 @@ CONTAINS
     IF ((this%tol_rel.LT.0.0).OR.MINVAL(this%tol_abs(:)).LT.0.0) &
          CALL Error(this,"timedisc_cashkarp", &
          "error tolerance levels must be greater than 0")
-    IF (tol_rel.GT.1.0) THEN
+    IF (this%tol_rel.GT.1.0) THEN
          CALL Warning(this,"timedisc_cashkarp", &
             "adaptive step size control disabled (tol_rel>1)")
-    ELSE IF(tol_rel.GE.0.01 .AND. this%order .GE. 5) THEN
+    ELSE IF(this%tol_rel.GE.0.01) THEN
          CALL Warning(this,"timedisc_cashkarp", &
              "You chose a relatively high tol_rel (in comparison to order)")
     END IF

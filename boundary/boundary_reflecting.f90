@@ -3,7 +3,7 @@
 !# fosite - 2D hydrodynamical simulation program                             #
 !# module: boundary_reflecting.f90                                           #
 !#                                                                           #
-!# Copyright (C) 2006-2012                                                   #
+!# Copyright (C) 2006-2014                                                   #
 !# Tobias Illenseer <tillense@astrophysik.uni-kiel.de>                       #
 !#                                                                           #
 !# This program is free software; you can redistribute it and/or modify      #
@@ -24,7 +24,12 @@
 !#############################################################################
 
 !----------------------------------------------------------------------------!
-! boundary module for refelcting boundaries
+!> \author Tobias Illenseer
+!!
+!! \brief Boundary module for refelcting boundaries
+!!
+!! \extends boundary_nogradients
+!! \ingroup boundary
 !----------------------------------------------------------------------------!
 MODULE boundary_reflecting
   USE mesh_common, ONLY : Mesh_TYP
@@ -59,6 +64,7 @@ MODULE boundary_reflecting
 
 CONTAINS
 
+  !> \public Constructor for reflecting boundary conditions
   SUBROUTINE InitBoundary_reflecting(this,Physics,btype,dir)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
@@ -84,7 +90,7 @@ CONTAINS
     CALL ReflectionMasks(Physics,this%reflX,this%reflY)
   END SUBROUTINE InitBoundary_reflecting
 
-
+  !> \public Applies the reflecting boundary condition
   PURE SUBROUTINE CenterBoundary_reflecting(this,Mesh,Physics,pvar)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
@@ -151,6 +157,7 @@ CONTAINS
     END SELECT 
   END SUBROUTINE CenterBoundary_reflecting
 
+  !> \public Destructor for reflecting boundary conditions
   SUBROUTINE CloseBoundary_reflecting(this)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
