@@ -143,7 +143,7 @@ CONTAINS
     this%mdot = 0.0
 
     ! set period
-    this%period = SQRT(4.*PI**2*this%semaaxis**3/(this%mass+this%mass2))
+    this%period = SQRT(4.*PI**2*this%semaaxis**3/(this%mass+this%mass2)/Physics%constants%GN)
 
     ! initialize acceleration
     this%accel  = 0.0

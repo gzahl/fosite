@@ -40,12 +40,12 @@ MODULE geometry_bianglespherical
   ! exclude interface block from doxygen processing
   !> \cond InterfaceBlock
   INTERFACE Convert2Cartesian_bianglespher
-     MODULE PROCEDURE Bianglespherical2Cartesian_coords,&
-    Bianglespherical2Cartesian_vectors
+     MODULE PROCEDURE Bianglespherical2Cart_coords,&
+    Bianglespherical2Cart_vectors
   END INTERFACE
-  INTERFACE Convert2Curvilinear_bianglespher
-     MODULE PROCEDURE Cartesian2Bianglespherical_coords,&
-    Cartesian2Bianglespherical_vectors
+  INTERFACE Convert2Curv_bianglespher
+     MODULE PROCEDURE Cart2Bianglespherical_coords,&
+    Cart2Bianglespherical_vectors
   END INTERFACE
   !> \endcond
   PRIVATE
@@ -57,11 +57,11 @@ MODULE geometry_bianglespherical
        Radius_bianglespher, &
        PositionVector_bianglespher, &
        Convert2Cartesian_bianglespher, &
-       Convert2Curvilinear_bianglespher, &
-       Bianglespherical2Cartesian_coords, &
-       Bianglespherical2Cartesian_vectors, &
-       Cartesian2Bianglespherical_coords, &
-       Cartesian2Bianglespherical_vectors
+       Convert2Curv_bianglespher, &
+       Bianglespherical2Cart_coords, &
+       Bianglespherical2Cart_vectors, &
+       Cart2Bianglespherical_coords, &
+       Cart2Bianglespherical_vectors
   !--------------------------------------------------------------------------!
 
 CONTAINS
@@ -109,7 +109,7 @@ CONTAINS
   END SUBROUTINE PositionVector_bianglespher
 
   ! coordinate transformations
-  ELEMENTAL SUBROUTINE Bianglespherical2Cartesian_coords(r,theta,phi,x,y,z)
+  ELEMENTAL SUBROUTINE Bianglespherical2Cart_coords(r,theta,phi,x,y,z)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     REAL, INTENT(IN)  :: r,theta,phi
@@ -118,9 +118,9 @@ CONTAINS
     x = r*SIN(theta)*COS(phi)
     y = r*SIN(theta)*SIN(phi)
     z = r*COS(theta)  
-  END SUBROUTINE Bianglespherical2Cartesian_coords
+  END SUBROUTINE Bianglespherical2Cart_coords
 
-  ELEMENTAL SUBROUTINE Cartesian2Bianglespherical_coords(r,x,y,z,theta,phi)
+  ELEMENTAL SUBROUTINE Cart2Bianglespherical_coords(r,x,y,z,theta,phi)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
     REAL, INTENT(IN)  :: r,x,y,z
@@ -128,10 +128,10 @@ CONTAINS
     !------------------------------------------------------------------------!
     theta = ACOS(z/r)
     phi = ATAN2(y,x)
-  END SUBROUTINE Cartesian2Bianglespherical_coords
+  END SUBROUTINE Cart2Bianglespherical_coords
  
   ! vector transformations
-  ELEMENTAL SUBROUTINE Bianglespherical2Cartesian_vectors(r,theta,phi,&
+  ELEMENTAL SUBROUTINE Bianglespherical2Cart_vectors(r,theta,phi,&
   vtheta,vphi,vr,vx,vy,vz)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
@@ -141,9 +141,9 @@ CONTAINS
     vx = vr*SIN(theta)*COS(phi) + vtheta*COS(theta)*COS(phi) - vphi*SIN(PHI)
     vy = vr*SIN(theta)*SIN(phi) + vtheta*COS(theta)*SIN(phi) + vphi*COS(PHI)
     vz = vr*COS(theta)          - vphi*SIN(theta)
-  END SUBROUTINE Bianglespherical2Cartesian_vectors
+  END SUBROUTINE Bianglespherical2Cart_vectors
 
-  ELEMENTAL SUBROUTINE Cartesian2Bianglespherical_vectors(r,theta,phi,&
+  ELEMENTAL SUBROUTINE Cart2Bianglespherical_vectors(r,theta,phi,&
   vx,vy,vz,vtheta,vphi,vr)
     IMPLICIT NONE
     !------------------------------------------------------------------------!
@@ -153,6 +153,6 @@ CONTAINS
     vr     = vx*SIN(theta)*COS(phi) + vy*SIN(theta)*SIN(phi) + vz*COS(theta)
     vtheta = vx*COS(theta)*COS(phi) + vy*COS(theta)*SIN(phi) - vz*SIN(theta)
     vphi   = -vx*SIN(phi)           + vy*COS(phi)
-  END SUBROUTINE Cartesian2Bianglespherical_vectors
+  END SUBROUTINE Cart2Bianglespherical_vectors
 
 END MODULE geometry_bianglespherical

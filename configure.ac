@@ -28,7 +28,7 @@
 #############################################################################
 
 AC_PREREQ(2.62)
-AC_INIT(fosite, 0.6.0, tillense@astrophysik.uni-kiel.de)
+AC_INIT(fosite, 0.6.1, tillense@astrophysik.uni-kiel.de)
 AC_CONFIG_AUX_DIR([./])
 AC_REQUIRE_AUX_FILE([tap-driver.sh])
 AM_INIT_AUTOMAKE([1.13.1 foreign parallel-tests color-tests])

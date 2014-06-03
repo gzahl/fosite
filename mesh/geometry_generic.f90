@@ -907,7 +907,7 @@ CONTAINS
        CALL Convert2Curvilinear_sinhspher(GetScale(this),cart(:,:,1),cart(:,:,2), &
             curv(:,:,1),curv(:,:,2))
     CASE(BIANGLESPHERICAL)
-       CALL Convert2Curvilinear_bianglespher(GetScale(this),cart(:,:,1),cart(:,:,2),cart(:,:,3),&
+       CALL Convert2Curv_bianglespher(GetScale(this),cart(:,:,1),cart(:,:,2),cart(:,:,3),&
             curv(:,:,1),curv(:,:,2))
     CASE(OBLATE_SPHEROIDAL)
        CALL Convert2Curvilinear_oblatespher(GetScale(this),cart(:,:,1),cart(:,:,2), &
@@ -971,7 +971,7 @@ CONTAINS
        CALL Convert2Curvilinear_sinhspher(GetScale(this),cart(:,:,:,1),cart(:,:,:,2), &
             curv(:,:,:,1),curv(:,:,:,2))
     CASE(BIANGLESPHERICAL)
-       CALL Convert2Curvilinear_bianglespher(GetScale(this),cart(:,:,:,1),cart(:,:,:,2),cart(:,:,:,3),&
+       CALL Convert2Curv_bianglespher(GetScale(this),cart(:,:,:,1),cart(:,:,:,2),cart(:,:,:,3),&
        curv(:,:,:,1),curv(:,:,:,2) )
     CASE(OBLATE_SPHEROIDAL)
        CALL Convert2Curvilinear_oblatespher(GetScale(this),cart(:,:,:,1),cart(:,:,:,2), &
@@ -1234,7 +1234,7 @@ CONTAINS
        CALL Convert2Curvilinear_sinhspher(GetScale(this),curv(:,:,2),v_cart(:,:,1), &
             v_cart(:,:,2),v_curv(:,:,1),v_curv(:,:,2))
     CASE(BIANGLESPHERICAL)
-       CALL Convert2Curvilinear_bianglespher(GetScale(this),curv(:,:,1),curv(:,:,2),&
+       CALL Convert2Curv_bianglespher(GetScale(this),curv(:,:,1),curv(:,:,2),&
             v_cart(:,:,1),v_cart(:,:,2),v_cart(:,:,3),&
             v_curv(:,:,1),v_curv(:,:,2),v_curv(:,:,3))
     CASE(OBLATE_SPHEROIDAL)
@@ -1300,7 +1300,7 @@ CONTAINS
        CALL Convert2Curvilinear_sinhspher(GetScale(this),curv(:,:,:,2),v_cart(:,:,:,1), &
             v_cart(:,:,:,2),v_curv(:,:,:,1),v_curv(:,:,:,2))
     CASE(BIANGLESPHERICAL)
-       CALL Convert2Curvilinear_bianglespher(GetScale(this),curv(:,:,:,1),&
+       CALL Convert2Curv_bianglespher(GetScale(this),curv(:,:,:,1),&
             curv(:,:,:,2),v_cart(:,:,:,1),v_cart(:,:,:,2),v_cart(:,:,:,3),&
             v_curv(:,:,:,1),v_curv(:,:,:,2),v_curv(:,:,:,3))
     CASE(OBLATE_SPHEROIDAL)
@@ -1360,7 +1360,7 @@ CONTAINS
        CALL Convert2Curvilinear_sinhspher(GetScale(this),curv(2),v_cart(1), &
             v_cart(2),v_curv(1),v_curv(2))
     CASE(BIANGLESPHERICAL)
-       CALL Convert2Curvilinear_bianglespher(GetScale(this),curv(1),curv(2),&
+       CALL Convert2Curv_bianglespher(GetScale(this),curv(1),curv(2),&
             v_cart(1),v_cart(2),v_cart(3),&
             v_curv(1),v_curv(2),v_curv(3))
     CASE(OBLATE_SPHEROIDAL)

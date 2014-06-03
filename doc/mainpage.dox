@@ -1,9 +1,13 @@
 /*! \mainpage fosite - 2D hydrodynamical simulation program
-[Fosite website](http://www.astrophysik.uni-kiel.de/index.php?option=com_content&task=view&id=148&Itemid=135&lang=en)
+[Homepage](http://www.astrophysik.uni-kiel.de/fosite)
 
-[Fosite on sourceforge.net](http://fosite.sourceforge.net/)
+[Examples Page](http://www.astrophysik.uni-kiel.de/index.php?option=com_content&task=view&id=149&Itemid=114)
 
-[Coding guidelines](@ref coding_guidelines)
+[Download Page](https://sourceforge.net/projects/fosite/files/latest/download)
+
+[Coding Guidelines](@ref coding_guidelines)
+
+[Project Page](http://sf.net/projects/fosite) at \htmlonly<a href="http://sourceforge.net/"><img src="http://sflogo.sourceforge.net/sflogo.php?group_id=23725&amp;type=6" name="graphics1" alt="SourceForge Logo" align="bottom" border="0" height="40" width="100"></a></p>\endhtmlonly 
 
 # INTRODUCTION
 

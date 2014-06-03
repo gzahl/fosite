@@ -492,7 +492,7 @@ MODULE gravity_multigrid
       REAL, DIMENSION(0:this%grid(j)%ni+1,0:this%grid(j)%nj+1) :: u,rhs
       !------------------------------------------------------------------------!
       INTENT(IN)                       :: rhs,j
-      INTENT(INOUT)                    :: this,u
+      INTENT(INOUT)                    :: u
       !------------------------------------------------------------------------!
       INTEGER                          :: jpost,jpre
 !CAUTION: slow!

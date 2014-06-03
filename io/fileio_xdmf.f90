@@ -865,7 +865,7 @@ CONTAINS
     INTEGER           :: offset
 #endif
     !------------------------------------------------------------------------!
-    INTENT(IN)        :: Mesh,Physics,Fluxes,Timedisc,IO
+    INTENT(IN)        :: Mesh,Physics,Fluxes,Timedisc
     INTENT(INOUT)     :: this
     !------------------------------------------------------------------------!
 #ifdef PARALLEL

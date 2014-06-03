@@ -51,7 +51,6 @@ PROGRAM Init
   include 'mpif.h'
 #endif
 #endif
-EXTERNAL :: func
   
   !--------------------------------------------------------------------------!
   ! general constants

@@ -212,7 +212,7 @@ CONTAINS
     TYPE(Physics_TYP)  :: Physics
     REAL               :: dt,maxerr
     !------------------------------------------------------------------------!
-    REAL               :: dtnew,error,alpha
+    REAL               :: dtnew,err,alpha
     REAL               :: rel_err(Physics%VNUM)
     INTEGER            :: k,l(1),i,j
 #ifdef PARALLEL
@@ -231,10 +231,10 @@ CONTAINS
           rel_err(k) = 0.
           DO j=Mesh%JMIN,Mesh%JMAX
             DO i=Mesh%IMIN,Mesh%IMAX
-              error = ABS(this%cvar(i,j,k) - this%ctmp(i,j,k)) &
+              err = ABS(this%cvar(i,j,k) - this%ctmp(i,j,k)) &
                       / (this%tol_rel*ABS(this%cvar(i,j,k)) + this%tol_abs(k))
-              rel_err(k) = MAX(rel_err(k),error)
-              this%error(i,j,k) = MAX(this%error(i,j,k),error)
+              rel_err(k) = MAX(rel_err(k),err)
+              this%error(i,j,k) = MAX(this%error(i,j,k),err)
             END DO
           END DO
         END DO
@@ -260,9 +260,13 @@ CONTAINS
 !CDIR IEXPAND
       ! see E. Hairer, Solving Ordinary Differential Equ. II, 2ed, Springer (2.43c)
       alpha = 1./GetOrder(this) + this%beta
-      IF(this%maxerrold.GT.0.) THEN
+      dtnew = -1.
+      IF(this%maxerrold.GT.0.) &
         dtnew = 0.9*dt*exp(-log(maxerr)*alpha+log(this%maxerrold)*this%beta)
-      ELSE
+      IF(dtnew.LT.0..OR.((maxerr.GE.1.).AND.(dtnew.GT.dt))) THEN
+        ! If maxerrold >> maxerr dtnew can be greater than dt, even
+        ! if the timestep is rejected. If this is the case fall back to
+        ! a simple P-Controller
         dtnew = 0.9*dt*exp(-log(maxerr)/GetOrder(this))
       END IF
       IF (maxerr.LT.1.0) THEN
@@ -271,6 +275,14 @@ CONTAINS
          IF (dtnew .LT. dt) this%dtcause = DTCAUSE_SMALLERR
       ELSE
          !print *,maxerr,l
+         ! Extra safety check, that dtnew is indeed smaller than dt, if
+         ! maxerr > 1, because this is expected in all other code parts
+         ! of fosite
+         IF(dtnew.GT.dt) &
+           CALL Error(this,"ComputeError_modeuler", &
+             "maxerr is greater than 1, so we need to adjust. But dtnew is" &
+             // " greater than dt. This should not happen at all!")
+
          dt = MAX(dtnew,0.25*dt) ! not too small
       END IF
 !         PRINT '(7(ES14.6))',time,dt,maxerr,rel_err(:)

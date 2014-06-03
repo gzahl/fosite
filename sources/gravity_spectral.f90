@@ -489,7 +489,6 @@ SUBROUTINE PrecomputeI_spectral(this, Mesh)
                         :: ac
    !------------------------------------------------------------------------!
    INTENT(IN)           :: Mesh,Physics,pvar
-   INTENT(INOUT)        :: this
    !------------------------------------------------------------------------!
    ! calc potential first
    CALL CalcPotential_spectral(this,Mesh,Physics,pvar)
